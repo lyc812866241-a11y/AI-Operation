@@ -127,25 +127,36 @@ find . -name "*.md" -not -path '*/.git/*' | head -20
 
 ---
 
-### Phase 4：写入文件（Write）
+### Phase 4：调用 MCP 工具写入文件（MCP-Enforced Write）
 
-**目标：将用户确认后的内容写入 5 个文件，替换所有 `[TODO]` 占位符。**
+**目标：调用 `force_project_bootstrap_write` MCP 工具，将用户确认后的内容一次性写入全部 5 个文件。**
 
-**写入顺序（严格按此顺序，不可乱序）：**
+**为什么用 MCP 而不是直接编辑文件？**
 
-1. `projectbrief.md` — 写入核心愿景、KPI、目标用户、Non-Goals
-2. `systemPatterns.md` — 写入架构概览、模块定义表格、设计原则
-3. `techContext.md` — 写入技术栈表格、外部依赖约束、已知坑点
-4. `progress.md` — 写入"项目接管完成"里程碑，以及从用户处获取的当前待办事项
-5. `activeContext.md` — 写入当前焦点（来自 Phase 3 Step 3.4 的用户回答）
+MCP 工具是框架的强制执行层。直接编辑文件意味着 AI 可以在任何时候、跳过任何步骤地修改 project_map——这破坏了校准对话的意义。MCP 工具通过 `user_confirmed` 参数作为硬性门控：AI 必须声明"用户已经确认了草稿"才能触发写入，否则工具直接拒绝。
 
-**写入规范：**
-- 删除所有 `[TODO]` 占位符，替换为真实内容
-- 删除文件底部的"引导问题"章节（它们只在初始化前有用）
-- 每个写入的事实，在文件内用注释标注来源文件（如 `<!-- 来源: src/pipeline.py -->` ），方便日后验证
-- 不确定的内容用 `[待确认]` 标注，而不是凭空填写
+**调用规范：**
 
-**Phase 4 完成标准**：5 个文件中不再有 `[TODO]` 占位符。
+```
+调用 MCP 工具: force_project_bootstrap_write
+参数:
+  projectbrief_content  = [Phase 3.1 用户确认后的完整内容，不含任何 [TODO]]
+  systemPatterns_content = [Phase 3.2 用户确认后的完整内容，不含任何 [TODO]]
+  techContext_content   = [Phase 3.3 用户确认后的完整内容，不含任何 [TODO]]
+  activeContext_focus   = [Phase 3.4 用户回答的当前最紧迫任务]
+  progress_initial      = [当前待办事项列表]
+  user_confirmed        = True  ← 只有在用户明确表示"可以写入"后才能设为 True
+```
+
+**三道内置门控（MCP 工具自动执行）：**
+
+| 门控 | 检查内容 | 拒绝条件 |
+|---|---|---|
+| Gate 1 | `user_confirmed` 参数 | `False` 时直接拒绝，要求先完成校准对话 |
+| Gate 2 | 所有内容字段 | 任意字段含 `[TODO]` 时拒绝，要求替换为真实内容或 `[待确认]` |
+| Gate 3 | `docs/project_map/` 目录 | 目录不存在时拒绝，提示框架未正确植入 |
+
+**Phase 4 完成标准**：MCP 工具返回 `SUCCESS`，5 个文件已写入，git commit 已创建。
 
 ---
 

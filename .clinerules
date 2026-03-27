@@ -64,7 +64,7 @@ Run git commit -am "chore: auto save state".
 [清理]: Proactively scan root, scripts/, and tests/ for transitional scripts or trash files. List them and wait for user confirmation to delete.
 
 •
-[初始化项目]: Invoke `skills/project-bootstrap/SKILL.md`. Scan the entire codebase, understand its structure, and populate all 5 files in docs/project_map/ by following the 5-phase bootstrap protocol. Do NOT skip the Phase 3 calibration dialogue with the user.
+[初始化项目]: Invoke `skills/project-bootstrap/SKILL.md`. Scan the entire codebase, understand its structure, and populate all 5 files in docs/project_map/ by following the 5-phase bootstrap protocol. Do NOT skip the Phase 3 calibration dialogue with the user. At Phase 4, you MUST call MCP tool `force_project_bootstrap_write` with user_confirmed=True — direct file editing is FORBIDDEN.
 
 3. 🛡️ Development Philosophy (Level 4 铁律)
 

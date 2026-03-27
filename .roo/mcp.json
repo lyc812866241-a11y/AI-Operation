@@ -6,7 +6,8 @@
       "alwaysAllow": [
         "force_architect_save",
         "force_architect_read",
-        "force_garbage_collection"
+        "force_garbage_collection",
+        "force_project_bootstrap_write"
       ]
     }
   }

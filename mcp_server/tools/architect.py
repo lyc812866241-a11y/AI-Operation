@@ -172,3 +172,127 @@ def register_architect_tools(mcp: FastMCP):
                 pass
 
         return f"DELETED: {len(deleted)} files removed.\n" + "\n".join(f"  - {f}" for f in sorted(deleted))
+
+    @mcp.tool()
+    def force_project_bootstrap_write(
+        projectbrief_content: str,
+        systemPatterns_content: str,
+        techContext_content: str,
+        activeContext_focus: str,
+        progress_initial: str,
+        user_confirmed: bool,
+    ) -> str:
+        """
+        [BOOTSTRAP ENFORCEMENT TOOL] Write all 5 project_map files after user calibration.
+
+        This tool MUST be called at Phase 4 of the project-bootstrap skill.
+        It CANNOT be called unless user_confirmed=True, which requires the AI to have
+        completed the Phase 3 calibration dialogue and received explicit user approval.
+
+        This is the enforcement gate that prevents the AI from skipping the calibration
+        dialogue and writing project_map files directly.
+
+        Protocol reference: skills/project-bootstrap/SKILL.md (Phase 4)
+
+        Args:
+            projectbrief_content: Full content for projectbrief.md (no [TODO] placeholders allowed).
+            systemPatterns_content: Full content for systemPatterns.md (no [TODO] placeholders allowed).
+            techContext_content: Full content for techContext.md (no [TODO] placeholders allowed).
+            activeContext_focus: Current focus statement for activeContext.md (from user's Phase 3.4 answer).
+            progress_initial: Initial milestone entry for progress.md.
+            user_confirmed: MUST be True. Set to True only after user has reviewed and approved
+                            the Phase 3 calibration draft. If False, this tool will reject the call.
+
+        Returns:
+            Execution report with files written and git commit status.
+        """
+        # Gate 1: Enforce user confirmation
+        if not user_confirmed:
+            return (
+                "REJECTED: user_confirmed must be True.\n"
+                "You MUST complete Phase 3 (calibration dialogue) and receive explicit user approval "
+                "before calling this tool. Do NOT skip the calibration dialogue."
+            )
+
+        # Gate 2: Reject any content that still contains [TODO] placeholders
+        fields = {
+            "projectbrief_content": projectbrief_content,
+            "systemPatterns_content": systemPatterns_content,
+            "techContext_content": techContext_content,
+            "activeContext_focus": activeContext_focus,
+            "progress_initial": progress_initial,
+        }
+        for field_name, content in fields.items():
+            if "[TODO]" in content:
+                return (
+                    f"REJECTED: {field_name} still contains [TODO] placeholders.\n"
+                    f"All placeholders must be replaced with real content before writing. "
+                    f"Use [待确认] for uncertain items, never [TODO]."
+                )
+
+        # Gate 3: Verify project_map directory exists
+        if not PROJECT_MAP_DIR.exists():
+            return (
+                f"FAILED: Directory {PROJECT_MAP_DIR} does not exist.\n"
+                f"Ensure the framework scaffold has been copied into this project correctly."
+            )
+
+        # Build file contents with source tracing header
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        file_map = {
+            "projectbrief.md": projectbrief_content.strip(),
+            "systemPatterns.md": systemPatterns_content.strip(),
+            "techContext.md": techContext_content.strip(),
+            "activeContext.md": (
+                f"# 当前工作焦点 (Active Context)\n\n"
+                f"> 由 project-bootstrap 技能初始化于 {timestamp}\n\n"
+                f"## 1. 当前焦点 (Current Focus)\n\n{activeContext_focus.strip()}\n\n"
+                f"## 2. 正在处理的问题 (Active Issues)\n\n- 无\n\n"
+                f"## 3. 即将执行的下一步 (Immediate Next Steps)\n\n"
+                f"1. 检查所有 [待确认] 标注的字段，逐一确认或修正\n"
+                f"2. 与用户确认第一个 taskSpec.md 的范围\n\n"
+                f"> 上次更新时间：{timestamp}"
+            ),
+            "progress.md": (
+                f"# 进度与里程碑 (Progress)\n\n"
+                f"> 由 project-bootstrap 技能初始化于 {timestamp}\n\n"
+                f"## 已完成里程碑\n\n"
+                f"- [{timestamp}] 项目接管完成，project_map 初始化\n\n"
+                f"## 当前待办\n\n{progress_initial.strip()}\n\n"
+                f"## 已知风险\n\n- 无"
+            ),
+        }
+
+        # Write all 5 files (full overwrite, replacing templates)
+        written_files = []
+        for filename, content in file_map.items():
+            filepath = PROJECT_MAP_DIR / filename
+            try:
+                filepath.write_text(content, encoding="utf-8")
+                written_files.append(filename)
+            except Exception as e:
+                return f"FAILED: Could not write {filename}: {e}"
+
+        # Git commit
+        try:
+            subprocess.run(["git", "add", str(PROJECT_MAP_DIR)], check=True, capture_output=True)
+            result = subprocess.run(
+                ["git", "commit", "-m", f"chore: bootstrap project map [{timestamp}]"],
+                check=True, capture_output=True, text=True
+            )
+            return (
+                f"SUCCESS: Project bootstrap complete.\n"
+                f"Files written: {', '.join(written_files)}\n"
+                f"Git commit: {result.stdout.strip()}\n\n"
+                f"Next step: Run [读档] to verify the initialized state."
+            )
+        except subprocess.CalledProcessError as e:
+            stderr = e.stderr if hasattr(e, "stderr") and e.stderr else str(e)
+            return (
+                f"PARTIAL SUCCESS: Files written but git commit failed.\n"
+                f"Files written: {', '.join(written_files)}\n"
+                f"Git error: {stderr}\n"
+                f"Manual commit required: git add docs/project_map/ && git commit -m 'chore: bootstrap project map'"
+            )
