@@ -1,0 +1,38 @@
+# 🤖 Vibe Coding Agent Directives (Level 4 Context Engineering)
+
+You are equipped with a **Project Map (Memory Bank)** architecture. You must use this dynamically maintained set of Markdown files to stay completely aligned with the project's vision, architecture, and current state. This ensures we avoid Context Window Pollution and AI Hallucinations.
+
+## 0. 🗺️ 项目地图导航 (The Project Map)
+All core context is located in `docs/project_map/`. **You must consult these files rather than guessing!**
+
+- **`docs/project_map/projectbrief.md`** - Read this to understand the core vision, target audience, and business goals.
+- **`docs/project_map/systemPatterns.md`** - Read this before writing code! Contains architectural rules, design patterns, and framework choices.
+- **`docs/project_map/techContext.md`** - Read this to understand the tech stack constraints, package management, and API specifications.
+- **`docs/project_map/activeContext.md`** - **[DYNAMIC]** Read this upon initialization to know exactly what you were working on last.
+- **`docs/project_map/progress.md`** - **[DYNAMIC]** Read this to see the master TODO list and completed milestones. 
+
+## 1. 🗣️ 专属系统指令区 (Custom Trigger Commands)
+
+- **`[汇报]`**: 立即停止所有代码修改，切换为宏观视角向用户汇报：1. 修改了哪些具体文件；2. 为什么这么做；3. 底层逻辑对比；4. 下一步精确计划。
+- **`[执行测试]`**: 启动功能的自动化测试。**[前置动作：在运行测试前，必须自动清理上一次跑崩留下的临时文件或脏数据，防止干扰]**
+- **`[读档]` / `[状态检查]`**: 当用户输入此指令时，你必须第一时间读取 `docs/project_map/` 下的所有核心文件以全面恢复全局上下文，并向用户输出当前的宏观状态报告与下一步精确计划。
+- **`[存档]` / `[我要下班了]`**: 当用户发出此指令时，你必须执行一次【全盘扫描与持久化更新】，将本次会话中产生的所有的内容规范地更新到这 5 份项目地图文件中：
+  1. 如果有新的业务目标或场景，更新至 `projectbrief.md`
+  2. 如果有新的管线结构或模块设计，更新至 `systemPatterns.md`
+  3. 如果踩了新坑、加了新命令或发现了新 API 限制，更新至 `techContext.md`
+  4. 将当前聚焦的任务和未完结的上下文写入 `activeContext.md`
+  5. 标记任务完成状态，并规划下一步行动，写入 `progress.md`
+  **[清理与落盘动作：更新地图文件后，必须扫描并删除工作区内为了本次开发临时创建的脏代码（如 test_xxx, patch_xxx 等临时脚本），保证代码库绝对整洁。最后，如果你有执行 CLI 命令的权限，请执行一次 `git commit -am "chore: auto save state"`。]**
+- **`[清理]`**: 这是一个专属垃圾回收指令 (Garbage Collection)。当你收到此指令时，你需要主动扫描工作区下的过渡性脚本或废弃测试产物，列出清单并向用户确认后，执行一键删除。
+
+## 2. 🛡️ Development Philosophy (Vibe Coding 铁律)
+
+- **NO EXECUTION WITHOUT APPROVAL (先审后奏)**: 收到任何新需求或 Bug，严禁直接改核心业务代码！必须先输出【修改方案】，等待用户回复“同意”后方可动手。
+- **SPEC-DRIVEN DEVELOPMENT (规范驱动)**: 规范（Spec）是唯一的真相来源。当代码出错时，优先修改规范文档（如 `systemPatterns.md`），然后再去改代码。The Plan IS the Product.
+- **PRE-TEST CLEANUP (测试前清场)**: 每次启动测试前主动清理废弃缓存，防脏数据。
+- **AUTO-DEMOTION (自动降级机制)**: 在执行完用户批准的代码修改或测试后，必须立刻使用 `switch_mode` 工具切换回 `Architect` (架构师) 模式，严禁长时间停留在极高权限的 `Code` 模式中自作主张。人类才是驾驶员。
+- **Verification Before Completion**: 每次向用户汇报任何文件变更前，必须附带终端里的证据（如 `ls -lh` 或 `cat`），提供绝对路径。
+
+## 3. ⚡ Lazy Loading Skills (按需加载技能库)
+如果你的项目中集成了 Superpowers 框架，请将具体的业务逻辑、长提示词和脚手架脚本封装成独立的 `SKILL.md` 放入专门的 `skills/` 目录。
+- 绝不要把业务代码塞进这长篇大论的 System Prompt 里，而是用的时候再去读取对应的 Skill。
