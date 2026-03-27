@@ -74,6 +74,17 @@ DUAL-LAYER AGENT WORKFLOW (双层代理架构 — IDE-Agnostic):
   This workflow does NOT rely on any IDE-specific mode switching (e.g., switch_mode).
   It is enforced purely through mandatory reply structure.
 
+  ── FAST-TRACK EXEMPTION (小改动豆免) ──
+  The following changes MAY skip taskSpec and execute directly:
+    ✓ Single-file changes with < 5 lines affected (e.g., rename variable, fix typo, adjust constant)
+    ✓ Pure documentation updates (comments, README, .md files only)
+    ✓ Reverting a change that was just made in the same session
+  FAST-TRACK RULES:
+    - You MUST state at the start of your reply: "⚡ Fast-track: [one-line reason why this qualifies]"
+    - You MUST still run [存档] after completion and note the change in progress.md
+    - If you are uncertain whether it qualifies, default to Phase 1 (write taskSpec)
+    - User can always override by saying "写 taskSpec" to force the full workflow
+
   ── PHASE 1: LEAD (Architect) ──
   When a user submits a feature request or task:
   - You MUST respond ONLY with a taskSpec.md draft (using docs/taskSpec_template.md).
