@@ -51,9 +51,17 @@ git log --oneline -20 2>/dev/null || echo "非 Git 仓库"
 
 # 6. 现有文档
 find . -name "*.md" -not -path '*/.git/*' | head -20
+
+# 7. 已有的业务 Skill 模块（关键：必须扫描，防止遗漏已完成的功能）
+# 项目可能已有自己的 skills/ 目录（与框架的 skills/ 不同，是业务逻辑模块）
+ls skills/ 2>/dev/null && echo "--- skills 目录存在 ---"
+find . -path '*/skills/*.py' -not -path '*/__pycache__/*' | sort
+find . -name 'OPERATOR_GUIDE.md' -o -name 'PIPELINE_GUIDE.md' -o -name 'ARCHITECTURE.md' 2>/dev/null
 ```
 
-**Phase 1 完成标准**：能回答"这是一个什么类型的项目，用什么语言写的，有多少文件"。
+> **⚠️ 特别注意**：项目中的 `skills/` 目录可能包含已完成的业务功能模块（如 `audio_cloning.py`、`extract_product.py` 等），这些是**已实现的能力清单**，必须在 Phase 2 中读取并在 `systemPatterns.md` 中体现。不能只看 `src/` 目录。
+
+**Phase 1 完成标准**：能回答"这是一个什么类型的项目，用什么语言写的，有多少文件，以及 skills/ 目录下有哪些已完成的业务模块"。
 
 ---
 
@@ -68,6 +76,7 @@ find . -name "*.md" -not -path '*/.git/*' | head -20
 | P0 | 入口文件（`main.py`、`app.py`、`index.js` 等） | 理解系统从哪里启动，主流程是什么 |
 | P0 | 现有 README.md | 了解作者自己的描述 |
 | P1 | 核心业务逻辑目录（`src/`、`lib/`、`core/`、`agents/` 等） | 理解模块划分 |
+| P1 | **`skills/` 目录下的所有 `.py` 文件**（如果存在） | **识别已完成的业务能力模块，这是最容易被遗漏的部分** |
 | P1 | 依赖文件（`requirements.txt`、`package.json`） | 确认技术栈和第三方依赖 |
 | P2 | 配置文件（`.env.example`、`config.py`、`settings.py`） | 了解环境变量和外部服务依赖 |
 | P2 | 测试目录（`tests/`、`__tests__/`） | 了解已有的功能边界 |
@@ -78,6 +87,7 @@ find . -name "*.md" -not -path '*/.git/*' | head -20
 - 有哪些明显的模块边界？
 - 有哪些外部 API 或服务被调用？
 - 代码里有没有明显的"坑"（TODO、FIXME、HACK 注释）？
+- **`skills/` 目录下有哪些已完成的模块？它们各自的职责是什么？**（必须逐一列出，不能遗漏）
 
 **Phase 2 完成标准**：能用 3 句话描述这个系统的核心数据流。
 
@@ -187,6 +197,7 @@ MCP 工具是框架的强制执行层。直接编辑文件意味着 AI 可以在
 |---|---|
 | 看了 README 就直接填写，没有读代码 | README 可能过时。必须用代码验证 README 的描述。 |
 | 把所有模块都列进 systemPatterns | 只列核心模块（数据流上的关键节点）。辅助工具不需要列入。 |
+| **遗漏 `skills/` 目录的业务模块** | **Phase 1 第 7 条扫描命令必须执行。`skills/` 下的 `.py` 文件是已完成的能力，必须在 `systemPatterns.md` 中体现。** |
 | 对不确定的内容也填写具体值 | 用 `[待确认]` 标注，不要凭空填写。 |
 | 一次性写完所有文件，不与用户校准 | Phase 3 的校准是强制的。先对话，再写文件。 |
 | 把 `activeContext.md` 当静态文件填写 | 它是动态文件，只填写"当前最紧迫的任务"，不要填写长期规划。 |
