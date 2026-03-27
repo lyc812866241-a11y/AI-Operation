@@ -62,14 +62,18 @@ Run git commit -am "chore: auto save state".
 3. 🛡️ Development Philosophy (Level 4 铁律)
 
 •
-DUAL-LAYER AGENT WORKFLOW (双层代理架构): 
+DUAL-LAYER AGENT WORKFLOW (双层代理架构):
   1. User request received.
-  2. Lead Agent (Architect mode) analyzes and writes `docs/taskSpec.md`.
-  3. User reviews and approves taskSpec.md.
+  2. Lead Agent (Architect mode) analyzes intent and writes `docs/taskSpec.md`.
+     [MANDATORY] Section 6 (Architecture Doc Impact) MUST be filled — never leave it blank.
+  3. User reviews and approves taskSpec.md (including the doc impact assessment).
   4. Worker Agent (Code mode) executes the exact specification.
-  5. Validation and Testing.
-  6. Save checkpoint.
-NEVER modify core code directly upon receiving a new requirement without an approved taskSpec.md.
+  5. Validation and Testing per Acceptance Criteria in taskSpec.md.
+  6. [MANDATORY] If taskSpec.md Section 6 marked any doc update, update systemPatterns.md
+     and/or techContext.md BEFORE proceeding to step 7. This step is non-skippable.
+  7. Save checkpoint via [存档].
+NEVER modify core code without an approved taskSpec.md.
+NEVER run [存档] if Section 6 doc updates are marked but not yet completed.
 
 •
 STRICT NODE-BY-NODE TESTING (单步验证): Execute tests strictly node-by-node (e.g., --step X). Full pipeline blind runs are forbidden.

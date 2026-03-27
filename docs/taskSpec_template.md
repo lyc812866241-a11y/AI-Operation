@@ -39,6 +39,16 @@
 1. [验证步骤 1，如"运行 `python tests/test_xxx.py`，输出应包含 'success'"]
 2. [验证步骤 2，如"检查 `data/output.json` 是否包含预期字段"]
 
+## 6. 架构文档影响评估 (Architecture Doc Impact)
+
+> **[强制字段]** Lead Agent 生成本规格书时必须回答以下问题。
+> 用户在审批 taskSpec.md 时，同时审批了文档更新计划。
+> Worker Agent 执行完代码后，必须先完成此处标记的文档更新，才能执行 `[存档]`。
+
+- [ ] **`systemPatterns.md` 需要更新**：[TODO: 描述哪个模块定义、设计原则或数据契约需要变更，以及具体变更内容]
+- [ ] **`techContext.md` 需要更新**：[TODO: 描述哪个技术约束或已知坑点需要新增或修改]
+- [ ] **无需更新**：[TODO: 说明理由，如"本次变更仅修改内部实现，不影响模块边界或对外契约"]
+
 ---
 
 **审批状态 (Approval Status)：** `[待审批 Pending]`
