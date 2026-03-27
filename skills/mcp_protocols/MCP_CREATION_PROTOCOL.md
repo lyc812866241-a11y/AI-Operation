@@ -85,3 +85,4 @@ AI 必须按照四步协议完整执行，不允许只完成部分步骤。
 | `[存档]` | `force_architect_save` | `tools/architect.py` | `SAVE_PROTOCOL.md` |
 | `[读档]` | `force_architect_read` | `tools/architect.py` | `SAVE_PROTOCOL.md` |
 | `[清理]` | `force_garbage_collection` | `tools/architect.py` | `SAVE_PROTOCOL.md` |
+| `[初始化项目]` | `force_project_bootstrap_write` | `tools/architect.py` | `BOOTSTRAP_PROTOCOL.md` |

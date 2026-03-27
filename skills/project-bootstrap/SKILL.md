@@ -160,19 +160,16 @@ MCP 工具是框架的强制执行层。直接编辑文件意味着 AI 可以在
 
 ---
 
-### Phase 5：存档与验证（Archive & Verify）
+### Phase 5：验证（Verify）
 
-**目标：确认初始化结果，建立第一个 Git 检查点。**
+**目标：确认 MCP 工具的写入结果，让用户验收初始化内容。**
 
-1. 执行 `[读档]` 指令，输出宏观状态报告，让用户验证内容是否准确
-2. 如果用户确认无误，执行：
-   ```bash
-   git add docs/project_map/
-   git commit -m "chore: bootstrap project map via project-bootstrap skill"
+> **注意**：git commit 已由 Phase 4 的 MCP 工具自动完成，此阶段无需再次提交。
+
+1. 执行 `[读档]` 指令，输出宏观状态报告，让用户验证 5 个文件的内容是否准确
+2. 向用户汇报：
    ```
-3. 向用户汇报：
-   ```
-   项目接管完成。project_map 已初始化：
+   项目接管完成。project_map 已初始化（git commit 已由 MCP 工具自动创建）：
    - projectbrief.md：[一句话摘要]
    - systemPatterns.md：[模块数量] 个模块已定义
    - techContext.md：[技术栈] + [坑点数量] 个已知坑点
