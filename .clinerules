@@ -69,16 +69,36 @@ Run git commit -am "chore: auto save state".
 3. 🛡️ Development Philosophy (Level 4 铁律)
 
 •
-DUAL-LAYER AGENT WORKFLOW (双层代理架构):
-  1. User request received.
-  2. Lead Agent (Architect mode) analyzes intent and writes `docs/taskSpec.md`.
-     [MANDATORY] Section 6 (Architecture Doc Impact) MUST be filled — never leave it blank.
-  3. User reviews and approves taskSpec.md (including the doc impact assessment).
-  4. Worker Agent (Code mode) executes the exact specification.
-  5. Validation and Testing per Acceptance Criteria in taskSpec.md.
-  6. [MANDATORY] If taskSpec.md Section 6 marked any doc update, update systemPatterns.md
-     and/or techContext.md BEFORE proceeding to step 7. This step is non-skippable.
-  7. Save checkpoint via [存档].
+DUAL-LAYER AGENT WORKFLOW (双层代理架构 — IDE-Agnostic):
+
+  This workflow does NOT rely on any IDE-specific mode switching (e.g., switch_mode).
+  It is enforced purely through mandatory reply structure.
+
+  ── PHASE 1: LEAD (Architect) ──
+  When a user submits a feature request or task:
+  - You MUST respond ONLY with a taskSpec.md draft (using docs/taskSpec_template.md).
+  - Your reply MUST end with: "⏸ 等待审批。未开始执行任何代码变更。"
+  - You MUST NOT write, edit, or execute any code in this reply.
+  - Section 6 (Architecture Doc Impact) MUST be filled — never leave it blank.
+
+  ── GATE: USER APPROVAL ──
+  Do NOT proceed to Phase 2 until the user explicitly approves.
+  Approval signals: "批准", "approved", "ok go", "执行", or equivalent.
+  If the user asks for changes to the spec, revise taskSpec.md and return to Phase 1.
+
+  ── PHASE 2: WORKER (Code) ──
+  After approval:
+  - Execute ONLY what is specified in the approved taskSpec.md.
+  - Do NOT add features, refactor, or fix unrelated issues.
+  - Run validation per Acceptance Criteria in Section 5.
+  - [MANDATORY] If Section 6 marked any doc update, update systemPatterns.md
+    and/or techContext.md BEFORE proceeding to save. This step is non-skippable.
+  - Your reply MUST end with: "✅ 执行完毕。运行 [存档] 保存检查点。"
+
+  ── RETURN TO LEAD ──
+  After Phase 2 completes, you automatically return to Lead (Architect) posture.
+  Wait for the next user request before taking any further action.
+
 NEVER modify core code without an approved taskSpec.md.
 NEVER run [存档] if Section 6 doc updates are marked but not yet completed.
 
@@ -89,7 +109,7 @@ STRICT NODE-BY-NODE TESTING (单步验证): Execute tests strictly node-by-node 
 CONTRACT-DRIVEN SKILLS (契约驱动): Any script in the skills/ directory is an ADK Tool. It MUST have a strict Input/Output contract. Do not write monolithic spaghetti code.
 
 •
-AUTO-DEMOTION (自动降级机制): After executing approved code changes, immediately use switch_mode to revert to Architect mode. Humans drive, AI navigates.
+AUTO-RETURN TO LEAD (自动回归架构师姿态): After Phase 2 execution completes, automatically return to Lead (Architect) posture. Do NOT continue coding or make additional changes without a new approved taskSpec. Humans drive, AI navigates.
 
 •
 VERIFICATION BEFORE COMPLETION: When reporting file changes, provide terminal evidence (e.g., ls -lh or cat with absolute paths).
