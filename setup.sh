@@ -1,28 +1,31 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Vibe Coding Agent Framework — One-Command Setup
+# Vibe Coding Agent Framework — One-Command Installer
 # =============================================================================
-# Usage: bash setup.sh
+#
+# USAGE (from your project root directory):
+#
+#   bash <(curl -fsSL https://raw.githubusercontent.com/lyc812866241-a11y/AI-Operation/master/setup.sh)
 #
 # What this script does:
-#   1. Checks for Python 3.8+ (required by MCP)
-#   2. Creates a virtual environment at ./venv/
-#   3. Installs MCP dependencies (mcp[cli], fastmcp)
-#   4. Auto-detects the venv Python path
-#   5. Writes the correct path into .roo/mcp.json
+#   1. Checks for Python 3.8+
+#   2. Downloads scaffold files into the current directory
+#   3. Creates a virtual environment at ./venv/
+#   4. Installs MCP dependencies (mcp[cli], fastmcp)
+#   5. Auto-detects the venv Python path and writes it into .roo/mcp.json
 #   6. Verifies the MCP server can start
 #   7. Prints next steps
 # =============================================================================
 
-set -e  # Exit immediately on any error
+set -e
 
-# ── Colors ──────────────────────────────────────────────────────────────────
+# ── Colors ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 BOLD='\033[1m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 print_step()  { echo -e "\n${BLUE}${BOLD}▶ $1${NC}"; }
 print_ok()    { echo -e "  ${GREEN}✓ $1${NC}"; }
@@ -30,15 +33,29 @@ print_warn()  { echo -e "  ${YELLOW}⚠ $1${NC}"; }
 print_error() { echo -e "  ${RED}✗ $1${NC}"; }
 print_info()  { echo -e "  ${NC}$1${NC}"; }
 
-# ── Banner ───────────────────────────────────────────────────────────────────
+# ── Banner ────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}╔══════════════════════════════════════════════════╗${NC}"
 echo -e "${BOLD}║     Vibe Coding Agent Framework — Setup          ║${NC}"
 echo -e "${BOLD}╚══════════════════════════════════════════════════╝${NC}"
 echo ""
 
-# ── Step 1: Detect Python ────────────────────────────────────────────────────
-print_step "Step 1/5: Checking Python version"
+# ── Determine install target directory ───────────────────────────────────────
+# If run via curl | bash, BASH_SOURCE[0] is empty or /dev/stdin.
+# In that case, install into the current working directory (the user's project).
+if [ -n "${BASH_SOURCE[0]}" ] && [ "${BASH_SOURCE[0]}" != "/dev/stdin" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    REMOTE_MODE=false
+else
+    SCRIPT_DIR="$(pwd)"
+    REMOTE_MODE=true
+fi
+
+REPO_URL="https://github.com/lyc812866241-a11y/AI-Operation.git"
+SCAFFOLD_FILES=(".clinerules" ".roo" "docs" "mcp_server" "skills")
+
+# ── Step 1: Detect Python ─────────────────────────────────────────────────────
+print_step "Step 1/6: Checking Python version"
 
 PYTHON_CMD=""
 for cmd in python3 python3.11 python3.10 python3.9 python3.8 python; do
@@ -62,10 +79,44 @@ if [ -z "$PYTHON_CMD" ]; then
     exit 1
 fi
 
-# ── Step 2: Create virtual environment ───────────────────────────────────────
-print_step "Step 2/5: Creating virtual environment at ./venv/"
+# ── Step 2: Download scaffold files (remote mode only) ───────────────────────
+print_step "Step 2/6: Downloading scaffold files"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ "$REMOTE_MODE" = true ]; then
+    print_info "Installing into: $SCRIPT_DIR"
+
+    # Check for git
+    if ! command -v git &>/dev/null; then
+        print_error "git is required but not found. Please install git first."
+        exit 1
+    fi
+
+    TMP_DIR=$(mktemp -d)
+    trap "rm -rf $TMP_DIR" EXIT
+
+    print_info "Cloning scaffold from GitHub..."
+    git clone --depth=1 --quiet "$REPO_URL" "$TMP_DIR"
+
+    # Copy scaffold files into the target project directory
+    for item in "${SCAFFOLD_FILES[@]}"; do
+        if [ -e "$TMP_DIR/$item" ]; then
+            cp -r "$TMP_DIR/$item" "$SCRIPT_DIR/"
+            print_ok "Copied $item"
+        fi
+    done
+    # Also copy setup.sh itself so the user has it locally
+    cp "$TMP_DIR/setup.sh" "$SCRIPT_DIR/setup.sh"
+
+    # Point SCRIPT_DIR to the installed location for subsequent steps
+    SCRIPT_DIR="$SCRIPT_DIR"
+    print_ok "Scaffold files installed into $(pwd)"
+else
+    print_ok "Running from local scaffold directory — skipping download"
+fi
+
+# ── Step 3: Create virtual environment ───────────────────────────────────────
+print_step "Step 3/6: Creating virtual environment at ./venv/"
+
 VENV_DIR="$SCRIPT_DIR/venv"
 
 if [ -d "$VENV_DIR" ]; then
@@ -75,29 +126,26 @@ else
     print_ok "Virtual environment created at $VENV_DIR"
 fi
 
-# Activate venv
-if [ -f "$VENV_DIR/bin/activate" ]; then
-    # macOS / Linux
+# Resolve Python / pip paths (cross-platform)
+if [ -f "$VENV_DIR/bin/python3" ]; then
     VENV_PYTHON="$VENV_DIR/bin/python3"
     VENV_PIP="$VENV_DIR/bin/pip"
-elif [ -f "$VENV_DIR/Scripts/activate" ]; then
-    # Windows (Git Bash / WSL)
+elif [ -f "$VENV_DIR/Scripts/python.exe" ]; then
     VENV_PYTHON="$VENV_DIR/Scripts/python.exe"
     VENV_PIP="$VENV_DIR/Scripts/pip.exe"
 else
-    print_error "Could not locate venv activation script. Setup failed."
+    print_error "Could not locate venv Python. Setup failed."
     exit 1
 fi
 
 print_ok "Using Python at: $VENV_PYTHON"
 
-# ── Step 3: Install dependencies ─────────────────────────────────────────────
-print_step "Step 3/5: Installing MCP dependencies"
+# ── Step 4: Install MCP dependencies ─────────────────────────────────────────
+print_step "Step 4/6: Installing MCP dependencies"
 
 "$VENV_PIP" install --quiet --upgrade pip
 "$VENV_PIP" install --quiet "mcp[cli]" fastmcp
 
-# Verify installation
 if "$VENV_PYTHON" -c "import mcp; import fastmcp" 2>/dev/null; then
     MCP_VERSION=$("$VENV_PYTHON" -c "import mcp; print(mcp.__version__)" 2>/dev/null || echo "unknown")
     print_ok "mcp (v$MCP_VERSION) and fastmcp installed successfully"
@@ -106,29 +154,23 @@ else
     exit 1
 fi
 
-# ── Step 4: Write Python path into .roo/mcp.json ─────────────────────────────
-print_step "Step 4/5: Configuring .roo/mcp.json"
+# ── Step 5: Write Python path into .roo/mcp.json ─────────────────────────────
+print_step "Step 5/6: Configuring .roo/mcp.json"
 
 MCP_JSON_PATH="$SCRIPT_DIR/.roo/mcp.json"
-MCP_SERVER_PATH="$SCRIPT_DIR/mcp_server/server.py"
 
 if [ ! -f "$MCP_JSON_PATH" ]; then
     print_error ".roo/mcp.json not found at $MCP_JSON_PATH"
-    print_info "Make sure you are running this script from the project root."
     exit 1
 fi
 
-# Replace the placeholder path with the actual venv Python path
-# Works on both macOS (BSD sed) and Linux (GNU sed)
+# Replace placeholder — works on both GNU sed (Linux) and BSD sed (macOS)
 if sed --version 2>/dev/null | grep -q GNU; then
-    # GNU sed (Linux)
     sed -i "s|REPLACE_WITH_YOUR_VENV_PYTHON_PATH|$VENV_PYTHON|g" "$MCP_JSON_PATH"
 else
-    # BSD sed (macOS)
     sed -i '' "s|REPLACE_WITH_YOUR_VENV_PYTHON_PATH|$VENV_PYTHON|g" "$MCP_JSON_PATH"
 fi
 
-# Verify the replacement worked
 if grep -q "REPLACE_WITH_YOUR_VENV_PYTHON_PATH" "$MCP_JSON_PATH"; then
     print_error "Failed to update .roo/mcp.json. Please edit it manually:"
     print_info "  Replace REPLACE_WITH_YOUR_VENV_PYTHON_PATH with: $VENV_PYTHON"
@@ -137,10 +179,9 @@ else
     print_ok ".roo/mcp.json updated with Python path: $VENV_PYTHON"
 fi
 
-# ── Step 5: Verify MCP server can start ──────────────────────────────────────
-print_step "Step 5/5: Verifying MCP server"
+# ── Step 6: Verify MCP server ─────────────────────────────────────────────────
+print_step "Step 6/6: Verifying MCP server"
 
-# Run a quick import check (not a full server start, which would block)
 if "$VENV_PYTHON" -c "
 import sys
 sys.path.insert(0, '$SCRIPT_DIR/mcp_server')
@@ -152,11 +193,10 @@ print('OK')
 " 2>/dev/null | grep -q "OK"; then
     print_ok "MCP server imports verified successfully"
 else
-    print_warn "MCP server import check failed — this may be a path issue."
-    print_warn "Try running: $VENV_PYTHON mcp_server/server.py"
+    print_warn "MCP server import check failed — try: $VENV_PYTHON mcp_server/server.py"
 fi
 
-# ── Done ─────────────────────────────────────────────────────────────────────
+# ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}${BOLD}║   ✅  Setup complete!                             ║${NC}"

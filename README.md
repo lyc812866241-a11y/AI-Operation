@@ -14,31 +14,15 @@ The framework enforces a **Dual-Layer Agent Architecture**:
 
 ## How to Deploy
 
-### Step 1 — Copy scaffold into your project
+### One command — that's it
 
 ```bash
-# Clone the scaffold
-git clone https://github.com/lyc812866241-a11y/AI-Operation.git
-
-# Copy into your project root
-cp -r AI-Operation/.clinerules AI-Operation/.roo AI-Operation/docs \
-       AI-Operation/mcp_server AI-Operation/skills AI-Operation/setup.sh \
-       /your/project/root/
+# Run this from your project root directory
+bash <(curl -fsSL https://raw.githubusercontent.com/lyc812866241-a11y/AI-Operation/master/setup.sh)
 ```
 
-Rename `.clinerules` based on your IDE:
-- Roo Code → `.clinerules`
-- Cursor → `.cursorrules`
-- Windsurf → `.windsurfrules`
-
-### Step 2 — One-command setup
-
-```bash
-cd /your/project
-bash setup.sh
-```
-
-That's it. The script will:
+The script will automatically:
+- Download all scaffold files into your current directory
 - Detect your Python version (3.8+ required)
 - Create a `venv/` and install MCP dependencies
 - Auto-detect the Python path and write it into `.roo/mcp.json`
@@ -48,6 +32,8 @@ That's it. The script will:
 Then reload MCP servers in your IDE:
 - **Roo Code**: `Ctrl+Shift+P` → `Roo Code: Refresh MCP Servers`
 - **Cursor / Windsurf**: Restart the IDE
+
+> **Rename `.clinerules` if needed:** Cursor → `.cursorrules` | Windsurf → `.windsurfrules`
 
 ### Step 3 — Initialize your project
 
