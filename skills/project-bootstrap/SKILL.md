@@ -57,6 +57,10 @@ find . -name "*.md" -not -path '*/.git/*' | head -20
 ls skills/ 2>/dev/null && echo "--- skills 目录存在 ---"
 find . -path '*/skills/*.py' -not -path '*/__pycache__/*' | sort
 find . -name 'OPERATOR_GUIDE.md' -o -name 'PIPELINE_GUIDE.md' -o -name 'ARCHITECTURE.md' 2>/dev/null
+
+# 8. 尝试生成全局代码压缩地图（强烈推荐：如果目标环境支持 npx）
+# 这将提取整个代码库的类与函数签名，防止遗漏任何隐藏模块
+npx repomix --compress --output repomix-map.xml 2>/dev/null && echo "--- 全局代码地图 repomix-map.xml 已生成 ---" || echo "--- 未安装 npx，跳过全局地图生成 ---"
 ```
 
 > **⚠️ 特别注意**：项目中的 `skills/` 目录可能包含已完成的业务功能模块（如 `audio_cloning.py`、`extract_product.py` 等），这些是**已实现的能力清单**，必须在 Phase 2 中读取并在 `systemPatterns.md` 中体现。不能只看 `src/` 目录。
@@ -73,6 +77,7 @@ find . -name 'OPERATOR_GUIDE.md' -o -name 'PIPELINE_GUIDE.md' -o -name 'ARCHITEC
 
 | 优先级 | 读取目标 | 目的 |
 |---|---|---|
+| P0 | 全局代码地图（`repomix-map.xml`） | 如果生成成功，必须最优先阅读！它包含全项目的模块签名和依赖关系，能让你获得"上帝视角"，彻底避免遗漏。 |
 | P0 | 入口文件（`main.py`、`app.py`、`index.js` 等） | 理解系统从哪里启动，主流程是什么 |
 | P0 | 现有 README.md | 了解作者自己的描述 |
 | P1 | 核心业务逻辑目录（`src/`、`lib/`、`core/`、`agents/` 等） | 理解模块划分 |
