@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "project_architect": {
+      "command": "REPLACE_WITH_YOUR_VENV_PYTHON_PATH",
+      "args": ["mcp_server/server.py"],
+      "alwaysAllow": [
+        "force_architect_save",
+        "force_architect_read",
+        "force_garbage_collection"
+      ]
+    }
+  }
+}
