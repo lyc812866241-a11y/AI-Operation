@@ -12,9 +12,10 @@
 #   2. Downloads scaffold files into the current directory
 #   3. Creates a virtual environment at ./venv/
 #   4. Installs MCP dependencies (mcp[cli], fastmcp)
-#   5. Auto-detects the venv Python path and writes it into .roo/mcp.json
-#   6. Verifies the MCP server can start
-#   7. Prints next steps
+#   5. Installs repomix (global codebase map tool) via npx or pip
+#   6. Auto-detects the venv Python path and writes it into .roo/mcp.json
+#   7. Verifies the MCP server can start
+#   8. Prints next steps
 # =============================================================================
 
 set -e
@@ -179,6 +180,30 @@ else
     print_ok ".roo/mcp.json updated with Python path: $VENV_PYTHON"
 fi
 
+# ── Step 5.5: Install repomix ────────────────────────────────────────────────
+print_step "Step 5.5/6: Installing repomix (codebase map tool)"
+
+REPOMIX_INSTALLED=false
+
+# Try npx first (Node.js ecosystem, most common)
+if command -v npx &>/dev/null; then
+    print_info "npx found — repomix will be available via 'npx repomix'"
+    # Warm up the npx cache so first run is fast
+    npx repomix --version &>/dev/null 2>&1 && print_ok "repomix (npx) ready" || print_warn "npx repomix cache warm-up failed — will work on first use"
+    REPOMIX_INSTALLED=true
+fi
+
+# Fallback: try pip install repomix (Python port)
+if [ "$REPOMIX_INSTALLED" = false ]; then
+    if "$VENV_PIP" install --quiet repomix 2>/dev/null; then
+        print_ok "repomix installed via pip"
+        REPOMIX_INSTALLED=true
+    else
+        print_warn "repomix not installed (no npx or pip fallback). Project-bootstrap will skip the global map step."
+        print_info "  To install manually: npm install -g repomix  OR  pip install repomix"
+    fi
+fi
+
 # ── Step 6: Verify MCP server ─────────────────────────────────────────────────
 print_step "Step 6/6: Verifying MCP server"
 
@@ -209,6 +234,10 @@ echo -e "     ${YELLOW}Roo Code${NC}: Ctrl+Shift+P → 'Roo Code: Refresh MCP Se
 echo -e "     ${YELLOW}Cursor${NC}  : Restart the IDE"
 echo -e "  3. In your first chat with the AI, type:"
 echo -e "     ${BLUE}[初始化项目]${NC}"
+echo -e ""
+echo -e "  ${BOLD}Tip:${NC} During [初始化项目], the AI will run 'npx repomix --compress'"
+echo -e "  to generate a full codebase map. This ensures NO modules are missed."
+echo -e "  Requires Node.js / npx to be available in the project's environment."
 echo ""
 echo -e "  ${BOLD}MCP server path:${NC} $VENV_PYTHON mcp_server/server.py"
 echo -e "  ${BOLD}Config file:${NC}     $MCP_JSON_PATH"
