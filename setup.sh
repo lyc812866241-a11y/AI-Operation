@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Vibe Coding Agent Framework — One-Command Setup
+# =============================================================================
+# Usage: bash setup.sh
+#
+# What this script does:
+#   1. Checks for Python 3.8+ (required by MCP)
+#   2. Creates a virtual environment at ./venv/
+#   3. Installs MCP dependencies (mcp[cli], fastmcp)
+#   4. Auto-detects the venv Python path
+#   5. Writes the correct path into .roo/mcp.json
+#   6. Verifies the MCP server can start
+#   7. Prints next steps
+# =============================================================================
+
+set -e  # Exit immediately on any error
+
+# ── Colors ──────────────────────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+print_step()  { echo -e "\n${BLUE}${BOLD}▶ $1${NC}"; }
+print_ok()    { echo -e "  ${GREEN}✓ $1${NC}"; }
+print_warn()  { echo -e "  ${YELLOW}⚠ $1${NC}"; }
+print_error() { echo -e "  ${RED}✗ $1${NC}"; }
+print_info()  { echo -e "  ${NC}$1${NC}"; }
+
+# ── Banner ───────────────────────────────────────────────────────────────────
+echo ""
+echo -e "${BOLD}╔══════════════════════════════════════════════════╗${NC}"
+echo -e "${BOLD}║     Vibe Coding Agent Framework — Setup          ║${NC}"
+echo -e "${BOLD}╚══════════════════════════════════════════════════╝${NC}"
+echo ""
+
+# ── Step 1: Detect Python ────────────────────────────────────────────────────
+print_step "Step 1/5: Checking Python version"
+
+PYTHON_CMD=""
+for cmd in python3 python3.11 python3.10 python3.9 python3.8 python; do
+    if command -v "$cmd" &>/dev/null; then
+        VERSION=$("$cmd" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
+        MAJOR=$(echo "$VERSION" | cut -d. -f1)
+        MINOR=$(echo "$VERSION" | cut -d. -f2)
+        if [ "$MAJOR" -ge 3 ] && [ "$MINOR" -ge 8 ]; then
+            PYTHON_CMD="$cmd"
+            print_ok "Found $cmd (Python $VERSION)"
+            break
+        fi
+    fi
+done
+
+if [ -z "$PYTHON_CMD" ]; then
+    print_error "Python 3.8+ not found. Please install Python first."
+    print_info "  Mac:   brew install python3"
+    print_info "  Linux: sudo apt install python3"
+    print_info "  Win:   https://www.python.org/downloads/"
+    exit 1
+fi
+
+# ── Step 2: Create virtual environment ───────────────────────────────────────
+print_step "Step 2/5: Creating virtual environment at ./venv/"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_DIR="$SCRIPT_DIR/venv"
+
+if [ -d "$VENV_DIR" ]; then
+    print_warn "venv/ already exists — skipping creation, will update dependencies"
+else
+    "$PYTHON_CMD" -m venv "$VENV_DIR"
+    print_ok "Virtual environment created at $VENV_DIR"
+fi
+
+# Activate venv
+if [ -f "$VENV_DIR/bin/activate" ]; then
+    # macOS / Linux
+    VENV_PYTHON="$VENV_DIR/bin/python3"
+    VENV_PIP="$VENV_DIR/bin/pip"
+elif [ -f "$VENV_DIR/Scripts/activate" ]; then
+    # Windows (Git Bash / WSL)
+    VENV_PYTHON="$VENV_DIR/Scripts/python.exe"
+    VENV_PIP="$VENV_DIR/Scripts/pip.exe"
+else
+    print_error "Could not locate venv activation script. Setup failed."
+    exit 1
+fi
+
+print_ok "Using Python at: $VENV_PYTHON"
+
+# ── Step 3: Install dependencies ─────────────────────────────────────────────
+print_step "Step 3/5: Installing MCP dependencies"
+
+"$VENV_PIP" install --quiet --upgrade pip
+"$VENV_PIP" install --quiet "mcp[cli]" fastmcp
+
+# Verify installation
+if "$VENV_PYTHON" -c "import mcp; import fastmcp" 2>/dev/null; then
+    MCP_VERSION=$("$VENV_PYTHON" -c "import mcp; print(mcp.__version__)" 2>/dev/null || echo "unknown")
+    print_ok "mcp (v$MCP_VERSION) and fastmcp installed successfully"
+else
+    print_error "Dependency installation failed. Check your network connection and try again."
+    exit 1
+fi
+
+# ── Step 4: Write Python path into .roo/mcp.json ─────────────────────────────
+print_step "Step 4/5: Configuring .roo/mcp.json"
+
+MCP_JSON_PATH="$SCRIPT_DIR/.roo/mcp.json"
+MCP_SERVER_PATH="$SCRIPT_DIR/mcp_server/server.py"
+
+if [ ! -f "$MCP_JSON_PATH" ]; then
+    print_error ".roo/mcp.json not found at $MCP_JSON_PATH"
+    print_info "Make sure you are running this script from the project root."
+    exit 1
+fi
+
+# Replace the placeholder path with the actual venv Python path
+# Works on both macOS (BSD sed) and Linux (GNU sed)
+if sed --version 2>/dev/null | grep -q GNU; then
+    # GNU sed (Linux)
+    sed -i "s|REPLACE_WITH_YOUR_VENV_PYTHON_PATH|$VENV_PYTHON|g" "$MCP_JSON_PATH"
+else
+    # BSD sed (macOS)
+    sed -i '' "s|REPLACE_WITH_YOUR_VENV_PYTHON_PATH|$VENV_PYTHON|g" "$MCP_JSON_PATH"
+fi
+
+# Verify the replacement worked
+if grep -q "REPLACE_WITH_YOUR_VENV_PYTHON_PATH" "$MCP_JSON_PATH"; then
+    print_error "Failed to update .roo/mcp.json. Please edit it manually:"
+    print_info "  Replace REPLACE_WITH_YOUR_VENV_PYTHON_PATH with: $VENV_PYTHON"
+    exit 1
+else
+    print_ok ".roo/mcp.json updated with Python path: $VENV_PYTHON"
+fi
+
+# ── Step 5: Verify MCP server can start ──────────────────────────────────────
+print_step "Step 5/5: Verifying MCP server"
+
+# Run a quick import check (not a full server start, which would block)
+if "$VENV_PYTHON" -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/mcp_server')
+from tools.architect import register_architect_tools
+from mcp.server.fastmcp import FastMCP
+mcp = FastMCP('test')
+register_architect_tools(mcp)
+print('OK')
+" 2>/dev/null | grep -q "OK"; then
+    print_ok "MCP server imports verified successfully"
+else
+    print_warn "MCP server import check failed — this may be a path issue."
+    print_warn "Try running: $VENV_PYTHON mcp_server/server.py"
+fi
+
+# ── Done ─────────────────────────────────────────────────────────────────────
+echo ""
+echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════════════╗${NC}"
+echo -e "${GREEN}${BOLD}║   ✅  Setup complete!                             ║${NC}"
+echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════════╝${NC}"
+echo ""
+echo -e "${BOLD}Next steps:${NC}"
+echo -e "  1. Open this project in your IDE (Roo Code / Cursor / Windsurf)"
+echo -e "  2. Reload MCP servers:"
+echo -e "     ${YELLOW}Roo Code${NC}: Ctrl+Shift+P → 'Roo Code: Refresh MCP Servers'"
+echo -e "     ${YELLOW}Cursor${NC}  : Restart the IDE"
+echo -e "  3. In your first chat with the AI, type:"
+echo -e "     ${BLUE}[初始化项目]${NC}"
+echo ""
+echo -e "  ${BOLD}MCP server path:${NC} $VENV_PYTHON mcp_server/server.py"
+echo -e "  ${BOLD}Config file:${NC}     $MCP_JSON_PATH"
+echo ""

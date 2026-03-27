@@ -17,7 +17,13 @@ The framework enforces a **Dual-Layer Agent Architecture**:
 ### Step 1 — Copy scaffold into your project
 
 ```bash
-cp -r .clinerules .roo docs/project_map docs/taskSpec_template.md mcp_server skills /your/project/root/
+# Clone the scaffold
+git clone https://github.com/lyc812866241-a11y/AI-Operation.git
+
+# Copy into your project root
+cp -r AI-Operation/.clinerules AI-Operation/.roo AI-Operation/docs \
+       AI-Operation/mcp_server AI-Operation/skills AI-Operation/setup.sh \
+       /your/project/root/
 ```
 
 Rename `.clinerules` based on your IDE:
@@ -25,28 +31,23 @@ Rename `.clinerules` based on your IDE:
 - Cursor → `.cursorrules`
 - Windsurf → `.windsurfrules`
 
-### Step 2 — Set up the MCP enforcement layer
+### Step 2 — One-command setup
 
 ```bash
 cd /your/project
-python -m venv venv
-source venv/bin/activate
-pip install "mcp[cli]" fastmcp
+bash setup.sh
 ```
 
-Edit `.roo/mcp.json` and replace the placeholder with your actual Python path:
-```json
-{
-  "mcpServers": {
-    "project_architect": {
-      "command": "/your/project/venv/bin/python3",
-      "args": ["mcp_server/server.py"]
-    }
-  }
-}
-```
+That's it. The script will:
+- Detect your Python version (3.8+ required)
+- Create a `venv/` and install MCP dependencies
+- Auto-detect the Python path and write it into `.roo/mcp.json`
+- Verify the MCP server starts correctly
+- Print your exact next steps
 
-In VS Code: `Ctrl+Shift+P` → `Roo Code: Refresh MCP Servers`
+Then reload MCP servers in your IDE:
+- **Roo Code**: `Ctrl+Shift+P` → `Roo Code: Refresh MCP Servers`
+- **Cursor / Windsurf**: Restart the IDE
 
 ### Step 3 — Initialize your project
 
@@ -76,6 +77,7 @@ The AI will scan your codebase, understand its structure, present a draft for yo
 ## Architecture
 
 ```
+setup.sh                 ← One-command installer (auto-configures .roo/mcp.json)
 .clinerules              ← AI behavior rules (Dual-Layer Workflow, Iron Laws, trigger routing)
 docs/
   project_map/           ← The 5 core memory files (AI's long-term memory)
