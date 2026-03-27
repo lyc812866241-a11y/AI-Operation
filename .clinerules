@@ -64,7 +64,14 @@ Run git commit -am "chore: auto save state".
 3. 🛡️ Development Philosophy (Level 4 铁律)
 
 •
-NO EXECUTION WITHOUT APPROVAL (先审后奏): Never modify core code directly upon receiving a new requirement. Output a [Modification Plan] first and wait for "同意" (Agree).
+DUAL-LAYER AGENT WORKFLOW (双层代理架构): 
+  1. User request received.
+  2. Lead Agent (Architect mode) analyzes and writes `docs/taskSpec.md`.
+  3. User reviews and approves taskSpec.md.
+  4. Worker Agent (Code mode) executes the exact specification.
+  5. Validation and Testing.
+  6. Save checkpoint.
+NEVER modify core code directly upon receiving a new requirement without an approved taskSpec.md.
 
 •
 STRICT NODE-BY-NODE TESTING (单步验证): Execute tests strictly node-by-node (e.g., --step X). Full pipeline blind runs are forbidden.
