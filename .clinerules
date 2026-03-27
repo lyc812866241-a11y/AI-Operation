@@ -5,10 +5,11 @@ You are an elite AI Developer operating within a Project Map (Memory Bank) archi
 CRITICAL: At the start of EVERY new conversation, before responding to the user's first prompt, you MUST silently read the following files to restore your context:
 
 1.
-docs/project_map/activeContext.md (What are we doing right now?)
+docs/project_map/progress.md (What are we doing right now? What is the current status?)
 
 2.
 docs/project_map/systemPatterns.md (What are the architectural rules?)
+
 If you haven't read them, DO NOT guess. Read them immediately.
 
 1. 🗺️ 项目地图导航 (The Project Map)
@@ -22,13 +23,10 @@ projectbrief.md - Core vision and business goals.
 systemPatterns.md - Architectural rules, pipeline node definitions (Phase 1 to Phase N), and Tool Contracts.
 
 •
-techContext.md - Tech stack constraints (FFmpeg, Demucs, APIs).
+techContext.md - Tech stack constraints and known gotchas.
 
 •
-activeContext.md - [DYNAMIC] Current focus and immediate next steps.
-
-•
-progress.md - [DYNAMIC] Master TODO list and completed milestones.
+progress.md - [DYNAMIC] Current focus, TODO list, and completed milestones.
 
 2. 🗣️ 专属系统指令区 (Custom Trigger Commands)
 
@@ -36,7 +34,7 @@ progress.md - [DYNAMIC] Master TODO list and completed milestones.
 [汇报]: Stop coding. Provide a high-level Architect report: 1. Files modified; 2. Why; 3. Architecture impact; 4. Exact next steps.
 
 •
-[执行测试]: Run isolated node tests. [PRE-CONDITION: You MUST automatically clean up dirty data, temp files, or leftover videos from previous failed runs BEFORE testing.]
+[执行测试]: Run isolated module tests. [PRE-CONDITION: You MUST automatically clean up dirty data, temp files, or leftover artifacts from previous failed runs BEFORE testing.]
 
 •
 [读档]: Force a full read of all 5 files in docs/project_map/ and output a macro state report.
@@ -45,13 +43,13 @@ progress.md - [DYNAMIC] Master TODO list and completed milestones.
 [存档]: Perform a full system save.
 
 1.
-Update activeContext.md and progress.md with current state.
+Update progress.md with current state.
 
 2.
 Update systemPatterns.md or techContext.md if new rules/constraints were discovered.
 
 3.
-Garbage Collection: Scan and delete all temporary scripts (patch_*.py, test_*.py) and temporary text/video files.
+Garbage Collection: Scan and delete all temporary scripts (patch_*.py, test_*.py) and temporary output files.
 
 4.
 Run git commit -am "chore: auto save state".
