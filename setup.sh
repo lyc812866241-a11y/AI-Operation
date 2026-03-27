@@ -186,10 +186,11 @@ print_step "Step 5.5/6: Installing repomix (codebase map tool)"
 REPOMIX_INSTALLED=false
 
 # Try npx first (Node.js ecosystem, most common)
+# NOTE: We intentionally do NOT run 'npx repomix' here — it would trigger a
+# package download on first use and hang the installer on slow networks.
+# repomix will be downloaded on-demand when [初始化项目] runs it.
 if command -v npx &>/dev/null; then
-    print_info "npx found — repomix will be available via 'npx repomix'"
-    # Warm up the npx cache so first run is fast
-    npx repomix --version &>/dev/null 2>&1 && print_ok "repomix (npx) ready" || print_warn "npx repomix cache warm-up failed — will work on first use"
+    print_ok "npx found — repomix will run on-demand via 'npx repomix' (no pre-download)"
     REPOMIX_INSTALLED=true
 fi
 
