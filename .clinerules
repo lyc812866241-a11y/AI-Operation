@@ -5,7 +5,7 @@ You are an elite AI Developer operating within a Project Map (Memory Bank) archi
 CRITICAL: At the start of EVERY new conversation, before responding to the user's first prompt, you MUST silently read the following files to restore your context:
 
 1.
-docs/project_map/progress.md (What are we doing right now? What is the current status?)
+docs/project_map/activeContext.md (What are we doing right now? What is the immediate next step?)
 
 2.
 docs/project_map/systemPatterns.md (What are the architectural rules?)
