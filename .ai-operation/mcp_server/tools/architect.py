@@ -41,6 +41,40 @@ def _clear_mcp_flag():
     if MCP_COMMIT_FLAG.exists():
         MCP_COMMIT_FLAG.unlink()
 
+
+def _compact_dynamic_file(content: str, filename: str) -> str:
+    """Compact a dynamic file (activeContext/progress) that has grown too large.
+
+    Strategy: Split by '---' archive entries, keep the file header + last 2 entries,
+    replace everything in between with a one-line summary of how many entries were compacted.
+    """
+    sections = content.split("\n---\n")
+
+    if len(sections) <= 3:
+        # Not enough sections to compact
+        return content
+
+    # First section is usually the file header (title, instructions)
+    header = sections[0]
+
+    # Last 2 sections are the most recent archives
+    recent = sections[-2:]
+
+    # Middle sections get compacted
+    compacted_count = len(sections) - 3  # -1 header, -2 recent
+
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    compact_notice = (
+        f"\n### [Auto-Compacted — {timestamp}]\n"
+        f"{compacted_count} older archive entries were compacted to stay within prompt budget.\n"
+        f"Full history is preserved in git log."
+    )
+
+    result_parts = [header, compact_notice] + recent
+    return "\n---\n".join(result_parts)
+
 # The 5 canonical files defined in .clinerules
 REQUIRED_FILES = {
     "projectbrief": "projectbrief.md",
@@ -137,9 +171,11 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
                 "or preferences expressed? Use 'NONE' only if truly nothing was learned."
             )
 
-        # Apply surgical updates (append-only to preserve history)
+        # Apply surgical updates (append-only, with auto-compaction for dynamic files)
         changed_files = []
         skipped_files = []
+        DYNAMIC_FILE_MAX_BYTES = 3_000  # Auto-compact when dynamic files exceed this
+
         for filename, content in updates.items():
             stripped = content.strip()
             # NO_CHANGE_BECAUSE: means no update needed (reason logged in audit)
@@ -150,6 +186,14 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
             filepath = PROJECT_MAP_DIR / filename
             if not filepath.parent.exists():
                 return f"FAILED: Directory {PROJECT_MAP_DIR} does not exist. Is this the correct project root?"
+
+            # Auto-compact dynamic files before appending
+            if filename in ("activeContext.md", "progress.md") and filepath.exists():
+                existing = filepath.read_text(encoding="utf-8")
+                if len(existing.encode("utf-8")) > DYNAMIC_FILE_MAX_BYTES:
+                    compacted = _compact_dynamic_file(existing, filename)
+                    filepath.write_text(compacted, encoding="utf-8")
+
             with open(filepath, "a", encoding="utf-8") as f:
                 f.write(f"\n\n---\n### [MCP Auto-Archive]\n{stripped}\n")
             changed_files.append(filename)
