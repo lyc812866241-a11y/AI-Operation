@@ -1,133 +1,166 @@
-# Vibe Coding Agent Framework
+# AI-Operation
 
-> An advanced Context Engineering boilerplate for AI Agents (Level 4 "Robotaxi" standard).
+**AI agent behavior governance framework. Not another prompt template — a physical enforcement layer.**
 
-## What is this?
-
-This is an abstraction of the "Project Map" / "Memory Bank" paradigm designed to elevate any code repository into a fully AI-native **Vibe Coding** workspace. By providing a structured, progressively disclosed information architecture, it prevents AI context-window pollution and "hallucination loops".
-
-The framework enforces a **Dual-Layer Agent Architecture**:
-- **Lead Agent (Architect mode)**: Analyzes intent, writes `taskSpec.md`, waits for human approval.
-- **Worker Agent (Code mode)**: Executes only what the approved spec says, then saves state.
-
-**Key feature: Second-order templates (二阶模板)**
-The 5 project map files are not empty forms — they are "meta-templates" that teach AI *how to* scan any codebase and auto-generate project-specific documentation through a 5-phase bootstrap protocol.
+Most AI coding frameworks tell the AI what to do. AI-Operation makes it **physically impossible** to skip the process.
 
 ---
 
-## Supported IDEs
+## The Problem
 
-| IDE | Rule File | MCP Config | Status |
-|---|---|---|---|
-| **Roo Code** | `.clinerules` | `.roo/mcp.json` | Full support |
-| **Cursor** | `.cursorrules` | `.cursor/mcp.json` | Full support |
-| **Windsurf** | `.windsurfrules` | `.windsurf/mcp.json` | Full support |
-| **Claude Code** | `CLAUDE.md` | `.mcp.json` | Full support |
+You give an AI agent a set of rules. It follows them 85% of the time. The other 15%:
+- It writes code without a plan, then you spend hours debugging the wrong implementation
+- It "forgets" what you were working on after the conversation resets
+- It makes the same mistake three times because it has no memory of being corrected
+- It claims it's done without actually verifying anything
 
-All rule files are auto-generated from `.clinerules` (the canonical source) during setup.
+Text rules are suggestions. AI-Operation turns them into gates.
 
----
+## How It Works
 
-## How to Deploy
+**Three enforcement layers, each harder to bypass than the last:**
+
+```
+Layer 1: Rules (.clinerules / CLAUDE.md)
+  AI reads rules on startup. Each rule has a WHY explanation
+  so the AI understands the reasoning, not just the command.
+  Compliance: ~90%
+
+Layer 2: MCP Tools (9 tools with hard-coded validation)
+  AI must call these tools to save state, submit plans, run tests.
+  Tools reject invalid inputs — empty fields, missing approvals,
+  skipped steps. AI cannot talk its way past code.
+  Compliance: 100% (once the tool is called)
+
+Layer 3: Git Hooks (physical blocking)
+  Three pre-commit gates:
+  Gate 1: Auto-sync rule files across 4 IDEs
+  Gate 2: Block direct edits to project memory files
+  Gate 3: Block code commits without an approved plan
+  Compliance: 95% (only --no-verify bypasses, which rules forbid)
+```
+
+## What Makes This Different
+
+| Feature | Most frameworks | AI-Operation |
+|---|---|---|
+| "Write a plan first" | Text rule (ignorable) | **Git hook blocks commit without approved plan** |
+| "Save your progress" | Text rule (ignorable) | **MCP tool rejects if you don't reflect on lessons learned** |
+| "Don't edit memory files directly" | Not enforced | **Git hook physically blocks the commit** |
+| "Follow the same rules across IDEs" | Manual copy-paste | **Auto-synced on every commit** |
+| "Learn from mistakes" | Doesn't exist | **Correction log → auto-upgrade to permanent checks after 3 repeats** |
+| "Don't skip steps on small changes" | Fixed threshold | **Dynamic trust score adjusts threshold based on error history** |
+
+## Quick Start
 
 ### Linux / macOS / WSL
-
 ```bash
-# Run this from your project root directory
+cd your-project
 bash <(curl -fsSL https://raw.githubusercontent.com/lyc812866241-a11y/AI-Operation/master/setup.sh)
 ```
 
-### Windows (PowerShell)
-
+### Windows PowerShell
 ```powershell
-# Run this from your project root directory
+cd your-project
 irm https://raw.githubusercontent.com/lyc812866241-a11y/AI-Operation/master/setup.ps1 | iex
 ```
 
-The script will automatically:
-- Download all scaffold files into `.ai-operation/` (isolated from your project)
-- Detect your Python version (3.8+ required)
-- Create a virtual environment and install MCP dependencies
-- Auto-configure MCP for all 4 supported IDEs
-- Generate IDE-specific rule files
-- Verify the MCP server starts correctly
-
-Then reload MCP servers in your IDE:
-- **Roo Code**: `Ctrl+Shift+P` → `Roo Code: Refresh MCP Servers`
-- **Cursor / Windsurf**: Restart the IDE
-- **Claude Code**: Auto-detects `.mcp.json`
-
-### Initialize your project
-
-In your first chat with the AI Agent, type:
-
+Then open your IDE and type:
 ```
 [初始化项目]
 ```
 
-The AI will scan your codebase, understand its structure, present a draft for your review, and populate all 5 project map files after your approval. **This only needs to be done once.**
+The AI scans your codebase, drafts a project profile, asks you to verify, and writes it. From that point on, every session starts with context and every save captures lessons.
 
----
+## Supported IDEs
 
-## Trigger Commands
+| IDE | Rule File | MCP Config | Auto-Synced |
+|---|---|---|---|
+| Roo Code | `.clinerules` | `.roo/mcp.json` | Yes |
+| Cursor | `.cursorrules` | `.cursor/mcp.json` | Yes |
+| Windsurf | `.windsurfrules` | `.windsurf/mcp.json` | Yes |
+| Claude Code | `CLAUDE.md` | `.mcp.json` | Yes |
 
-| Command | MCP Tool | What it does |
+Edit `.clinerules` once. The pre-commit hook syncs the other three automatically.
+
+## The 9 MCP Enforcement Tools
+
+| Command | Tool | What It Enforces |
 |---|---|---|
-| `[初始化项目]` | `aio__force_project_bootstrap_write` | **First-time setup.** Scans codebase, calibrates with you, writes all 5 project map files. |
-| `[读档]` | `aio__force_architect_read` | Forces a full read of all 5 project map files and outputs a macro state report. |
-| `[汇报]` | `aio__force_architect_report` | Stops AI from coding. Forces a structured 4-section Architect report. |
-| `[执行测试]` | `aio__force_test_runner` | Runs isolated module tests with auto pre-cleanup. Rejects full pipeline runs. |
-| `[存档]` | `aio__force_architect_save` | Full system save: updates project map files, runs garbage collection, creates git commit. |
-| `[清理]` | `aio__force_garbage_collection` | Scans for temporary/trash files, lists them, waits for your confirmation to delete. |
+| `[初始化项目]` | `aio__force_project_bootstrap_write` | Merges into templates (not overwrite). 3 gates: user confirmed, no placeholders, directory exists |
+| `[存档]` | `aio__force_architect_save` | Rejects empty active context, progress, **and lessons learned**. Clears approval flag after save |
+| `[读档]` | `aio__force_architect_read` | 4KB/file, 12KB total budget. Auto-discovers sub-directory rules. Warns at 70% budget |
+| `[汇报]` | `aio__force_architect_report` | All 4 report sections mandatory. No free-form reports |
+| `[执行测试]` | `aio__force_test_runner` | Auto pre-cleanup. Rejects full-pipeline commands. 5-minute timeout |
+| `[清理]` | `aio__force_garbage_collection` | Two-step: list first, delete only after user confirms |
+| *Phase 1* | `aio__force_taskspec_submit` | Writes plan to file. Clears previous approval. 6 sections required |
+| *Approval* | `aio__force_taskspec_approve` | Validates approval signal. Creates flag for git hook. Checks spec is PENDING |
+| *Fast-track* | `aio__force_fast_track` | Dynamic threshold: 3/5/10 lines based on trust score from correction history |
 
-All 6 commands are backed by MCP enforcement tools — AI cannot bypass them.
+## Self-Evolution: The Framework Gets Smarter
 
----
+```
+Session 1: AI makes a mistake → you correct it → saved to corrections.md (COUNT: 1)
+Session 2: Same mistake → COUNT: 2, AI is reminded before scanning
+Session 3: Same mistake → COUNT: 3 → LESSON auto-promoted to permanent check in SKILL.md
+Session 4+: AI will never make this mistake again — it's hardcoded into the protocol
+```
+
+This works because `[存档]` **forces** the AI to fill `lessons_learned`. The MCP tool rejects empty values. No reflection, no save.
 
 ## Architecture
 
 ```
-Project Root (your project)
-├── .ai-operation/                   ← Framework (isolated from project files)
-│   ├── docs/
-│   │   ├── project_map/             ← The 5 core memory files (AI's long-term memory)
-│   │   │   ├── projectbrief.md      ← [STATIC]  Core vision and business goals
-│   │   │   ├── systemPatterns.md    ← [STATIC]  Architecture rules and module definitions
-│   │   │   ├── techContext.md       ← [STATIC]  Tech stack constraints and known gotchas
-│   │   │   ├── activeContext.md     ← [DYNAMIC] Current focus and immediate next steps
-│   │   │   ├── progress.md          ← [DYNAMIC] Master TODO list and completed milestones
-│   │   │   └── corrections.md       ← Self-correction log (auto-evolving)
-│   │   └── taskSpec_template.md     ← Template for Lead Agent's task specification
-│   ├── mcp_server/                  ← MCP enforcement layer (6 tools, cannot be bypassed)
-│   │   └── tools/architect.py
-│   ├── skills/                      ← Framework capability modules (not your project skills)
-│   │   ├── project-bootstrap/       ← 5-phase project onboarding protocol
-│   │   ├── systematic-debugging/    ← Root-cause investigation protocol
-│   │   ├── test-driven-development/ ← TDD enforcement protocol
-│   │   └── mcp_protocols/           ← MCP tool usage protocols
-│   └── venv/                        ← Python virtual environment for MCP
-│
-├── .clinerules                      ← AI rules (Roo Code) — canonical source
-├── CLAUDE.md                        ← AI rules (Claude Code) — auto-generated
-├── .cursorrules                     ← AI rules (Cursor) — auto-generated
-├── .windsurfrules                   ← AI rules (Windsurf) — auto-generated
-├── .roo/mcp.json                    ← MCP config (Roo Code)
-├── .cursor/mcp.json                 ← MCP config (Cursor)
-├── .windsurf/mcp.json               ← MCP config (Windsurf)
-├── .mcp.json                        ← MCP config (Claude Code)
-│
-├── setup.sh                         ← Installer (Linux/macOS/WSL)
-├── setup.ps1                        ← Installer (Windows PowerShell)
-└── ... your project files ...
+your-project/
+├── .ai-operation/                    # Framework (isolated from your code)
+│   ├── docs/project_map/             # 5-file memory bank (AI's long-term memory)
+│   ├── mcp_server/                   # 9 enforcement tools + audit logger
+│   ├── skills/                       # Bootstrap, debugging, TDD protocols
+│   ├── hooks/                        # 3-gate pre-commit hook
+│   ├── scripts/                      # Rule sync, hook installer
+│   ├── cli/                          # Terminal tool + web dashboard
+│   └── rules.d/                      # Sub-directory rules (for monorepos)
+├── .clinerules                       # Rules (canonical source)
+├── CLAUDE.md / .cursorrules / ...    # Auto-generated per IDE
+└── tests/                            # 19 framework tests
 ```
 
-### Design Principles
+**Framework files never touch your project directories.** No conflicts with your `src/`, `docs/`, `skills/`, or anything else.
 
-1. **Framework isolation** — All framework files live in `.ai-operation/`, never conflicting with your project's `docs/`, `skills/`, or `src/` directories.
-2. **Second-order templates** — The 5 project map files contain fill instructions + examples, not empty forms. AI auto-generates project-specific content via the bootstrap protocol.
-3. **MCP enforcement** — Critical operations are enforced through MCP tools that AI cannot bypass with direct file editing or shell commands.
-4. **Self-evolution** — When AI makes the same mistake 3 times during bootstrap, the lesson is automatically promoted to a mandatory scan step (with user confirmation).
-5. **IDE-agnostic** — The dual-layer workflow is enforced through reply structure, not IDE-specific modes.
+## Dashboard & CLI
+
+```bash
+# Quick status
+python .ai-operation/cli/ai_op.py status
+
+# Read all project memory
+python .ai-operation/cli/ai_op.py read
+
+# Web dashboard (http://localhost:8420)
+python .ai-operation/cli/dashboard.py
+```
+
+## Audit Trail
+
+Every MCP tool call is logged to `.ai-operation/audit.log`:
+```json
+{"ts": "2026-04-01 14:30:22", "tool": "aio__force_architect_save", "status": "SUCCESS", "details": "files=activeContext.md,progress.md"}
+{"ts": "2026-04-01 14:30:25", "tool": "aio__force_taskspec_approve", "status": "CALLED", "details": "批准"}
+```
+
+## Testing
+
+```bash
+python -m pytest tests/ -v
+```
+
+19 tests covering: parameter validation, taskSpec workflow lifecycle, trust scoring, bootstrap merge logic, audit logging.
+
+CI runs on every push: Python 3.9/3.11/3.12 on Ubuntu + Windows.
+
+## License
+
+MIT
 
 ---
 
