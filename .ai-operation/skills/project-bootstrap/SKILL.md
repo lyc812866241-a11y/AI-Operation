@@ -244,7 +244,7 @@ COUNT: [同类错误出现次数，首次填 1]
 
 ### Phase 4：调用 MCP 工具写入文件（MCP-Enforced Write）
 
-**目标：调用 `force_project_bootstrap_write` MCP 工具，将用户确认后的内容一次性写入全部 5 个文件。**
+**目标：调用 `aio__force_project_bootstrap_write` MCP 工具，将用户确认后的内容一次性写入全部 5 个文件。**
 
 **为什么用 MCP 而不是直接编辑文件？**
 
@@ -253,7 +253,7 @@ MCP 工具是框架的强制执行层。直接编辑文件意味着 AI 可以在
 **调用规范：**
 
 ```
-调用 MCP 工具: force_project_bootstrap_write
+调用 MCP 工具: aio__force_project_bootstrap_write
 参数:
   projectbrief_content  = [Phase 3.1 用户确认后的完整内容，不含任何 [TODO]]
   systemPatterns_content = [Phase 3.2 用户确认后的完整内容，不含任何 [TODO]]

@@ -4,13 +4,13 @@
 
 | 用户指令 | 必须调用的 MCP 工具 |
 | :--- | :--- |
-| `[存档]` | `force_architect_save` |
-| `[读档]` | `force_architect_read` |
-| `[清理]` | `force_garbage_collection` |
+| `[存档]` | `aio__force_architect_save` |
+| `[读档]` | `aio__force_architect_read` |
+| `[清理]` | `aio__force_garbage_collection` |
 
 ---
 
-## [存档] 协议：`force_architect_save`
+## [存档] 协议：`aio__force_architect_save`
 
 ### 禁止行为（铁律）
 - **禁止**手动编辑 `.ai-operation/docs/project_map/` 下的任何文件
@@ -54,7 +54,7 @@
 
 ---
 
-## [读档] 协议：`force_architect_read`
+## [读档] 协议：`aio__force_architect_read`
 
 无需参数。调用后 AI 必须：
 1. 将工具返回的全部内容完整阅读
@@ -62,7 +62,7 @@
 
 ---
 
-## [清理] 协议：`force_garbage_collection`
+## [清理] 协议：`aio__force_garbage_collection`
 
 执行分两步：
 1. 先以 `confirm=False` 调用，获取待删除文件列表，展示给用户

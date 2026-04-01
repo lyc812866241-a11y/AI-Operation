@@ -73,12 +73,12 @@ The AI will scan your codebase, understand its structure, present a draft for yo
 
 | Command | MCP Tool | What it does |
 |---|---|---|
-| `[初始化项目]` | `force_project_bootstrap_write` | **First-time setup.** Scans codebase, calibrates with you, writes all 5 project map files. |
-| `[读档]` | `force_architect_read` | Forces a full read of all 5 project map files and outputs a macro state report. |
-| `[汇报]` | `force_architect_report` | Stops AI from coding. Forces a structured 4-section Architect report. |
-| `[执行测试]` | `force_test_runner` | Runs isolated module tests with auto pre-cleanup. Rejects full pipeline runs. |
-| `[存档]` | `force_architect_save` | Full system save: updates project map files, runs garbage collection, creates git commit. |
-| `[清理]` | `force_garbage_collection` | Scans for temporary/trash files, lists them, waits for your confirmation to delete. |
+| `[初始化项目]` | `aio__force_project_bootstrap_write` | **First-time setup.** Scans codebase, calibrates with you, writes all 5 project map files. |
+| `[读档]` | `aio__force_architect_read` | Forces a full read of all 5 project map files and outputs a macro state report. |
+| `[汇报]` | `aio__force_architect_report` | Stops AI from coding. Forces a structured 4-section Architect report. |
+| `[执行测试]` | `aio__force_test_runner` | Runs isolated module tests with auto pre-cleanup. Rejects full pipeline runs. |
+| `[存档]` | `aio__force_architect_save` | Full system save: updates project map files, runs garbage collection, creates git commit. |
+| `[清理]` | `aio__force_garbage_collection` | Scans for temporary/trash files, lists them, waits for your confirmation to delete. |
 
 All 6 commands are backed by MCP enforcement tools — AI cannot bypass them.
 

@@ -2,7 +2,7 @@
 
 ## 触发条件
 
-当用户输入 `[汇报]` 时，AI 必须调用 MCP 工具 `force_architect_report`。
+当用户输入 `[汇报]` 时，AI 必须调用 MCP 工具 `aio__force_architect_report`。
 
 **禁止行为：**
 - 禁止以自由格式输出汇报（必须通过 MCP 工具的 4 个结构化参数）

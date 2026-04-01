@@ -2,7 +2,7 @@
 
 ## 触发条件
 
-当用户输入 `[执行测试]` 时，AI 必须调用 MCP 工具 `force_test_runner`。
+当用户输入 `[执行测试]` 时，AI 必须调用 MCP 工具 `aio__force_test_runner`。
 
 **禁止行为：**
 - 禁止直接运行测试命令（必须通过 MCP 工具）

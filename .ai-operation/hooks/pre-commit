@@ -26,7 +26,7 @@ fi
 
 # ── Project Map Guard ────────────────────────────────────────────────────────
 # Block direct commits to project_map files UNLESS the commit message contains
-# the MCP tool signature (added by force_architect_save / force_project_bootstrap_write)
+# the MCP tool signature (added by aio__force_architect_save / aio__force_project_bootstrap_write)
 #
 # How it works:
 # - MCP tools create commits with messages starting with "chore: architect save"
@@ -61,8 +61,8 @@ if [ -n "$PROTECTED_FILES" ]; then
     echo "$PROTECTED_FILES" | sed 's/^/    /'
     echo ""
     echo "  project_map files must be updated through MCP tools:"
-    echo "    [存档]      → force_architect_save"
-    echo "    [初始化项目] → force_project_bootstrap_write"
+    echo "    [存档]      → aio__force_architect_save"
+    echo "    [初始化项目] → aio__force_project_bootstrap_write"
     echo ""
     echo "  If you need to bypass (emergency only):"
     echo "    git commit --no-verify"

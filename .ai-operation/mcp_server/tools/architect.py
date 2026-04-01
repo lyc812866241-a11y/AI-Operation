@@ -1,9 +1,9 @@
 """
-Architect Enforcement Tools
-============================
-This module contains MCP tools that enforce Level 4 Architect protocols.
-These tools are called by the AI agent when the user issues system commands
-like [存档], [读档], [清理].
+Architect Enforcement Tools (AI-Operation Framework)
+=====================================================
+MCP tools that enforce Level 4 Architect protocols.
+All tool names use the `aio__` namespace prefix to avoid conflicts
+with user project MCP tools.
 
 The AI cannot bypass these tools. It MUST call them to complete the operation.
 This is the "AI creates its own shackles and wears them" mechanism.
@@ -18,6 +18,10 @@ PROJECT_MAP_DIR = Path(".ai-operation/docs/project_map")
 
 # Flag file used to signal pre-commit hook that MCP tool is making the commit
 MCP_COMMIT_FLAG = Path(".ai-operation/.mcp_commit_flag")
+
+# Prompt budget limits (inspired by Claude Code internals)
+MAX_FILE_CHARS = 4_000       # Max chars per project_map file injected into prompt
+MAX_TOTAL_CHARS = 12_000     # Max total chars across all files
 
 
 def _set_mcp_flag():
@@ -45,28 +49,30 @@ def register_architect_tools(mcp: FastMCP):
     """Register all architect enforcement tools onto the MCP server instance."""
 
     @mcp.tool()
-    def force_architect_save(
+    def aio__force_architect_save(
         projectbrief_update: str,
         systemPatterns_update: str,
         techContext_update: str,
         activeContext_update: str,
         progress_update: str,
+        session_compaction: str = "",
     ) -> str:
         """
         [CRITICAL ENFORCEMENT TOOL] Execute the Level 4 Architect Save Protocol.
 
         This tool MUST be called when the user issues the [存档] command.
-        The AI agent MUST NOT manually edit docs/project_map/ files or run git commands directly.
-        All 5 parameters are REQUIRED. Use "NO_CHANGE" only if that file truly has no updates.
-
-        Protocol reference: skills/mcp_protocols/SAVE_PROTOCOL.md
+        The AI agent MUST NOT manually edit project_map files or run git commands directly.
+        All 5 update parameters are REQUIRED. Use "NO_CHANGE" only if that file truly has no updates.
 
         Args:
             projectbrief_update: Updates to core vision or business goals. "NO_CHANGE" if none.
-            systemPatterns_update: New architectural rules, pipeline nodes, or tool contracts discovered. "NO_CHANGE" if none.
-            techContext_update: New tech stack constraints or dependencies discovered. "NO_CHANGE" if none.
+            systemPatterns_update: New architectural rules discovered. "NO_CHANGE" if none.
+            techContext_update: New tech stack constraints discovered. "NO_CHANGE" if none.
             activeContext_update: REQUIRED. Current focus, what was just done, immediate next steps.
             progress_update: REQUIRED. Tasks completed this session, updated TODO items.
+            session_compaction: Optional. A compressed summary of the current conversation session.
+                Include: tools used, key files modified, decisions made, pending work.
+                This is written to activeContext.md as a recovery point for context window overflow.
 
         Returns:
             Execution report with files updated and git commit status.
@@ -99,6 +105,19 @@ def register_architect_tools(mcp: FastMCP):
         if not changed_files:
             return "WARNING: No files were updated. Verify nothing was missed this session."
 
+        # Write session compaction summary (context overflow recovery point)
+        if session_compaction and session_compaction.strip():
+            import datetime
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+            compaction_path = PROJECT_MAP_DIR / "activeContext.md"
+            with open(compaction_path, "a", encoding="utf-8") as f:
+                f.write(
+                    f"\n\n---\n### [Session Compaction — {timestamp}]\n"
+                    f"{session_compaction.strip()}\n"
+                )
+            if "activeContext.md" not in changed_files:
+                changed_files.append("activeContext.md")
+
         # Execute git commit (with MCP flag to pass pre-commit hook)
         try:
             _set_mcp_flag()
@@ -125,26 +144,42 @@ def register_architect_tools(mcp: FastMCP):
             _clear_mcp_flag()
 
     @mcp.tool()
-    def force_architect_read() -> str:
+    def aio__force_architect_read() -> str:
         """
         [ENFORCEMENT TOOL] Force a full read of all 5 project map files.
 
         This tool MUST be called when the user issues the [读档] command.
         Returns the full content of all 5 files as a structured context report.
+        Applies prompt budget: max 4KB per file, 12KB total to prevent token overflow.
         """
         report = ["# Project Map Full State Report\n"]
+        total_chars = 0
+
         for label, filename in REQUIRED_FILES.items():
             filepath = PROJECT_MAP_DIR / filename
             report.append(f"\n## [{label}] {filename}")
             if filepath.exists():
                 content = filepath.read_text(encoding="utf-8")
+                # Apply per-file budget
+                if len(content) > MAX_FILE_CHARS:
+                    content = content[:MAX_FILE_CHARS] + "\n\n[truncated — exceeded 4KB per-file budget]"
+                # Check total budget
+                if total_chars + len(content) > MAX_TOTAL_CHARS:
+                    remaining = MAX_TOTAL_CHARS - total_chars
+                    if remaining > 200:
+                        content = content[:remaining] + "\n\n[truncated — total 12KB prompt budget reached]"
+                    else:
+                        content = "[omitted — prompt budget exhausted]"
+                total_chars += len(content)
                 report.append(content)
             else:
                 report.append(f"WARNING: File not found at {filepath}")
+
+        report.append(f"\n---\nPrompt budget: {total_chars}/{MAX_TOTAL_CHARS} chars used")
         return "\n".join(report)
 
     @mcp.tool()
-    def force_garbage_collection(confirm: bool = False) -> str:
+    def aio__force_garbage_collection(confirm: bool = False) -> str:
         """
         [ENFORCEMENT TOOL] Scan and list temporary/trash files for cleanup.
 
@@ -192,7 +227,7 @@ def register_architect_tools(mcp: FastMCP):
         return f"DELETED: {len(deleted)} files removed.\n" + "\n".join(f"  - {f}" for f in sorted(deleted))
 
     @mcp.tool()
-    def force_project_bootstrap_write(
+    def aio__force_project_bootstrap_write(
         projectbrief_content: str,
         systemPatterns_content: str,
         techContext_content: str,
@@ -417,7 +452,7 @@ def register_architect_tools(mcp: FastMCP):
             _clear_mcp_flag()
 
     @mcp.tool()
-    def force_architect_report(
+    def aio__force_architect_report(
         files_modified: str,
         why: str,
         architecture_impact: str,
@@ -467,7 +502,7 @@ def register_architect_tools(mcp: FastMCP):
         return f"SUCCESS\n\n{report}"
 
     @mcp.tool()
-    def force_test_runner(
+    def aio__force_test_runner(
         test_target: str,
         test_command: str,
     ) -> str:

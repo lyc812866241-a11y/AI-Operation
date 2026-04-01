@@ -49,12 +49,12 @@ The AI cannot bypass these tools. This is the "AI creates its own shackles" mech
 
 | Tool | Trigger | Purpose | Protocol |
 |---|---|---|---|
-| `force_architect_save` | `[存档]` | Enforce 5-file project map update + git commit | `SAVE_PROTOCOL.md` |
-| `force_architect_read` | `[读档]` | Force full project map context restore | `SAVE_PROTOCOL.md` |
-| `force_garbage_collection` | `[清理]` | Scan and delete temp/trash files with confirmation | `SAVE_PROTOCOL.md` |
-| `force_project_bootstrap_write` | `[初始化项目]` | Write all 5 project map files after user calibration (one-time setup) | `BOOTSTRAP_PROTOCOL.md` |
-| `force_architect_report` | `[汇报]` | Generate structured 4-section architect report | `REPORT_PROTOCOL.md` |
-| `force_test_runner` | `[执行测试]` | Run isolated module tests with auto pre-cleanup | `TEST_PROTOCOL.md` |
+| `aio__force_architect_save` | `[存档]` | Enforce 5-file project map update + git commit | `SAVE_PROTOCOL.md` |
+| `aio__force_architect_read` | `[读档]` | Force full project map context restore | `SAVE_PROTOCOL.md` |
+| `aio__force_garbage_collection` | `[清理]` | Scan and delete temp/trash files with confirmation | `SAVE_PROTOCOL.md` |
+| `aio__force_project_bootstrap_write` | `[初始化项目]` | Write all 5 project map files after user calibration (one-time setup) | `BOOTSTRAP_PROTOCOL.md` |
+| `aio__force_architect_report` | `[汇报]` | Generate structured 4-section architect report | `REPORT_PROTOCOL.md` |
+| `aio__force_test_runner` | `[执行测试]` | Run isolated module tests with auto pre-cleanup | `TEST_PROTOCOL.md` |
 
 ## Adding New MCP Tools
 

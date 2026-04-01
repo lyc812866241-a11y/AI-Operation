@@ -4,12 +4,12 @@
       "command": "REPLACE_WITH_YOUR_VENV_PYTHON_PATH",
       "args": [".ai-operation/mcp_server/server.py"],
       "alwaysAllow": [
-        "force_architect_save",
-        "force_architect_read",
-        "force_garbage_collection",
-        "force_project_bootstrap_write",
-        "force_architect_report",
-        "force_test_runner"
+        "aio__force_architect_save",
+        "aio__force_architect_read",
+        "aio__force_garbage_collection",
+        "aio__force_project_bootstrap_write",
+        "aio__force_architect_report",
+        "aio__force_test_runner"
       ]
     }
   }

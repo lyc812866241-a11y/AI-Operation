@@ -35,7 +35,7 @@ MCP 工具是将"AI 的承诺"变成"代码的契约"的机制。AI 无法绕过
 | 自定义类别 | `tools/{category}.py` | 新业务类别时创建新文件 |
 
 工具函数必须遵守以下规范：
-- 函数名以动词开头，清晰描述动作（如 `force_architect_save`，不是 `save`）
+- 函数名以动词开头，清晰描述动作（如 `aio__force_architect_save`，不是 `save`）
 - 所有参数必须有类型注解和 docstring 说明
 - 返回值必须是字符串，包含 `SUCCESS` / `FAILED` / `PENDING` 状态标识
 - 必须包含参数校验逻辑，拒绝不合规的输入
@@ -82,9 +82,9 @@ AI 必须按照四步协议完整执行，不允许只完成部分步骤。
 
 | 触发词 | MCP 工具函数 | 工具文件 | 协议文档 |
 | :--- | :--- | :--- | :--- |
-| `[存档]` | `force_architect_save` | `tools/architect.py` | `SAVE_PROTOCOL.md` |
-| `[读档]` | `force_architect_read` | `tools/architect.py` | `SAVE_PROTOCOL.md` |
-| `[清理]` | `force_garbage_collection` | `tools/architect.py` | `SAVE_PROTOCOL.md` |
-| `[初始化项目]` | `force_project_bootstrap_write` | `tools/architect.py` | `BOOTSTRAP_PROTOCOL.md` |
-| `[汇报]` | `force_architect_report` | `tools/architect.py` | `REPORT_PROTOCOL.md` |
-| `[执行测试]` | `force_test_runner` | `tools/architect.py` | `TEST_PROTOCOL.md` |
+| `[存档]` | `aio__force_architect_save` | `tools/architect.py` | `SAVE_PROTOCOL.md` |
+| `[读档]` | `aio__force_architect_read` | `tools/architect.py` | `SAVE_PROTOCOL.md` |
+| `[清理]` | `aio__force_garbage_collection` | `tools/architect.py` | `SAVE_PROTOCOL.md` |
+| `[初始化项目]` | `aio__force_project_bootstrap_write` | `tools/architect.py` | `BOOTSTRAP_PROTOCOL.md` |
+| `[汇报]` | `aio__force_architect_report` | `tools/architect.py` | `REPORT_PROTOCOL.md` |
+| `[执行测试]` | `aio__force_test_runner` | `tools/architect.py` | `TEST_PROTOCOL.md` |
