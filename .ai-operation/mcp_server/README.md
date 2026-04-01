@@ -5,11 +5,11 @@ This directory contains the **Level 3 Enforcement Mechanism** of the Vibe-Agent-
 ## Architecture Overview
 
 ```
-Level 1 (Skills)     : skills/           - AI capability modules and protocols
-Level 2 (Rules)      : .clinerules       - AI behavior rules
-                       docs/project_map/ - Project memory (5 core files)
-Level 3 (Enforcement): mcp_server/       - THIS DIRECTORY
-                       .roo/mcp.json     - Roo Code MCP registration
+Level 1 (Skills)     : .ai-operation/skills/           - AI capability modules and protocols
+Level 2 (Rules)      : .clinerules / CLAUDE.md / etc.  - AI behavior rules (per-IDE)
+                       .ai-operation/docs/project_map/ - Project memory (5 core files)
+Level 3 (Enforcement): .ai-operation/mcp_server/       - THIS DIRECTORY
+                       .roo/mcp.json / .cursor/mcp.json - MCP registration (per-IDE)
 ```
 
 ## How It Works
@@ -37,7 +37,7 @@ The AI cannot bypass these tools. This is the "AI creates its own shackles" mech
      "mcpServers": {
        "project_architect": {
          "command": "/path/to/your/venv/bin/python3",
-         "args": ["mcp_server/server.py"]
+         "args": [".ai-operation/mcp_server/server.py"]
        }
      }
    }
@@ -53,10 +53,12 @@ The AI cannot bypass these tools. This is the "AI creates its own shackles" mech
 | `force_architect_read` | `[读档]` | Force full project map context restore | `SAVE_PROTOCOL.md` |
 | `force_garbage_collection` | `[清理]` | Scan and delete temp/trash files with confirmation | `SAVE_PROTOCOL.md` |
 | `force_project_bootstrap_write` | `[初始化项目]` | Write all 5 project map files after user calibration (one-time setup) | `BOOTSTRAP_PROTOCOL.md` |
+| `force_architect_report` | `[汇报]` | Generate structured 4-section architect report | `REPORT_PROTOCOL.md` |
+| `force_test_runner` | `[执行测试]` | Run isolated module tests with auto pre-cleanup | `TEST_PROTOCOL.md` |
 
 ## Adding New MCP Tools
 
-Follow the 4-step protocol in `skills/mcp_protocols/MCP_CREATION_PROTOCOL.md`.
+Follow the 4-step protocol in `.ai-operation/skills/mcp_protocols/MCP_CREATION_PROTOCOL.md`.
 
 Or tell the AI in Roo Code:
 > "I need a new MCP tool. Trigger: `[XXX]`. Constraint: [describe what AI keeps skipping]. Follow MCP_CREATION_PROTOCOL.md. Give me the plan first."

@@ -14,7 +14,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 # Project map directory - relative to project root
-PROJECT_MAP_DIR = Path("docs/project_map")
+PROJECT_MAP_DIR = Path(".ai-operation/docs/project_map")
 
 # The 5 canonical files defined in .clinerules
 REQUIRED_FILES = {
@@ -294,5 +294,153 @@ def register_architect_tools(mcp: FastMCP):
                 f"PARTIAL SUCCESS: Files written but git commit failed.\n"
                 f"Files written: {', '.join(written_files)}\n"
                 f"Git error: {stderr}\n"
-                f"Manual commit required: git add docs/project_map/ && git commit -m 'chore: bootstrap project map'"
+                f"Manual commit required: git add .ai-operation/docs/project_map/ && git commit -m 'chore: bootstrap project map'"
+            )
+
+    @mcp.tool()
+    def force_architect_report(
+        files_modified: str,
+        why: str,
+        architecture_impact: str,
+        next_steps: str,
+    ) -> str:
+        """
+        [ENFORCEMENT TOOL] Generate a structured Architect report.
+
+        This tool MUST be called when the user issues the [汇报] command.
+        The AI MUST NOT provide a free-form report — it must fill all 4 sections.
+
+        Args:
+            files_modified: List of files modified in this session (one per line).
+            why: Explanation of why these changes were made.
+            architecture_impact: How these changes affect the system architecture.
+            next_steps: Exact next steps to take.
+
+        Returns:
+            Formatted architect report.
+        """
+        # Validate: no empty fields
+        for field_name, value in {
+            "files_modified": files_modified,
+            "why": why,
+            "architecture_impact": architecture_impact,
+            "next_steps": next_steps,
+        }.items():
+            if not value or not value.strip():
+                return f"REJECTED: {field_name} cannot be empty. All 4 report sections are mandatory."
+
+        # Read current project state for context
+        state_summary = ""
+        active_ctx = PROJECT_MAP_DIR / "activeContext.md"
+        if active_ctx.exists():
+            state_summary = active_ctx.read_text(encoding="utf-8")[:500]
+
+        report = (
+            f"# Architect Report\n\n"
+            f"## 1. Files Modified\n{files_modified.strip()}\n\n"
+            f"## 2. Why\n{why.strip()}\n\n"
+            f"## 3. Architecture Impact\n{architecture_impact.strip()}\n\n"
+            f"## 4. Next Steps\n{next_steps.strip()}\n\n"
+            f"---\n"
+            f"### Current Context (from activeContext.md)\n{state_summary}\n"
+        )
+
+        return f"SUCCESS\n\n{report}"
+
+    @mcp.tool()
+    def force_test_runner(
+        test_target: str,
+        test_command: str,
+    ) -> str:
+        """
+        [ENFORCEMENT TOOL] Run isolated module tests with mandatory pre-cleanup.
+
+        This tool MUST be called when the user issues the [执行测试] command.
+        It enforces:
+        1. Automatic cleanup of dirty data and temp files BEFORE testing
+        2. Tests run in isolation (single module/node, not full pipeline)
+        3. Results are captured and returned as structured output
+
+        Args:
+            test_target: Which module or node to test (e.g., "IngestNode", "tests/test_ingest.py").
+            test_command: The exact command to run (e.g., "python -m pytest tests/test_ingest.py -v").
+
+        Returns:
+            Test execution report with pre-cleanup results and test output.
+        """
+        import glob
+        import os
+
+        if not test_target or not test_target.strip():
+            return "REJECTED: test_target cannot be empty. Specify which module to test."
+        if not test_command or not test_command.strip():
+            return "REJECTED: test_command cannot be empty. Specify the exact test command."
+
+        # Gate: Reject full pipeline commands
+        pipeline_keywords = ["--all", "full_pipeline", "run_all", "test_everything"]
+        for kw in pipeline_keywords:
+            if kw in test_command.lower():
+                return (
+                    f"REJECTED: Full pipeline testing is forbidden. "
+                    f"Detected '{kw}' in test_command. Run tests node-by-node."
+                )
+
+        report_parts = ["# Test Execution Report\n"]
+        report_parts.append(f"## Target: {test_target.strip()}\n")
+
+        # Step 1: Pre-cleanup
+        cleanup_patterns = [
+            "*.temp", "temp_*.py", "debug_*.py",
+            "tests/output/*.tmp", "tests/output/*.temp",
+        ]
+        cleaned = []
+        for pattern in cleanup_patterns:
+            for f in glob.glob(pattern):
+                try:
+                    os.remove(f)
+                    cleaned.append(f)
+                except OSError:
+                    pass
+            for f in glob.glob(f"**/{pattern}", recursive=True):
+                try:
+                    os.remove(f)
+                    cleaned.append(f)
+                except OSError:
+                    pass
+
+        if cleaned:
+            report_parts.append(f"## Pre-Cleanup\nRemoved {len(cleaned)} temp files:\n")
+            for f in sorted(set(cleaned)):
+                report_parts.append(f"  - {f}\n")
+        else:
+            report_parts.append("## Pre-Cleanup\nNo temp files found. Environment clean.\n")
+
+        # Step 2: Run the test
+        report_parts.append(f"\n## Test Command\n```\n{test_command.strip()}\n```\n")
+
+        try:
+            result = subprocess.run(
+                test_command.strip().split(),
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            report_parts.append(f"\n## Exit Code: {result.returncode}\n")
+
+            if result.stdout:
+                stdout_trimmed = result.stdout[-3000:] if len(result.stdout) > 3000 else result.stdout
+                report_parts.append(f"\n## STDOUT\n```\n{stdout_trimmed}\n```\n")
+            if result.stderr:
+                stderr_trimmed = result.stderr[-2000:] if len(result.stderr) > 2000 else result.stderr
+                report_parts.append(f"\n## STDERR\n```\n{stderr_trimmed}\n```\n")
+
+            status = "PASSED" if result.returncode == 0 else "FAILED"
+            return f"{status}\n\n" + "".join(report_parts)
+
+        except subprocess.TimeoutExpired:
+            return "FAILED: Test timed out after 300 seconds.\n\n" + "".join(report_parts)
+        except FileNotFoundError:
+            return (
+                f"FAILED: Command not found. Verify the test command is correct.\n"
+                f"Command: {test_command.strip()}\n\n" + "".join(report_parts)
             )

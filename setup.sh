@@ -10,12 +10,12 @@
 # What this script does:
 #   1. Checks for Python 3.8+
 #   2. Downloads scaffold files into the current directory
-#   3. Creates a virtual environment at ./venv/
+#   3. Creates a virtual environment at .ai-operation/venv/
 #   4. Installs MCP dependencies (mcp[cli], fastmcp)
 #   5. Installs repomix (global codebase map tool) via npx or pip
-#   6. Auto-detects the venv Python path and writes it into .roo/mcp.json
-#   7. Verifies the MCP server can start
-#   8. Prints next steps
+#   6. Auto-detects the venv Python path and writes it into all IDE MCP configs
+#   7. Generates IDE rule files (.clinerules, CLAUDE.md, .cursorrules, .windsurfrules)
+#   8. Verifies the MCP server can start
 # =============================================================================
 
 set -e
@@ -42,8 +42,6 @@ echo -e "${BOLD}╚════════════════════�
 echo ""
 
 # ── Determine install target directory ───────────────────────────────────────
-# If run via curl | bash, BASH_SOURCE[0] is empty or /dev/stdin.
-# In that case, install into the current working directory (the user's project).
 if [ -n "${BASH_SOURCE[0]}" ] && [ "${BASH_SOURCE[0]}" != "/dev/stdin" ] && [ -f "${BASH_SOURCE[0]}" ]; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     REMOTE_MODE=false
@@ -53,10 +51,20 @@ else
 fi
 
 REPO_URL="https://github.com/lyc812866241-a11y/AI-Operation.git"
-SCAFFOLD_FILES=(".clinerules" ".roo" "docs" "mcp_server" "skills")
+SCAFFOLD_ITEMS=(
+    ".ai-operation"
+    ".clinerules"
+    ".cursorrules"
+    ".windsurfrules"
+    "CLAUDE.md"
+    ".roo"
+    ".cursor"
+    ".windsurf"
+    ".mcp.json"
+)
 
 # ── Step 1: Detect Python ─────────────────────────────────────────────────────
-print_step "Step 1/6: Checking Python version"
+print_step "Step 1/7: Checking Python version"
 
 PYTHON_CMD=""
 for cmd in python3 python3.11 python3.10 python3.9 python3.8 python; do
@@ -81,12 +89,11 @@ if [ -z "$PYTHON_CMD" ]; then
 fi
 
 # ── Step 2: Download scaffold files (remote mode only) ───────────────────────
-print_step "Step 2/6: Downloading scaffold files"
+print_step "Step 2/7: Downloading scaffold files"
 
 if [ "$REMOTE_MODE" = true ]; then
     print_info "Installing into: $SCRIPT_DIR"
 
-    # Check for git
     if ! command -v git &>/dev/null; then
         print_error "git is required but not found. Please install git first."
         exit 1
@@ -98,30 +105,28 @@ if [ "$REMOTE_MODE" = true ]; then
     print_info "Cloning scaffold from GitHub..."
     git clone --depth=1 --quiet "$REPO_URL" "$TMP_DIR"
 
-    # Copy scaffold files into the target project directory
-    for item in "${SCAFFOLD_FILES[@]}"; do
+    for item in "${SCAFFOLD_ITEMS[@]}"; do
         if [ -e "$TMP_DIR/$item" ]; then
             cp -r "$TMP_DIR/$item" "$SCRIPT_DIR/"
             print_ok "Copied $item"
         fi
     done
-    # Also copy setup.sh itself so the user has it locally
+    # Copy setup scripts
     cp "$TMP_DIR/setup.sh" "$SCRIPT_DIR/setup.sh"
+    [ -f "$TMP_DIR/setup.ps1" ] && cp "$TMP_DIR/setup.ps1" "$SCRIPT_DIR/setup.ps1"
 
-    # Point SCRIPT_DIR to the installed location for subsequent steps
-    SCRIPT_DIR="$SCRIPT_DIR"
     print_ok "Scaffold files installed into $(pwd)"
 else
     print_ok "Running from local scaffold directory — skipping download"
 fi
 
 # ── Step 3: Create virtual environment ───────────────────────────────────────
-print_step "Step 3/6: Creating virtual environment at ./venv/"
+print_step "Step 3/7: Creating virtual environment at .ai-operation/venv/"
 
-VENV_DIR="$SCRIPT_DIR/venv"
+VENV_DIR="$SCRIPT_DIR/.ai-operation/venv"
 
 if [ -d "$VENV_DIR" ]; then
-    print_warn "venv/ already exists — skipping creation, will update dependencies"
+    print_warn "venv already exists — skipping creation, will update dependencies"
 else
     "$PYTHON_CMD" -m venv "$VENV_DIR"
     print_ok "Virtual environment created at $VENV_DIR"
@@ -142,7 +147,7 @@ fi
 print_ok "Using Python at: $VENV_PYTHON"
 
 # ── Step 4: Install MCP dependencies ─────────────────────────────────────────
-print_step "Step 4/6: Installing MCP dependencies"
+print_step "Step 4/7: Installing MCP dependencies"
 
 "$VENV_PIP" install --quiet --upgrade pip
 "$VENV_PIP" install --quiet "mcp[cli]" fastmcp
@@ -155,46 +160,43 @@ else
     exit 1
 fi
 
-# ── Step 5: Write Python path into .roo/mcp.json ─────────────────────────────
-print_step "Step 5/6: Configuring .roo/mcp.json"
+# ── Step 5: Write Python path into all IDE MCP configs ────────────────────────
+print_step "Step 5/7: Configuring MCP for all IDEs"
 
-MCP_JSON_PATH="$SCRIPT_DIR/.roo/mcp.json"
+MCP_CONFIGS=(
+    "$SCRIPT_DIR/.roo/mcp.json"
+    "$SCRIPT_DIR/.cursor/mcp.json"
+    "$SCRIPT_DIR/.windsurf/mcp.json"
+    "$SCRIPT_DIR/.mcp.json"
+)
 
-if [ ! -f "$MCP_JSON_PATH" ]; then
-    print_error ".roo/mcp.json not found at $MCP_JSON_PATH"
-    exit 1
-fi
+for MCP_JSON_PATH in "${MCP_CONFIGS[@]}"; do
+    if [ -f "$MCP_JSON_PATH" ]; then
+        # Replace placeholder — works on both GNU sed (Linux) and BSD sed (macOS)
+        if sed --version 2>/dev/null | grep -q GNU; then
+            sed -i "s|REPLACE_WITH_YOUR_VENV_PYTHON_PATH|$VENV_PYTHON|g" "$MCP_JSON_PATH"
+        else
+            sed -i '' "s|REPLACE_WITH_YOUR_VENV_PYTHON_PATH|$VENV_PYTHON|g" "$MCP_JSON_PATH"
+        fi
 
-# Replace placeholder — works on both GNU sed (Linux) and BSD sed (macOS)
-if sed --version 2>/dev/null | grep -q GNU; then
-    sed -i "s|REPLACE_WITH_YOUR_VENV_PYTHON_PATH|$VENV_PYTHON|g" "$MCP_JSON_PATH"
-else
-    sed -i '' "s|REPLACE_WITH_YOUR_VENV_PYTHON_PATH|$VENV_PYTHON|g" "$MCP_JSON_PATH"
-fi
-
-if grep -q "REPLACE_WITH_YOUR_VENV_PYTHON_PATH" "$MCP_JSON_PATH"; then
-    print_error "Failed to update .roo/mcp.json. Please edit it manually:"
-    print_info "  Replace REPLACE_WITH_YOUR_VENV_PYTHON_PATH with: $VENV_PYTHON"
-    exit 1
-else
-    print_ok ".roo/mcp.json updated with Python path: $VENV_PYTHON"
-fi
+        if grep -q "REPLACE_WITH_YOUR_VENV_PYTHON_PATH" "$MCP_JSON_PATH"; then
+            print_warn "Failed to update $MCP_JSON_PATH — edit manually"
+        else
+            print_ok "$(basename "$(dirname "$MCP_JSON_PATH")")/$(basename "$MCP_JSON_PATH") updated"
+        fi
+    fi
+done
 
 # ── Step 5.5: Install repomix ────────────────────────────────────────────────
-print_step "Step 5.5/6: Installing repomix (codebase map tool)"
+print_step "Step 5.5/7: Installing repomix (codebase map tool)"
 
 REPOMIX_INSTALLED=false
 
-# Try npx first (Node.js ecosystem, most common)
-# NOTE: We intentionally do NOT run 'npx repomix' here — it would trigger a
-# package download on first use and hang the installer on slow networks.
-# repomix will be downloaded on-demand when [初始化项目] runs it.
 if command -v npx &>/dev/null; then
     print_ok "npx found — repomix will run on-demand via 'npx repomix' (no pre-download)"
     REPOMIX_INSTALLED=true
 fi
 
-# Fallback: try pip install repomix (Python port)
 if [ "$REPOMIX_INSTALLED" = false ]; then
     if "$VENV_PIP" install --quiet repomix 2>/dev/null; then
         print_ok "repomix installed via pip"
@@ -206,11 +208,13 @@ if [ "$REPOMIX_INSTALLED" = false ]; then
 fi
 
 # ── Step 6: Verify MCP server ─────────────────────────────────────────────────
-print_step "Step 6/6: Verifying MCP server"
+print_step "Step 6/7: Verifying MCP server"
+
+MCP_SERVER_DIR="$SCRIPT_DIR/.ai-operation/mcp_server"
 
 if "$VENV_PYTHON" -c "
 import sys
-sys.path.insert(0, '$SCRIPT_DIR/mcp_server')
+sys.path.insert(0, '$MCP_SERVER_DIR')
 from tools.architect import register_architect_tools
 from mcp.server.fastmcp import FastMCP
 mcp = FastMCP('test')
@@ -219,8 +223,20 @@ print('OK')
 " 2>/dev/null | grep -q "OK"; then
     print_ok "MCP server imports verified successfully"
 else
-    print_warn "MCP server import check failed — try: $VENV_PYTHON mcp_server/server.py"
+    print_warn "MCP server import check failed — try: $VENV_PYTHON .ai-operation/mcp_server/server.py"
 fi
+
+# ── Step 7: Verify IDE rule files ─────────────────────────────────────────────
+print_step "Step 7/7: Checking IDE rule files"
+
+RULE_FILES=(".clinerules" "CLAUDE.md" ".cursorrules" ".windsurfrules")
+for rf in "${RULE_FILES[@]}"; do
+    if [ -f "$SCRIPT_DIR/$rf" ]; then
+        print_ok "$rf present"
+    else
+        print_warn "$rf missing"
+    fi
+done
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
@@ -229,17 +245,19 @@ echo -e "${GREEN}${BOLD}║   ✅  Setup complete!                             �
 echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "${BOLD}Next steps:${NC}"
-echo -e "  1. Open this project in your IDE (Roo Code / Cursor / Windsurf)"
-echo -e "  2. Reload MCP servers:"
-echo -e "     ${YELLOW}Roo Code${NC}: Ctrl+Shift+P → 'Roo Code: Refresh MCP Servers'"
-echo -e "     ${YELLOW}Cursor${NC}  : Restart the IDE"
+echo -e "  1. Open this project in your IDE:"
+echo -e "     ${YELLOW}Roo Code${NC}  — reads .clinerules + .roo/mcp.json"
+echo -e "     ${YELLOW}Cursor${NC}    — reads .cursorrules + .cursor/mcp.json"
+echo -e "     ${YELLOW}Windsurf${NC}  — reads .windsurfrules + .windsurf/mcp.json"
+echo -e "     ${YELLOW}Claude Code${NC} — reads CLAUDE.md + .mcp.json"
+echo -e "  2. Reload MCP servers (Ctrl+Shift+P or restart IDE)"
 echo -e "  3. In your first chat with the AI, type:"
 echo -e "     ${BLUE}[初始化项目]${NC}"
 echo -e ""
 echo -e "  ${BOLD}Tip:${NC} During [初始化项目], the AI will run 'npx repomix --compress'"
-echo -e "  to generate a full codebase map. This ensures NO modules are missed."
-echo -e "  Requires Node.js / npx to be available in the project's environment."
+echo -e "  to generate a full codebase map. Requires Node.js / npx."
 echo ""
-echo -e "  ${BOLD}MCP server path:${NC} $VENV_PYTHON mcp_server/server.py"
-echo -e "  ${BOLD}Config file:${NC}     $MCP_JSON_PATH"
+echo -e "  ${BOLD}MCP server:${NC}  $VENV_PYTHON .ai-operation/mcp_server/server.py"
+echo -e "  ${BOLD}Framework:${NC}   .ai-operation/"
+echo -e "  ${BOLD}IDE configs:${NC} .roo/ .cursor/ .windsurf/ .mcp.json"
 echo ""

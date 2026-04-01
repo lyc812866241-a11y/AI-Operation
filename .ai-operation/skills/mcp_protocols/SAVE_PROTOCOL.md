@@ -13,7 +13,7 @@
 ## [存档] 协议：`force_architect_save`
 
 ### 禁止行为（铁律）
-- **禁止**手动编辑 `docs/project_map/` 下的任何文件
+- **禁止**手动编辑 `.ai-operation/docs/project_map/` 下的任何文件
 - **禁止**手动运行 `git commit` 或 `git add`
 - **禁止**跳过任何参数（必须对每个文件给出明确的更新内容或 `NO_CHANGE`）
 - **禁止**用模糊的摘要替代具体细节（必须包含精确的文件路径、函数名、变量名）

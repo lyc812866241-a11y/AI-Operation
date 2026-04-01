@@ -9,7 +9,7 @@ Architecture:
   - tools/pipeline.py : (Future) Pipeline execution enforcement tools.
 
 To add a new MCP tool:
-  Follow the protocol in `skills/mcp_protocols/MCP_CREATION_PROTOCOL.md`
+  Follow the protocol in `.ai-operation/skills/mcp_protocols/MCP_CREATION_PROTOCOL.md`
 """
 
 from mcp.server.fastmcp import FastMCP

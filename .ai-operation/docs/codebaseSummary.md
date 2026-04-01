@@ -13,14 +13,21 @@
 
 ```text
 /
-├── docs/               # 项目文档与设计图
-│   └── project_map/    # 核心记忆与上下文文件（本目录）
-├── mcp_server/         # MCP 强制执行工具
-├── skills/             # 独立的可复用脚本或能力
-├── src/                # 核心业务代码
-├── tests/              # 单元测试与集成测试
-├── .clinerules         # AI 行为准则与双层架构约束
-└── README.md           # 项目入口说明
+├── .ai-operation/              # AI 框架（与项目代码完全隔离）
+│   ├── docs/                   # 框架文档
+│   │   ├── project_map/        # 核心记忆库（5 文件）
+│   │   ├── codebaseSummary.md  # 代码库摘要
+│   │   └── taskSpec_template.md # 任务规格模板
+│   ├── mcp_server/             # MCP 强制执行工具
+│   └── skills/                 # 框架技能模块
+├── src/                        # 核心业务代码
+├── tests/                      # 单元测试与集成测试
+├── skills/                     # 项目业务技能（与框架 skills 分离）
+├── .clinerules                 # AI 行为准则（Roo Code）
+├── CLAUDE.md                   # AI 行为准则（Claude Code）
+├── .cursorrules                # AI 行为准则（Cursor）
+├── .windsurfrules              # AI 行为准则（Windsurf）
+└── README.md                   # 项目入口说明
 ```
 
 ## 2. 核心模块与职责 (Core Modules & Responsibilities)

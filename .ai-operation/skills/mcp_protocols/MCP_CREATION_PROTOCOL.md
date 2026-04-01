@@ -23,7 +23,7 @@ MCP 工具是将"AI 的承诺"变成"代码的契约"的机制。AI 无法绕过
 
 每次创建新 MCP 工具，AI 必须同时完成以下四件事，缺一不可：
 
-### Step 1: 在 `mcp_server/tools/` 下创建或更新工具文件
+### Step 1: 在 `.ai-operation/mcp_server/tools/` 下创建或更新工具文件
 
 按类别选择或创建文件：
 
@@ -40,7 +40,7 @@ MCP 工具是将"AI 的承诺"变成"代码的契约"的机制。AI 无法绕过
 - 返回值必须是字符串，包含 `SUCCESS` / `FAILED` / `PENDING` 状态标识
 - 必须包含参数校验逻辑，拒绝不合规的输入
 
-### Step 2: 在 `mcp_server/server.py` 里注册新工具
+### Step 2: 在 `.ai-operation/mcp_server/server.py` 里注册新工具
 
 在 `server.py` 的注册区添加对应的 import 和 register 调用：
 
@@ -49,7 +49,7 @@ from tools.your_category import register_your_tools
 register_your_tools(mcp)
 ```
 
-### Step 3: 在 `skills/mcp_protocols/` 下创建协议文档
+### Step 3: 在 `.ai-operation/skills/mcp_protocols/` 下创建协议文档
 
 文件命名规范：`{TRIGGER_COMMAND}_PROTOCOL.md`（如 `SAVE_PROTOCOL.md`、`TEST_PROTOCOL.md`）
 
@@ -63,7 +63,7 @@ register_your_tools(mcp)
 
 格式固定为一行：
 ```
-- **`[触发词]`**: Call MCP tool `tool_function_name`. Protocol: `skills/mcp_protocols/PROTOCOL_FILE.md`
+- **`[触发词]`**: Call MCP tool `tool_function_name`. Protocol: `.ai-operation/skills/mcp_protocols/PROTOCOL_FILE.md`
 ```
 
 ---
@@ -72,7 +72,7 @@ register_your_tools(mcp)
 
 当你需要创建新的 MCP 工具时，在 Roo Code 里对 AI 说：
 
-> "我需要一个新的 MCP 工具，触发词是 `[XXX]`，要约束的行为是：[描述 AI 经常偷懒的步骤]。按照 `skills/mcp_protocols/MCP_CREATION_PROTOCOL.md` 的四步协议完整创建。先给方案，等我同意再执行。"
+> "我需要一个新的 MCP 工具，触发词是 `[XXX]`，要约束的行为是：[描述 AI 经常偷懒的步骤]。按照 `.ai-operation/skills/mcp_protocols/MCP_CREATION_PROTOCOL.md` 的四步协议完整创建。先给方案，等我同意再执行。"
 
 AI 必须按照四步协议完整执行，不允许只完成部分步骤。
 
@@ -86,3 +86,5 @@ AI 必须按照四步协议完整执行，不允许只完成部分步骤。
 | `[读档]` | `force_architect_read` | `tools/architect.py` | `SAVE_PROTOCOL.md` |
 | `[清理]` | `force_garbage_collection` | `tools/architect.py` | `SAVE_PROTOCOL.md` |
 | `[初始化项目]` | `force_project_bootstrap_write` | `tools/architect.py` | `BOOTSTRAP_PROTOCOL.md` |
+| `[汇报]` | `force_architect_report` | `tools/architect.py` | `REPORT_PROTOCOL.md` |
+| `[执行测试]` | `force_test_runner` | `tools/architect.py` | `TEST_PROTOCOL.md` |
