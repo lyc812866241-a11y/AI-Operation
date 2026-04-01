@@ -75,20 +75,21 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
         This tool MUST be called when the user issues the [存档] command.
         The AI agent MUST NOT manually edit project_map files or run git commands directly.
 
+        CRITICAL: For ALL 5 file parameters, you must EITHER:
+          - Provide actual update content (will be appended to the file)
+          - Write "NO_CHANGE_BECAUSE: [specific reason]" explaining WHY no update is needed
+
+        Simply writing "NO_CHANGE" is REJECTED. You must justify why each file doesn't need updating.
+        This forces you to review each file against what happened in this session.
+
         Args:
-            projectbrief_update: Updates to core vision or business goals. "NO_CHANGE" if none.
-            systemPatterns_update: New architectural rules discovered. "NO_CHANGE" if none.
-            techContext_update: New tech stack constraints discovered. "NO_CHANGE" if none.
-            activeContext_update: REQUIRED. Current focus, what was just done, immediate next steps.
-            progress_update: REQUIRED. Tasks completed this session, updated TODO items.
-            lessons_learned: REQUIRED. What went wrong, what was corrected, what to remember.
-                Format: one lesson per line. Use "NONE" only if truly nothing was learned.
-                Examples:
-                  - "FFmpeg 路径含空格会静默失败 → 所有路径用引号包裹"
-                  - "用户偏好：不要在测试中 mock 数据库，用真实连接"
-                  - "AI 遗漏了 plugins/ 目录的模块扫描"
-                These are written to corrections.md as the project's experience bank.
-            session_compaction: Optional. Compressed summary of current conversation session.
+            projectbrief_update: Updates to vision/goals, OR "NO_CHANGE_BECAUSE: [reason why vision unchanged]"
+            systemPatterns_update: New architecture/modules, OR "NO_CHANGE_BECAUSE: [reason why arch unchanged]"
+            techContext_update: New tech constraints/gotchas, OR "NO_CHANGE_BECAUSE: [reason why tech unchanged]"
+            activeContext_update: REQUIRED. Current focus + what was done + next steps. Cannot be NO_CHANGE.
+            progress_update: REQUIRED. Tasks completed + new TODOs. Cannot be NO_CHANGE.
+            lessons_learned: REQUIRED. Lessons from this session. "NONE" only if truly nothing learned.
+            session_compaction: Optional. Compressed summary of conversation for context overflow recovery.
 
         Returns:
             Execution report with files updated and git commit status.
@@ -103,11 +104,31 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
 
         _audit("aio__force_architect_save", "CALLED")
 
-        # Validate: activeContext, progress, and lessons are REQUIRED
-        if activeContext_update.strip() == "NO_CHANGE":
+        # Validate: NO bare "NO_CHANGE" allowed — must provide reason
+        for filename, content in {
+            "projectbrief_update": projectbrief_update,
+            "systemPatterns_update": systemPatterns_update,
+            "techContext_update": techContext_update,
+        }.items():
+            stripped = content.strip()
+            if stripped == "NO_CHANGE":
+                _audit("aio__force_architect_save", "REJECTED", f"{filename} bare NO_CHANGE")
+                return (
+                    f"REJECTED: {filename} cannot be bare 'NO_CHANGE'.\n"
+                    f"You must write 'NO_CHANGE_BECAUSE: [reason]' explaining why this file "
+                    f"does not need updating based on what happened in this session.\n"
+                    f"This forces you to actually review whether the file needs an update.\n\n"
+                    f"Examples:\n"
+                    f"  NO_CHANGE_BECAUSE: This session only fixed a UI bug, no vision change\n"
+                    f"  NO_CHANGE_BECAUSE: No new modules added, only modified existing IngestNode internals\n"
+                    f"  NO_CHANGE_BECAUSE: No new dependencies or tech constraints discovered"
+                )
+
+        # Validate: activeContext and progress must never be NO_CHANGE at all
+        if "NO_CHANGE" in activeContext_update.strip().upper() and "BECAUSE" not in activeContext_update.upper():
             _audit("aio__force_architect_save", "REJECTED", "activeContext was NO_CHANGE")
             return "REJECTED: activeContext_update cannot be NO_CHANGE. You must always update the current focus."
-        if progress_update.strip() == "NO_CHANGE":
+        if "NO_CHANGE" in progress_update.strip().upper() and "BECAUSE" not in progress_update.upper():
             return "REJECTED: progress_update cannot be NO_CHANGE. You must always record what was done this session."
         if not lessons_learned or not lessons_learned.strip():
             return (
@@ -118,17 +139,28 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
 
         # Apply surgical updates (append-only to preserve history)
         changed_files = []
+        skipped_files = []
         for filename, content in updates.items():
-            if content.strip() != "NO_CHANGE":
-                filepath = PROJECT_MAP_DIR / filename
-                if not filepath.parent.exists():
-                    return f"FAILED: Directory {PROJECT_MAP_DIR} does not exist. Is this the correct project root?"
-                with open(filepath, "a", encoding="utf-8") as f:
-                    f.write(f"\n\n---\n### [MCP Auto-Archive]\n{content.strip()}\n")
-                changed_files.append(filename)
+            stripped = content.strip()
+            # NO_CHANGE_BECAUSE: means no update needed (reason logged in audit)
+            if stripped.upper().startswith("NO_CHANGE_BECAUSE:"):
+                reason = stripped.split(":", 1)[1].strip() if ":" in stripped else "unspecified"
+                skipped_files.append(f"{filename} (reason: {reason[:80]})")
+                continue
+            filepath = PROJECT_MAP_DIR / filename
+            if not filepath.parent.exists():
+                return f"FAILED: Directory {PROJECT_MAP_DIR} does not exist. Is this the correct project root?"
+            with open(filepath, "a", encoding="utf-8") as f:
+                f.write(f"\n\n---\n### [MCP Auto-Archive]\n{stripped}\n")
+            changed_files.append(filename)
 
         if not changed_files:
-            return "WARNING: No files were updated. Verify nothing was missed this session."
+            return (
+                "WARNING: No files were updated. All 5 files marked as no-change.\n"
+                "Skipped:\n" + "\n".join(f"  - {s}" for s in skipped_files) + "\n\n"
+                "If this session involved ANY code changes, architecture decisions, or "
+                "technical discoveries, at least one static file should have been updated."
+            )
 
         # Write lessons learned to corrections.md (experience bank)
         import datetime

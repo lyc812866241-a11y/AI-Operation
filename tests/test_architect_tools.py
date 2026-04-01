@@ -85,11 +85,38 @@ class TestSaveValidation(unittest.TestCase, TestSetup):
     def tearDown(self):
         self.cleanup_temp_project()
 
-    def test_rejects_no_change_active_context(self):
+    def test_rejects_bare_no_change_on_static_files(self):
+        """Bare NO_CHANGE without reason is rejected for all 3 static files."""
         result = self.tools["aio__force_architect_save"](
             projectbrief_update="NO_CHANGE",
-            systemPatterns_update="NO_CHANGE",
-            techContext_update="NO_CHANGE",
+            systemPatterns_update="NO_CHANGE_BECAUSE: no arch change",
+            techContext_update="NO_CHANGE_BECAUSE: no tech change",
+            activeContext_update="Working on tests",
+            progress_update="✅ Added tests",
+            lessons_learned="NONE",
+        )
+        self.assertIn("REJECTED", result)
+        self.assertIn("projectbrief_update", result)
+        self.assertIn("NO_CHANGE_BECAUSE", result)
+
+    def test_accepts_no_change_because_with_reason(self):
+        """NO_CHANGE_BECAUSE: with a reason is accepted."""
+        with patch("subprocess.run"):
+            result = self.tools["aio__force_architect_save"](
+                projectbrief_update="NO_CHANGE_BECAUSE: only fixed a typo, no vision change",
+                systemPatterns_update="NO_CHANGE_BECAUSE: no new modules",
+                techContext_update="NO_CHANGE_BECAUSE: no new dependencies",
+                activeContext_update="Working on tests",
+                progress_update="✅ Added tests",
+                lessons_learned="NONE",
+            )
+        self.assertNotIn("REJECTED", result)
+
+    def test_rejects_no_change_active_context(self):
+        result = self.tools["aio__force_architect_save"](
+            projectbrief_update="NO_CHANGE_BECAUSE: no change",
+            systemPatterns_update="NO_CHANGE_BECAUSE: no change",
+            techContext_update="NO_CHANGE_BECAUSE: no change",
             activeContext_update="NO_CHANGE",
             progress_update="did stuff",
             lessons_learned="NONE",
@@ -99,9 +126,9 @@ class TestSaveValidation(unittest.TestCase, TestSetup):
 
     def test_rejects_no_change_progress(self):
         result = self.tools["aio__force_architect_save"](
-            projectbrief_update="NO_CHANGE",
-            systemPatterns_update="NO_CHANGE",
-            techContext_update="NO_CHANGE",
+            projectbrief_update="NO_CHANGE_BECAUSE: no change",
+            systemPatterns_update="NO_CHANGE_BECAUSE: no change",
+            techContext_update="NO_CHANGE_BECAUSE: no change",
             activeContext_update="Working on tests",
             progress_update="NO_CHANGE",
             lessons_learned="NONE",
@@ -111,9 +138,9 @@ class TestSaveValidation(unittest.TestCase, TestSetup):
 
     def test_rejects_empty_lessons_learned(self):
         result = self.tools["aio__force_architect_save"](
-            projectbrief_update="NO_CHANGE",
-            systemPatterns_update="NO_CHANGE",
-            techContext_update="NO_CHANGE",
+            projectbrief_update="NO_CHANGE_BECAUSE: no change",
+            systemPatterns_update="NO_CHANGE_BECAUSE: no change",
+            techContext_update="NO_CHANGE_BECAUSE: no change",
             activeContext_update="Working on tests",
             progress_update="✅ Added tests",
             lessons_learned="",
@@ -125,9 +152,9 @@ class TestSaveValidation(unittest.TestCase, TestSetup):
         """NONE is valid for lessons_learned when nothing was learned."""
         with patch("subprocess.run"):
             result = self.tools["aio__force_architect_save"](
-                projectbrief_update="NO_CHANGE",
-                systemPatterns_update="NO_CHANGE",
-                techContext_update="NO_CHANGE",
+                projectbrief_update="NO_CHANGE_BECAUSE: no change",
+                systemPatterns_update="NO_CHANGE_BECAUSE: no change",
+                techContext_update="NO_CHANGE_BECAUSE: no change",
                 activeContext_update="Working on tests",
                 progress_update="✅ Added tests",
                 lessons_learned="NONE",
