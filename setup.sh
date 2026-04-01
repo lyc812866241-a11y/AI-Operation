@@ -226,8 +226,19 @@ else
     print_warn "MCP server import check failed — try: $VENV_PYTHON .ai-operation/mcp_server/server.py"
 fi
 
-# ── Step 7: Verify IDE rule files ─────────────────────────────────────────────
-print_step "Step 7/7: Checking IDE rule files"
+# ── Step 7: Install git hooks ────────────────────────────────────────────────
+print_step "Step 7/8: Installing git hooks"
+
+INSTALL_HOOKS="$SCRIPT_DIR/.ai-operation/scripts/install-hooks.sh"
+if [ -f "$INSTALL_HOOKS" ] && [ -d "$SCRIPT_DIR/.git" ]; then
+    bash "$INSTALL_HOOKS"
+    print_ok "Git pre-commit hook installed (auto-sync rules + project_map guard)"
+else
+    print_warn "Git hooks not installed (not a git repo or install script missing)"
+fi
+
+# ── Step 8: Verify IDE rule files ────────────────────────────────────────────
+print_step "Step 8/8: Checking IDE rule files"
 
 RULE_FILES=(".clinerules" "CLAUDE.md" ".cursorrules" ".windsurfrules")
 for rf in "${RULE_FILES[@]}"; do

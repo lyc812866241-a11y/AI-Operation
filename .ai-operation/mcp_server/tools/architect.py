@@ -16,6 +16,21 @@ from mcp.server.fastmcp import FastMCP
 # Project map directory - relative to project root
 PROJECT_MAP_DIR = Path(".ai-operation/docs/project_map")
 
+# Flag file used to signal pre-commit hook that MCP tool is making the commit
+MCP_COMMIT_FLAG = Path(".ai-operation/.mcp_commit_flag")
+
+
+def _set_mcp_flag():
+    """Create flag file so git pre-commit hook allows project_map commits."""
+    MCP_COMMIT_FLAG.parent.mkdir(parents=True, exist_ok=True)
+    MCP_COMMIT_FLAG.write_text("mcp_tool_commit", encoding="utf-8")
+
+
+def _clear_mcp_flag():
+    """Remove flag file after commit."""
+    if MCP_COMMIT_FLAG.exists():
+        MCP_COMMIT_FLAG.unlink()
+
 # The 5 canonical files defined in .clinerules
 REQUIRED_FILES = {
     "projectbrief": "projectbrief.md",
@@ -84,8 +99,9 @@ def register_architect_tools(mcp: FastMCP):
         if not changed_files:
             return "WARNING: No files were updated. Verify nothing was missed this session."
 
-        # Execute git commit
+        # Execute git commit (with MCP flag to pass pre-commit hook)
         try:
+            _set_mcp_flag()
             subprocess.run(["git", "add", str(PROJECT_MAP_DIR)], check=True, capture_output=True)
             commit_msg = f"chore: architect save [{', '.join(changed_files)}]"
             result = subprocess.run(
@@ -105,6 +121,8 @@ def register_architect_tools(mcp: FastMCP):
                 f"Git commit FAILED: {stderr}\n"
                 f"Manual commit required."
             )
+        finally:
+            _clear_mcp_flag()
 
     @mcp.tool()
     def force_architect_read() -> str:
@@ -275,8 +293,9 @@ def register_architect_tools(mcp: FastMCP):
             except Exception as e:
                 return f"FAILED: Could not write {filename}: {e}"
 
-        # Git commit
+        # Git commit (with MCP flag to pass pre-commit hook)
         try:
+            _set_mcp_flag()
             subprocess.run(["git", "add", str(PROJECT_MAP_DIR)], check=True, capture_output=True)
             result = subprocess.run(
                 ["git", "commit", "-m", f"chore: bootstrap project map [{timestamp}]"],
@@ -296,6 +315,8 @@ def register_architect_tools(mcp: FastMCP):
                 f"Git error: {stderr}\n"
                 f"Manual commit required: git add .ai-operation/docs/project_map/ && git commit -m 'chore: bootstrap project map'"
             )
+        finally:
+            _clear_mcp_flag()
 
     @mcp.tool()
     def force_architect_report(

@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# =============================================================================
+# AI-Operation Framework — Git Pre-Commit Hook
+# =============================================================================
+# 1. Auto-syncs rule files when .clinerules is modified
+# 2. Blocks direct edits to project_map files (must go through MCP tools)
+#
+# Install: .ai-operation/scripts/install-hooks.sh
+# Bypass:  git commit --no-verify (use sparingly, logged in corrections.md)
+# =============================================================================
+
+# ── Rule Sync ────────────────────────────────────────────────────────────────
+# If .clinerules was modified in this commit, auto-sync other IDE rule files
+if git diff --cached --name-only | grep -q "^\.clinerules$"; then
+    echo "[hook] .clinerules modified — syncing to CLAUDE.md, .cursorrules, .windsurfrules..."
+
+    SYNC_SCRIPT=".ai-operation/scripts/sync-rules.sh"
+    if [ -f "$SYNC_SCRIPT" ]; then
+        bash "$SYNC_SCRIPT"
+        git add CLAUDE.md .cursorrules .windsurfrules
+        echo "[hook] Rule files synced and staged."
+    else
+        echo "[hook] WARNING: sync-rules.sh not found. IDE rule files may be out of sync."
+    fi
+fi
+
+# ── Project Map Guard ────────────────────────────────────────────────────────
+# Block direct commits to project_map files UNLESS the commit message contains
+# the MCP tool signature (added by force_architect_save / force_project_bootstrap_write)
+#
+# How it works:
+# - MCP tools create commits with messages starting with "chore: architect save"
+#   or "chore: bootstrap project map" — these are allowed through
+# - Manual commits touching project_map files are blocked
+# - The AI or user can bypass with --no-verify, but this should be rare
+
+PROTECTED_FILES=$(git diff --cached --name-only | grep "^\.ai-operation/docs/project_map/" || true)
+
+if [ -n "$PROTECTED_FILES" ]; then
+    # Check if this is being called from an MCP tool (environment variable set by MCP)
+    if [ "$AI_OPERATION_MCP_COMMIT" = "true" ]; then
+        # MCP tool is making this commit — allow
+        exit 0
+    fi
+
+    # Check commit message for MCP signatures
+    # Note: During pre-commit, the message isn't available yet.
+    # So we use a flag file that MCP tools create before committing.
+    MCP_FLAG=".ai-operation/.mcp_commit_flag"
+    if [ -f "$MCP_FLAG" ]; then
+        rm -f "$MCP_FLAG"
+        exit 0
+    fi
+
+    echo ""
+    echo "============================================================"
+    echo "  BLOCKED: Direct edit to project_map files detected"
+    echo "============================================================"
+    echo ""
+    echo "  The following files were modified outside of MCP tools:"
+    echo "$PROTECTED_FILES" | sed 's/^/    /'
+    echo ""
+    echo "  project_map files must be updated through MCP tools:"
+    echo "    [存档]      → force_architect_save"
+    echo "    [初始化项目] → force_project_bootstrap_write"
+    echo ""
+    echo "  If you need to bypass (emergency only):"
+    echo "    git commit --no-verify"
+    echo "============================================================"
+    echo ""
+    exit 1
+fi
