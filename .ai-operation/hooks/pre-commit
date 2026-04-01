@@ -2,15 +2,16 @@
 # =============================================================================
 # AI-Operation Framework — Git Pre-Commit Hook
 # =============================================================================
-# 1. Auto-syncs rule files when .clinerules is modified
-# 2. Blocks direct edits to project_map files (must go through MCP tools)
+# Three enforcement gates:
+#   1. Auto-syncs rule files when .clinerules is modified
+#   2. Blocks direct edits to project_map (must go through MCP tools)
+#   3. Blocks code commits without approved taskSpec (dual-layer workflow gate)
 #
 # Install: .ai-operation/scripts/install-hooks.sh
-# Bypass:  git commit --no-verify (use sparingly, logged in corrections.md)
+# Bypass:  git commit --no-verify (emergency only)
 # =============================================================================
 
-# ── Rule Sync ────────────────────────────────────────────────────────────────
-# If .clinerules was modified in this commit, auto-sync other IDE rule files
+# ── Gate 1: Rule Sync ────────────────────────────────────────────────────────
 if git diff --cached --name-only | grep -q "^\.clinerules$"; then
     echo "[hook] .clinerules modified — syncing to CLAUDE.md, .cursorrules, .windsurfrules..."
 
@@ -24,31 +25,14 @@ if git diff --cached --name-only | grep -q "^\.clinerules$"; then
     fi
 fi
 
-# ── Project Map Guard ────────────────────────────────────────────────────────
-# Block direct commits to project_map files UNLESS the commit message contains
-# the MCP tool signature (added by aio__force_architect_save / aio__force_project_bootstrap_write)
-#
-# How it works:
-# - MCP tools create commits with messages starting with "chore: architect save"
-#   or "chore: bootstrap project map" — these are allowed through
-# - Manual commits touching project_map files are blocked
-# - The AI or user can bypass with --no-verify, but this should be rare
-
+# ── Gate 2: Project Map Guard ────────────────────────────────────────────────
 PROTECTED_FILES=$(git diff --cached --name-only | grep "^\.ai-operation/docs/project_map/" || true)
 
 if [ -n "$PROTECTED_FILES" ]; then
-    # Check if this is being called from an MCP tool (environment variable set by MCP)
-    if [ "$AI_OPERATION_MCP_COMMIT" = "true" ]; then
-        # MCP tool is making this commit — allow
-        exit 0
-    fi
-
-    # Check commit message for MCP signatures
-    # Note: During pre-commit, the message isn't available yet.
-    # So we use a flag file that MCP tools create before committing.
     MCP_FLAG=".ai-operation/.mcp_commit_flag"
     if [ -f "$MCP_FLAG" ]; then
         rm -f "$MCP_FLAG"
+        # MCP tool commit — also skip Gate 3 (it's a framework-internal commit)
         exit 0
     fi
 
@@ -57,16 +41,70 @@ if [ -n "$PROTECTED_FILES" ]; then
     echo "  BLOCKED: Direct edit to project_map files detected"
     echo "============================================================"
     echo ""
-    echo "  The following files were modified outside of MCP tools:"
-    echo "$PROTECTED_FILES" | sed 's/^/    /'
-    echo ""
     echo "  project_map files must be updated through MCP tools:"
     echo "    [存档]      → aio__force_architect_save"
     echo "    [初始化项目] → aio__force_project_bootstrap_write"
     echo ""
-    echo "  If you need to bypass (emergency only):"
-    echo "    git commit --no-verify"
+    echo "  Bypass (emergency): git commit --no-verify"
+    echo "============================================================"
+    exit 1
+fi
+
+# ── Gate 3: TaskSpec Approval Guard ──────────────────────────────────────────
+# If this commit modifies project code files (not framework files, not docs),
+# require an approved taskSpec or fast-track flag.
+#
+# Exempt from this gate:
+#   - Commits that only touch .ai-operation/ files (framework internal)
+#   - Commits that only touch rule files (.clinerules, CLAUDE.md, etc.)
+#   - Commits that only touch .md documentation files
+#   - Commits with MCP commit flag (already passed Gate 2)
+
+CODE_FILES=$(git diff --cached --name-only \
+    | grep -v "^\.ai-operation/" \
+    | grep -v "^\.clinerules$" \
+    | grep -v "^CLAUDE\.md$" \
+    | grep -v "^\.\(cursorrules\|windsurfrules\)$" \
+    | grep -v "^\.\(roo\|cursor\|windsurf\)/" \
+    | grep -v "^\.mcp\.json$" \
+    | grep -v "^setup\.\(sh\|ps1\)$" \
+    | grep -v "^README\.md$" \
+    || true)
+
+if [ -n "$CODE_FILES" ]; then
+    # Check for approval flag
+    APPROVED_FLAG=".ai-operation/.taskspec_approved"
+    FAST_TRACK=".ai-operation/.fast_track"
+
+    if [ -f "$APPROVED_FLAG" ]; then
+        # TaskSpec was approved — allow commit, consume fast-track if present
+        [ -f "$FAST_TRACK" ] && rm -f "$FAST_TRACK"
+        exit 0
+    fi
+
+    if [ -f "$FAST_TRACK" ]; then
+        # Fast-track — allow this one commit, then delete flag (single-use)
+        rm -f "$FAST_TRACK"
+        exit 0
+    fi
+
+    echo ""
+    echo "============================================================"
+    echo "  BLOCKED: No approved taskSpec for code changes"
     echo "============================================================"
     echo ""
+    echo "  The following project files were modified:"
+    echo "$CODE_FILES" | sed 's/^/    /'
+    echo ""
+    echo "  Before committing code changes, the AI must:"
+    echo "    1. Call aio__force_taskspec_submit (Phase 1: write spec)"
+    echo "    2. Wait for your approval"
+    echo "    3. Call aio__force_taskspec_approve (record approval)"
+    echo ""
+    echo "  For trivial changes (< 5 lines):"
+    echo "    Call aio__force_fast_track instead"
+    echo ""
+    echo "  Bypass (emergency): git commit --no-verify"
+    echo "============================================================"
     exit 1
 fi

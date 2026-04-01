@@ -23,6 +23,12 @@ MCP_COMMIT_FLAG = Path(".ai-operation/.mcp_commit_flag")
 MAX_FILE_CHARS = 4_000       # Max chars per project_map file injected into prompt
 MAX_TOTAL_CHARS = 12_000     # Max total chars across all files
 
+# TaskSpec workflow enforcement
+TASKSPEC_DIR = Path(".ai-operation/docs")
+TASKSPEC_FILE = TASKSPEC_DIR / "taskSpec.md"
+TASKSPEC_APPROVED_FLAG = Path(".ai-operation/.taskspec_approved")
+FAST_TRACK_FLAG = Path(".ai-operation/.fast_track")
+
 
 def _set_mcp_flag():
     """Create flag file so git pre-commit hook allows project_map commits."""
@@ -127,10 +133,17 @@ def register_architect_tools(mcp: FastMCP):
                 ["git", "commit", "-m", commit_msg],
                 check=True, capture_output=True, text=True
             )
+            # Clear taskSpec approval flag — forces new approval for next task
+            if TASKSPEC_APPROVED_FLAG.exists():
+                TASKSPEC_APPROVED_FLAG.unlink()
+            if FAST_TRACK_FLAG.exists():
+                FAST_TRACK_FLAG.unlink()
+
             return (
                 f"SUCCESS\n"
                 f"Files updated: {', '.join(changed_files)}\n"
-                f"Git commit: {result.stdout.strip()}"
+                f"Git commit: {result.stdout.strip()}\n"
+                f"TaskSpec approval cleared — next code change requires new approval."
             )
         except subprocess.CalledProcessError as e:
             stderr = e.stderr if hasattr(e, 'stderr') and e.stderr else str(e)
@@ -598,3 +611,201 @@ def register_architect_tools(mcp: FastMCP):
                 f"FAILED: Command not found. Verify the test command is correct.\n"
                 f"Command: {test_command.strip()}\n\n" + "".join(report_parts)
             )
+
+    # ═══════════════════════════════════════════════════════════════
+    # TaskSpec Workflow Enforcement (升级第 1 层软约束为硬约束)
+    # ═══════════════════════════════════════════════════════════════
+
+    @mcp.tool()
+    def aio__force_taskspec_submit(
+        task_goal: str,
+        scope_and_impact: str,
+        files_to_modify: str,
+        technical_constraints: str,
+        acceptance_criteria: str,
+        doc_impact: str,
+    ) -> str:
+        """
+        [ENFORCEMENT TOOL] Submit a taskSpec draft for user approval.
+
+        This tool MUST be called in Phase 1 (LEAD/Architect) before any code changes.
+        The AI MUST NOT write, edit, or execute any code before calling this tool.
+
+        After calling this tool, the AI must wait for user approval. Only after
+        the user approves should the AI call aio__force_taskspec_approve.
+
+        Args:
+            task_goal: One sentence describing the core purpose of this task.
+            scope_and_impact: Which modules/nodes are affected.
+            files_to_modify: Exact list of files to change and what to change.
+            technical_constraints: Limitations (dependencies, performance, isolation).
+            acceptance_criteria: Specific test steps to verify completion.
+            doc_impact: Which project_map docs need updating. "NONE" if no impact.
+
+        Returns:
+            The formatted taskSpec for user review.
+        """
+        import datetime
+
+        # Validate: all fields must be non-empty
+        fields = {
+            "task_goal": task_goal,
+            "scope_and_impact": scope_and_impact,
+            "files_to_modify": files_to_modify,
+            "technical_constraints": technical_constraints,
+            "acceptance_criteria": acceptance_criteria,
+            "doc_impact": doc_impact,
+        }
+        for name, value in fields.items():
+            if not value or not value.strip():
+                return f"REJECTED: {name} cannot be empty. All 6 taskSpec sections are mandatory."
+
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        # Build the taskSpec document
+        spec_content = (
+            f"# Task Specification\n\n"
+            f"> Generated: {timestamp}\n"
+            f"> Status: **PENDING APPROVAL**\n\n"
+            f"## 1. Task Goal\n{task_goal.strip()}\n\n"
+            f"## 2. Scope & Impact\n{scope_and_impact.strip()}\n\n"
+            f"## 3. Files to Modify\n{files_to_modify.strip()}\n\n"
+            f"## 4. Technical Constraints\n{technical_constraints.strip()}\n\n"
+            f"## 5. Acceptance Criteria\n{acceptance_criteria.strip()}\n\n"
+            f"## 6. Architecture Doc Impact\n{doc_impact.strip()}\n"
+        )
+
+        # Write the taskSpec file
+        TASKSPEC_DIR.mkdir(parents=True, exist_ok=True)
+        TASKSPEC_FILE.write_text(spec_content, encoding="utf-8")
+
+        # Clear any previous approval flag
+        if TASKSPEC_APPROVED_FLAG.exists():
+            TASKSPEC_APPROVED_FLAG.unlink()
+
+        return (
+            f"SUCCESS: TaskSpec submitted for approval.\n\n"
+            f"{spec_content}\n"
+            f"---\n"
+            f"⏸ Waiting for user approval. Do NOT write any code until approved.\n"
+            f"After user says '批准/approved/ok go', call aio__force_taskspec_approve."
+        )
+
+    @mcp.tool()
+    def aio__force_taskspec_approve(
+        user_said: str,
+    ) -> str:
+        """
+        [ENFORCEMENT TOOL] Record user approval of the current taskSpec.
+
+        This tool MUST be called after the user explicitly approves the taskSpec.
+        It creates the approval flag that the git pre-commit hook checks before
+        allowing code commits.
+
+        Without this flag, git commits that modify project code files will be BLOCKED
+        by the pre-commit hook.
+
+        Args:
+            user_said: The exact approval message from the user (e.g., "批准", "approved").
+
+        Returns:
+            Approval confirmation with execution permission granted.
+        """
+        # Gate 1: taskSpec file must exist
+        if not TASKSPEC_FILE.exists():
+            return (
+                "REJECTED: No taskSpec found.\n"
+                "You must call aio__force_taskspec_submit first to create a taskSpec."
+            )
+
+        # Gate 2: user_said must contain an approval signal
+        approval_signals = ["批准", "approved", "ok go", "执行", "ok", "go", "yes", "可以", "同意"]
+        if not any(signal in user_said.lower() for signal in approval_signals):
+            return (
+                f"REJECTED: '{user_said}' does not look like an approval.\n"
+                f"Expected one of: {', '.join(approval_signals)}"
+            )
+
+        # Gate 3: Check this isn't a stale approval (taskSpec must be PENDING)
+        spec_content = TASKSPEC_FILE.read_text(encoding="utf-8")
+        if "PENDING APPROVAL" not in spec_content:
+            return (
+                "REJECTED: taskSpec is not in PENDING state.\n"
+                "Submit a new taskSpec with aio__force_taskspec_submit first."
+            )
+
+        # Mark as approved
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        # Update taskSpec status
+        updated_spec = spec_content.replace(
+            "**PENDING APPROVAL**",
+            f"**APPROVED** ({timestamp}, user: {user_said.strip()[:50]})"
+        )
+        TASKSPEC_FILE.write_text(updated_spec, encoding="utf-8")
+
+        # Create approval flag for pre-commit hook
+        TASKSPEC_APPROVED_FLAG.write_text(
+            f"approved|{timestamp}|{user_said.strip()[:50]}",
+            encoding="utf-8"
+        )
+
+        return (
+            f"SUCCESS: TaskSpec APPROVED.\n"
+            f"Approval recorded at {timestamp}.\n"
+            f"You may now proceed to Phase 2 (WORKER) — write code per the approved spec.\n"
+            f"The approval flag has been created. Git commits will be allowed.\n\n"
+            f"Reminder: Execute ONLY what the taskSpec specifies. No extra changes."
+        )
+
+    @mcp.tool()
+    def aio__force_fast_track(
+        reason: str,
+        change_description: str,
+    ) -> str:
+        """
+        [ENFORCEMENT TOOL] Declare a fast-track change (skip taskSpec).
+
+        Use this for trivial changes that qualify for fast-track exemption:
+        - Single-file changes < 5 lines
+        - Pure documentation updates (.md only)
+        - Same-session reverts
+
+        This creates a temporary flag that allows one commit without a full taskSpec.
+        The flag is single-use and cleared after the next commit.
+
+        Args:
+            reason: Why this qualifies for fast-track (must be specific).
+            change_description: What exactly will be changed (file + change).
+
+        Returns:
+            Fast-track permission granted.
+        """
+        if not reason or not reason.strip():
+            return "REJECTED: reason cannot be empty. Explain why this qualifies for fast-track."
+        if not change_description or not change_description.strip():
+            return "REJECTED: change_description cannot be empty. Specify what will be changed."
+
+        # Validate it looks like a small change
+        lines_mentioned = change_description.lower().count("\n") + 1
+        if lines_mentioned > 10:
+            return (
+                "REJECTED: change_description looks too large for fast-track.\n"
+                "Fast-track is for < 5 line changes. Use aio__force_taskspec_submit instead."
+            )
+
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        FAST_TRACK_FLAG.write_text(
+            f"fast_track|{timestamp}|{reason.strip()[:100]}",
+            encoding="utf-8"
+        )
+
+        return (
+            f"SUCCESS: Fast-track permission granted.\n"
+            f"⚡ Fast-track: {reason.strip()}\n"
+            f"Change: {change_description.strip()[:200]}\n\n"
+            f"You may proceed. Remember to run [存档] after completion."
+        )

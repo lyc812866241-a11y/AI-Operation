@@ -40,25 +40,28 @@ before responding to the user's first prompt. Do NOT proceed with any task until
 This workflow is IDE-agnostic. Enforced purely through mandatory reply structure.
 
 ### Fast-Track Exemption (小改动豁免)
-The following MAY skip taskSpec:
+The following MAY skip full taskSpec:
   - Single-file changes < 5 lines (rename, typo, constant)
   - Pure documentation updates (.md only)
   - Same-session reverts
-Rules: state "⚡ Fast-track: [reason]" at reply start. Still must run [存档].
+Rules: Call `aio__force_fast_track` MCP tool with reason + change description.
+The tool creates a single-use commit permission. Still must run [存档] after.
 
-### Phase 1: LEAD (Architect)
+### Phase 1: LEAD (Architect) — MCP ENFORCED
 When user submits a feature request:
-  - Respond ONLY with taskSpec.md draft (template: .ai-operation/docs/taskSpec_template.md)
+  - You MUST call `aio__force_taskspec_submit` MCP tool with all 6 sections filled
+  - The tool writes the spec and returns it for user review
   - End with: "⏸ 等待审批。未开始执行任何代码变更。"
-  - Do NOT write any code in this reply
-  - Section 6 (Architecture Doc Impact) MUST be filled
+  - Do NOT write any code until Phase 2
 
-### Gate: User Approval
-Approval signals: "批准", "approved", "ok go", "执行"
-Changes requested → revise spec → return to Phase 1.
+### Gate: User Approval — MCP ENFORCED
+After user says "批准/approved/ok go/执行":
+  - You MUST call `aio__force_taskspec_approve` MCP tool with the user's approval message
+  - The tool creates an approval flag checked by git pre-commit hook
+  - WITHOUT this flag, git commits modifying project code will be PHYSICALLY BLOCKED
 
 ### Phase 2: WORKER (Code)
-After approval:
+After approval tool returns SUCCESS:
   - Execute ONLY what the approved taskSpec specifies
   - Do NOT add features, refactor, or fix unrelated issues
   - If Section 6 marked doc updates → complete them BEFORE [存档]
