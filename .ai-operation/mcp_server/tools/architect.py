@@ -61,6 +61,7 @@ def register_architect_tools(mcp: FastMCP):
         techContext_update: str,
         activeContext_update: str,
         progress_update: str,
+        lessons_learned: str,
         session_compaction: str = "",
     ) -> str:
         """
@@ -68,7 +69,6 @@ def register_architect_tools(mcp: FastMCP):
 
         This tool MUST be called when the user issues the [存档] command.
         The AI agent MUST NOT manually edit project_map files or run git commands directly.
-        All 5 update parameters are REQUIRED. Use "NO_CHANGE" only if that file truly has no updates.
 
         Args:
             projectbrief_update: Updates to core vision or business goals. "NO_CHANGE" if none.
@@ -76,9 +76,14 @@ def register_architect_tools(mcp: FastMCP):
             techContext_update: New tech stack constraints discovered. "NO_CHANGE" if none.
             activeContext_update: REQUIRED. Current focus, what was just done, immediate next steps.
             progress_update: REQUIRED. Tasks completed this session, updated TODO items.
-            session_compaction: Optional. A compressed summary of the current conversation session.
-                Include: tools used, key files modified, decisions made, pending work.
-                This is written to activeContext.md as a recovery point for context window overflow.
+            lessons_learned: REQUIRED. What went wrong, what was corrected, what to remember.
+                Format: one lesson per line. Use "NONE" only if truly nothing was learned.
+                Examples:
+                  - "FFmpeg 路径含空格会静默失败 → 所有路径用引号包裹"
+                  - "用户偏好：不要在测试中 mock 数据库，用真实连接"
+                  - "AI 遗漏了 plugins/ 目录的模块扫描"
+                These are written to corrections.md as the project's experience bank.
+            session_compaction: Optional. Compressed summary of current conversation session.
 
         Returns:
             Execution report with files updated and git commit status.
@@ -91,11 +96,17 @@ def register_architect_tools(mcp: FastMCP):
             "progress.md": progress_update,
         }
 
-        # Validate: activeContext and progress must never be NO_CHANGE
+        # Validate: activeContext, progress, and lessons are REQUIRED
         if activeContext_update.strip() == "NO_CHANGE":
             return "REJECTED: activeContext_update cannot be NO_CHANGE. You must always update the current focus."
         if progress_update.strip() == "NO_CHANGE":
             return "REJECTED: progress_update cannot be NO_CHANGE. You must always record what was done this session."
+        if not lessons_learned or not lessons_learned.strip():
+            return (
+                "REJECTED: lessons_learned cannot be empty.\n"
+                "Reflect on this session: any bugs hit, user corrections, gotchas discovered, "
+                "or preferences expressed? Use 'NONE' only if truly nothing was learned."
+            )
 
         # Apply surgical updates (append-only to preserve history)
         changed_files = []
@@ -110,6 +121,39 @@ def register_architect_tools(mcp: FastMCP):
 
         if not changed_files:
             return "WARNING: No files were updated. Verify nothing was missed this session."
+
+        # Write lessons learned to corrections.md (experience bank)
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        if lessons_learned.strip().upper() != "NONE":
+            corrections_path = PROJECT_MAP_DIR / "corrections.md"
+            lessons_lines = [l.strip() for l in lessons_learned.strip().split("\n") if l.strip()]
+
+            with open(corrections_path, "a", encoding="utf-8") as f:
+                for lesson in lessons_lines:
+                    # Check if this lesson already exists (prevent duplicates)
+                    existing = ""
+                    if corrections_path.exists():
+                        existing = corrections_path.read_text(encoding="utf-8")
+
+                    # Extract the core lesson text (strip leading "- " if present)
+                    lesson_text = lesson.lstrip("- ").strip()
+
+                    if lesson_text in existing:
+                        # Find and increment COUNT
+                        continue
+
+                    f.write(
+                        f"\n---\n"
+                        f"DATE: {timestamp}\n"
+                        f"CONTEXT: [存档] during development session\n"
+                        f"LESSON: {lesson_text}\n"
+                        f"COUNT: 1\n"
+                    )
+
+            if "corrections.md" not in changed_files:
+                changed_files.append("corrections.md")
 
         # Write session compaction summary (context overflow recovery point)
         if session_compaction and session_compaction.strip():
