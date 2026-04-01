@@ -51,8 +51,13 @@ REQUIRED_FILES = {
 }
 
 
-def register_architect_tools(mcp: FastMCP):
+def register_architect_tools(mcp: FastMCP, audit_fn=None):
     """Register all architect enforcement tools onto the MCP server instance."""
+
+    def _audit(tool_name: str, status: str, details: str = ""):
+        """Log tool call if audit function is provided."""
+        if audit_fn:
+            audit_fn(tool_name, status, details)
 
     @mcp.tool()
     def aio__force_architect_save(
@@ -96,8 +101,11 @@ def register_architect_tools(mcp: FastMCP):
             "progress.md": progress_update,
         }
 
+        _audit("aio__force_architect_save", "CALLED")
+
         # Validate: activeContext, progress, and lessons are REQUIRED
         if activeContext_update.strip() == "NO_CHANGE":
+            _audit("aio__force_architect_save", "REJECTED", "activeContext was NO_CHANGE")
             return "REJECTED: activeContext_update cannot be NO_CHANGE. You must always update the current focus."
         if progress_update.strip() == "NO_CHANGE":
             return "REJECTED: progress_update cannot be NO_CHANGE. You must always record what was done this session."
@@ -183,6 +191,7 @@ def register_architect_tools(mcp: FastMCP):
             if FAST_TRACK_FLAG.exists():
                 FAST_TRACK_FLAG.unlink()
 
+            _audit("aio__force_architect_save", "SUCCESS", f"files={','.join(changed_files)}")
             return (
                 f"SUCCESS\n"
                 f"Files updated: {', '.join(changed_files)}\n"
@@ -232,7 +241,54 @@ def register_architect_tools(mcp: FastMCP):
             else:
                 report.append(f"WARNING: File not found at {filepath}")
 
-        report.append(f"\n---\nPrompt budget: {total_chars}/{MAX_TOTAL_CHARS} chars used")
+        # Discover and append sub-directory rules (rules.d/)
+        rules_dir = Path(".ai-operation/rules.d")
+        if rules_dir.exists():
+            rule_files = sorted(rules_dir.glob("*.md"))
+            rule_files = [f for f in rule_files if f.name != "README.md"]
+            if rule_files:
+                report.append("\n## [Sub-Directory Rules]")
+                for rf in rule_files:
+                    content = rf.read_text(encoding="utf-8")
+                    if len(content) > MAX_FILE_CHARS:
+                        content = content[:MAX_FILE_CHARS] + "\n\n[truncated]"
+                    if total_chars + len(content) > MAX_TOTAL_CHARS:
+                        remaining = MAX_TOTAL_CHARS - total_chars
+                        if remaining > 200:
+                            content = content[:remaining] + "\n\n[truncated — budget reached]"
+                        else:
+                            report.append(f"\n### {rf.name}\n[omitted — budget exhausted]")
+                            continue
+                    total_chars += len(content)
+                    report.append(f"\n### {rf.name}\n{content}")
+
+        # ── Auto-Save Reminder ────────────────────────────────────
+        # Estimate total project_map size. If growing large, recommend [存档].
+        total_map_size = 0
+        for filename in REQUIRED_FILES.values():
+            fp = PROJECT_MAP_DIR / filename
+            if fp.exists():
+                total_map_size += fp.stat().st_size
+
+        budget_pct = int(total_chars / MAX_TOTAL_CHARS * 100)
+        report.append(f"\n---\nPrompt budget: {total_chars}/{MAX_TOTAL_CHARS} chars ({budget_pct}% used)")
+        report.append(f"Project map total size: {total_map_size:,} bytes")
+
+        if budget_pct >= 70:
+            report.append(
+                f"\n⚠️ WARNING: Prompt budget at {budget_pct}%. "
+                f"activeContext.md may be growing too large. "
+                f"Consider running [存档] with session_compaction to compress older entries, "
+                f"or manually trim activeContext.md via [清理]."
+            )
+        if total_map_size > 50_000:
+            report.append(
+                f"\n⚠️ WARNING: Project map total size ({total_map_size:,} bytes) exceeds 50KB. "
+                f"Some content may be truncated during [读档]. "
+                f"Consider archiving older entries in activeContext.md and progress.md."
+            )
+
+        _audit("aio__force_architect_read", "SUCCESS", f"budget={budget_pct}%,size={total_map_size}")
         return "\n".join(report)
 
     @mcp.tool()
@@ -691,6 +747,8 @@ def register_architect_tools(mcp: FastMCP):
         """
         import datetime
 
+        _audit("aio__force_taskspec_submit", "CALLED", task_goal[:100] if task_goal else "")
+
         # Validate: all fields must be non-empty
         fields = {
             "task_goal": task_goal,
@@ -755,6 +813,7 @@ def register_architect_tools(mcp: FastMCP):
         Returns:
             Approval confirmation with execution permission granted.
         """
+        _audit("aio__force_taskspec_approve", "CALLED", user_said[:50] if user_said else "")
         # Gate 1: taskSpec file must exist
         if not TASKSPEC_FILE.exists():
             return (
@@ -811,10 +870,11 @@ def register_architect_tools(mcp: FastMCP):
         """
         [ENFORCEMENT TOOL] Declare a fast-track change (skip taskSpec).
 
-        Use this for trivial changes that qualify for fast-track exemption:
-        - Single-file changes < 5 lines
-        - Pure documentation updates (.md only)
-        - Same-session reverts
+        Use this for trivial changes that qualify for fast-track exemption.
+        The threshold is DYNAMIC based on trust score:
+        - Low trust (recent corrections): < 3 lines, single file only
+        - Normal trust: < 5 lines, single file
+        - High trust (5+ clean saves): < 10 lines, single file
 
         This creates a temporary flag that allows one commit without a full taskSpec.
         The flag is single-use and cleared after the next commit.
@@ -824,22 +884,73 @@ def register_architect_tools(mcp: FastMCP):
             change_description: What exactly will be changed (file + change).
 
         Returns:
-            Fast-track permission granted.
+            Fast-track permission granted, with trust level shown.
         """
+        import datetime
+        import re
+
+        _audit("aio__force_fast_track", "CALLED", reason[:80] if reason else "")
+
         if not reason or not reason.strip():
             return "REJECTED: reason cannot be empty. Explain why this qualifies for fast-track."
         if not change_description or not change_description.strip():
             return "REJECTED: change_description cannot be empty. Specify what will be changed."
 
-        # Validate it looks like a small change
-        lines_mentioned = change_description.lower().count("\n") + 1
-        if lines_mentioned > 10:
+        # ── Trust Score Calculation ──────────────────────────────────
+        # Read corrections.md to assess recent error frequency
+        corrections_path = PROJECT_MAP_DIR / "corrections.md"
+        recent_corrections = 0
+        consecutive_clean_saves = 0
+
+        if corrections_path.exists():
+            content = corrections_path.read_text(encoding="utf-8")
+            # Count corrections from last 30 days
+            dates = re.findall(r"DATE: (\d{4}-\d{2}-\d{2})", content)
+            now = datetime.datetime.now()
+            for d in dates:
+                try:
+                    dt = datetime.datetime.strptime(d, "%Y-%m-%d")
+                    if (now - dt).days <= 30:
+                        recent_corrections += 1
+                except ValueError:
+                    pass
+
+        # Check recent saves — count NONE lessons as "clean saves"
+        if corrections_path.exists():
+            content = corrections_path.read_text(encoding="utf-8")
+            entries = content.split("---")
+            # Count consecutive entries from the end that are clean
+            for entry in reversed(entries):
+                if "LESSON:" in entry and "NONE" not in entry.upper():
+                    break
+                if "LESSON:" in entry:
+                    consecutive_clean_saves += 1
+
+        # Determine trust level and threshold
+        if recent_corrections >= 3:
+            trust_level = "LOW"
+            max_lines = 3
+            trust_reason = f"{recent_corrections} corrections in last 30 days"
+        elif consecutive_clean_saves >= 5:
+            trust_level = "HIGH"
+            max_lines = 10
+            trust_reason = f"{consecutive_clean_saves} consecutive clean saves"
+        else:
+            trust_level = "NORMAL"
+            max_lines = 5
+            trust_reason = "default threshold"
+
+        # Validate change size against trust-adjusted threshold
+        lines_mentioned = change_description.count("\n") + 1
+        if lines_mentioned > max_lines:
+            _audit("aio__force_fast_track", "REJECTED", f"trust={trust_level}, lines={lines_mentioned}>{max_lines}")
             return (
-                "REJECTED: change_description looks too large for fast-track.\n"
-                "Fast-track is for < 5 line changes. Use aio__force_taskspec_submit instead."
+                f"REJECTED: Change too large for fast-track at current trust level.\n"
+                f"Trust: {trust_level} ({trust_reason})\n"
+                f"Max lines: {max_lines}, your change: {lines_mentioned} lines\n"
+                f"Use aio__force_taskspec_submit instead."
             )
 
-        import datetime
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
         FAST_TRACK_FLAG.write_text(
@@ -847,8 +958,11 @@ def register_architect_tools(mcp: FastMCP):
             encoding="utf-8"
         )
 
+        _audit("aio__force_fast_track", "SUCCESS", f"trust={trust_level}")
         return (
             f"SUCCESS: Fast-track permission granted.\n"
+            f"Trust level: {trust_level} ({trust_reason})\n"
+            f"Threshold: < {max_lines} lines\n"
             f"⚡ Fast-track: {reason.strip()}\n"
             f"Change: {change_description.strip()[:200]}\n\n"
             f"You may proceed. Remember to run [存档] after completion."

@@ -22,6 +22,8 @@ CRITICAL: At the start of EVERY new conversation, before responding to the user'
 
 If you haven't read them, DO NOT guess. Read them immediately.
 
+> WHY: Without reading these files, you will hallucinate about project state. Every agent that skipped this step caused rework. This is a non-negotiable precondition.
+
 [BOOTSTRAP CHECK] After reading, scan all 5 project_map files for [待填写] placeholders.
 If 3 or more [待填写] remain: the project_map has NOT been fully initialized. Invoke `.ai-operation/skills/project-bootstrap/SKILL.md`
 before responding to the user's first prompt. Do NOT proceed with any task until bootstrap is complete.
@@ -31,13 +33,17 @@ before responding to the user's first prompt. Do NOT proceed with any task until
 - [汇报]: Call MCP tool `aio__force_architect_report`. All 4 sections mandatory. No free-form reports.
 - [执行测试]: Call MCP tool `aio__force_test_runner`. Auto pre-cleanup + node-by-node isolation. Full pipeline runs forbidden.
 - [读档]: Call MCP tool `aio__force_architect_read`. Output macro state report.
-- [存档]: Call MCP tool `aio__force_architect_save`. Updates project_map + git commit. Generates compaction summary.
+- [存档]: Call MCP tool `aio__force_architect_save`. Updates project_map + git commit. MUST include lessons_learned.
 - [清理]: Call MCP tool `aio__force_garbage_collection`. List first, wait for user confirmation, then delete.
 - [初始化项目]: Invoke `.ai-operation/skills/project-bootstrap/SKILL.md`. Phase 4 calls `aio__force_project_bootstrap_write`. Direct file editing FORBIDDEN.
 
+> WHY all commands route through MCP tools: Text rules can be ignored. MCP tools contain hard-coded validation that physically rejects non-compliant calls. This is the difference between a suggestion and a gate.
+
 ## 2. Dual-Layer Agent Workflow (双层代理架构)
 
-This workflow is IDE-agnostic. Enforced purely through mandatory reply structure.
+This workflow is IDE-agnostic. Enforced by MCP tools + git pre-commit hooks.
+
+> WHY dual-layer: Projects where AI writes code without a reviewed plan have 3x higher rework rates. The 5 minutes spent writing a spec saves hours of debugging wrong implementations. Plan first, code second — this is engineering discipline, not bureaucracy.
 
 ### Fast-Track Exemption (小改动豁免)
 The following MAY skip full taskSpec:
@@ -54,6 +60,8 @@ When user submits a feature request:
   - End with: "⏸ 等待审批。未开始执行任何代码变更。"
   - Do NOT write any code until Phase 2
 
+> WHY MCP-enforced spec: Without this tool call, the git pre-commit hook will BLOCK your code commits. This is not optional — it is a physical gate. Writing code without a spec is like driving without a license — you can try, but you will be stopped.
+
 ### Gate: User Approval — MCP ENFORCED
 After user says "批准/approved/ok go/执行":
   - You MUST call `aio__force_taskspec_approve` MCP tool with the user's approval message
@@ -67,8 +75,12 @@ After approval tool returns SUCCESS:
   - If Section 6 marked doc updates → complete them BEFORE [存档]
   - End with: "✅ 执行完毕。运行 [存档] 保存检查点。"
 
+> WHY strict scope: Scope creep is the #1 cause of AI-introduced bugs. Every "while I'm here, let me also fix..." creates untested side effects. Do exactly what was approved. Nothing more.
+
 ### Auto-Return to LEAD
 After Phase 2 completes, return to Architect posture. Wait for next user request.
+
+> WHY auto-return: Prevents the AI from entering a "coding loop" where it keeps making changes without human review. The human drives, the AI navigates.
 
 NEVER modify core code without an approved taskSpec.md.
 NEVER run [存档] if Section 6 doc updates are marked but not yet completed.
@@ -76,10 +88,22 @@ NEVER run [存档] if Section 6 doc updates are marked but not yet completed.
 ## 3. Development Iron Laws (开发铁律)
 
 - STRICT NODE-BY-NODE TESTING: Test one module at a time. Full pipeline blind runs forbidden.
+  > WHY: Full pipeline tests mask which module actually failed. Isolate first, integrate later.
+
 - CONTRACT-DRIVEN SKILLS: Every skill has strict Input/Output contract. No monolithic code.
+  > WHY: Monolithic code cannot be tested, replaced, or understood independently. Contracts enable composition.
+
 - VERIFICATION BEFORE COMPLETION: Provide terminal evidence (ls -lh, cat) when reporting changes.
+  > WHY: AI has a tendency to report "done" without verifying. Terminal evidence prevents hallucinated success.
+
 - STATELESS EXECUTION: Never rely on UI for core logic. API/Agent logic is the source of truth.
+  > WHY: UI can lie (cached state, stale render). API responses are authoritative.
+
 - SKILL LIBRARY FIRST: Check skills/ directory before implementing complex logic. Do not reinvent.
+  > WHY: Reimplementing existing functionality wastes time and introduces inconsistency.
+
+- LESSONS ARE MANDATORY: Every [存档] must include lessons_learned. The MCP tool rejects empty values.
+  > WHY: A framework that doesn't learn from its mistakes is just a template. Every session teaches something — capture it or lose it. This is how the framework evolves.
 
 # ═══════════════════════════════════════════════════════════════════
 # __DYNAMIC_CONTEXT_BOUNDARY__
