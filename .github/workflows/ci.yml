@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.9", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install test dependencies
+        run: pip install pytest
+
+      - name: Run tests
+        run: python -m pytest tests/ -v
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check Python syntax
+        run: python -m py_compile .ai-operation/cli/ai_op.py
+
+      - name: Verify rule files are in sync
+        run: |
+          bash .ai-operation/scripts/sync-rules.sh
+          git diff --exit-code CLAUDE.md .cursorrules .windsurfrules || \
+            (echo "ERROR: Rule files out of sync. Run: bash .ai-operation/scripts/sync-rules.sh" && exit 1)
+
+      - name: Verify all MCP configs have same tool list
+        run: |
+          python -c "
+          import json
+          configs = ['.roo/mcp.json', '.cursor/mcp.json', '.windsurf/mcp.json', '.mcp.json']
+          tool_lists = []
+          for c in configs:
+              with open(c) as f:
+                  tools = json.load(f)['mcpServers']['project_architect']['alwaysAllow']
+                  tool_lists.append(sorted(tools))
+          assert all(t == tool_lists[0] for t in tool_lists), 'MCP configs have different tool lists!'
+          print(f'OK: All 4 MCP configs have {len(tool_lists[0])} tools in sync')
+          "

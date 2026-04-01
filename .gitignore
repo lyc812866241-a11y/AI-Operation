@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+venv/
+.ai-operation/venv/
+.ai-operation/audit.log
+.ai-operation/.mcp_commit_flag
+.ai-operation/.taskspec_approved
+.ai-operation/.fast_track
+*.egg-info/
+dist/
+build/
+.env

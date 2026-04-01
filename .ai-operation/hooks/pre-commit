@@ -69,6 +69,10 @@ CODE_FILES=$(git diff --cached --name-only \
     | grep -v "^\.mcp\.json$" \
     | grep -v "^setup\.\(sh\|ps1\)$" \
     | grep -v "^README\.md$" \
+    | grep -v "^LICENSE$" \
+    | grep -v "^\.gitignore$" \
+    | grep -v "^\.github/" \
+    | grep -v "^tests/" \
     || true)
 
 if [ -n "$CODE_FILES" ]; then
