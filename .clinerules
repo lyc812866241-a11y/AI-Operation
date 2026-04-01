@@ -12,8 +12,8 @@ CRITICAL: At the start of EVERY new conversation, before responding to the user'
 
 If you haven't read them, DO NOT guess. Read them immediately.
 
-[BOOTSTRAP CHECK] After reading activeContext.md, check if it still contains 3 or more [TODO] placeholders.
-If yes: the project_map has NOT been initialized. Immediately invoke `.ai-operation/skills/project-bootstrap/SKILL.md`
+[BOOTSTRAP CHECK] After reading, scan all 5 project_map files for [待填写] placeholders.
+If 3 or more [待填写] remain: the project_map has NOT been fully initialized. Invoke `.ai-operation/skills/project-bootstrap/SKILL.md`
 before responding to the user's first prompt. Do NOT proceed with any task until bootstrap is complete.
 
 1. 🗺️ 项目地图导航 (The Project Map)
