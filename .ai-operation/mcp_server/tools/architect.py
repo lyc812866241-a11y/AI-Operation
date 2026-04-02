@@ -45,6 +45,88 @@ def _clear_mcp_flag():
         MCP_COMMIT_FLAG.unlink()
 
 
+def _section_merge(existing_content: str, section_updates: dict) -> tuple:
+    """Merge updates into specific sections of a markdown file.
+
+    Reads the file, splits by ## headers, updates only the sections that
+    have new content, leaves others untouched.
+
+    Args:
+        existing_content: Current file content
+        section_updates: Dict of {section_title: new_content_or_SKIP}
+            Example: {"可用单元清单": "new table row", "系统定性": "SKIP"}
+
+    Returns:
+        (merged_content, list_of_changed_sections)
+    """
+    import re
+
+    lines = existing_content.split("\n")
+    sections = {}  # title → (start_line, end_line, content_lines)
+    current_section = None
+    current_start = 0
+
+    # Parse file into sections by ## headers
+    for i, line in enumerate(lines):
+        if line.startswith("## "):
+            if current_section is not None:
+                sections[current_section] = (current_start, i, lines[current_start:i])
+            # Extract section title (strip ## and numbering like "## 3. ")
+            raw_title = line[3:].strip()
+            # Remove leading number+dot: "3. 可用单元清单" → "可用单元清单"
+            clean_title = re.sub(r'^\d+\.\s*', '', raw_title)
+            current_section = clean_title
+            current_start = i
+
+    # Last section
+    if current_section is not None:
+        sections[current_section] = (current_start, len(lines), lines[current_start:])
+
+    if not sections:
+        # File has no ## sections — fall back to append
+        return existing_content, []
+
+    changed = []
+    result_lines = []
+    last_end = 0
+
+    # Rebuild file, replacing matched sections
+    sorted_sections = sorted(sections.items(), key=lambda x: x[1][0])
+
+    for title, (start, end, original_lines) in sorted_sections:
+        # Add any lines between sections (e.g., file header before first ##)
+        if start > last_end:
+            result_lines.extend(lines[last_end:start])
+
+        # Check if this section has an update
+        matched_update = None
+        for update_key, update_val in section_updates.items():
+            # Fuzzy match: update key is a substring of section title or vice versa
+            if (update_key in title or title in update_key or
+                    update_key.lower() in title.lower() or title.lower() in update_key.lower()):
+                matched_update = update_val
+                break
+
+        if matched_update and matched_update.strip().upper() != "SKIP":
+            # Keep the ## header line, replace the body
+            result_lines.append(original_lines[0])  # ## header
+            result_lines.append("")
+            result_lines.append(matched_update.strip())
+            result_lines.append("")
+            changed.append(title)
+        else:
+            # Keep original section unchanged
+            result_lines.extend(original_lines)
+
+        last_end = end
+
+    # Add any trailing content after last section
+    if last_end < len(lines):
+        result_lines.extend(lines[last_end:])
+
+    return "\n".join(result_lines), changed
+
+
 def _compact_dynamic_file(content: str, filename: str) -> str:
     """Compact a dynamic file (activeContext/progress) that has grown too large.
 
@@ -115,15 +197,26 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
         The AI agent MUST NOT manually edit project_map files or run git commands directly.
 
         CRITICAL: For ALL 5 file parameters, you must EITHER:
-          - Provide actual update content (will be appended to the file)
+          - Provide update content (see format below)
           - Write "NO_CHANGE_BECAUSE: [specific reason]" explaining WHY no update is needed
 
         Simply writing "NO_CHANGE" is REJECTED. You must justify why each file doesn't need updating.
 
+        SECTION-AWARE MERGE (for static files: projectbrief, systemPatterns, techContext):
+        Instead of dumping all content as one blob, use ===SECTION=== delimiters to target
+        specific sections. The tool will update ONLY those sections, leaving others untouched.
+
+        Format:
+          "可用单元清单\nnew table content here\n===SECTION===\n架构约束\nnew constraint here"
+
+        Each block: first line = section title to match, rest = new content for that section.
+        Sections not mentioned are left unchanged. Use SKIP as content to explicitly skip a section.
+        If no ===SECTION=== delimiters found, falls back to append mode (backward compatible).
+
         Args:
-            projectbrief_update: Updates to vision/goals, OR "NO_CHANGE_BECAUSE: [reason]"
-            systemPatterns_update: New architecture/modules, OR "NO_CHANGE_BECAUSE: [reason]"
-            techContext_update: New tech constraints/gotchas, OR "NO_CHANGE_BECAUSE: [reason]"
+            projectbrief_update: Section updates OR "NO_CHANGE_BECAUSE: [reason]"
+            systemPatterns_update: Section updates OR "NO_CHANGE_BECAUSE: [reason]"
+            techContext_update: Section updates OR "NO_CHANGE_BECAUSE: [reason]"
             activeContext_update: REQUIRED. Current focus + what was done + next steps. Cannot be NO_CHANGE.
             progress_update: REQUIRED. Tasks completed + new TODOs. Cannot be NO_CHANGE.
             lessons_learned: REQUIRED. Lessons from this session. "NONE" only if truly nothing learned.
@@ -400,22 +493,59 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
         staged_compaction = staging_data.get("compaction", "")
 
         DYNAMIC_FILE_MAX_BYTES = 3_000
+        STATIC_FILES = {"projectbrief.md", "systemPatterns.md", "techContext.md"}
         changed_files = []
+        merge_report = []
 
-        # Apply updates
         for filename, content in staged_updates.items():
             filepath = PROJECT_MAP_DIR / filename
 
             if filename == "inventory.md":
-                # Inventory is full overwrite
+                # Inventory: full overwrite
                 inv_content = (
                     f"# Project Inventory (资产清单)\n\n"
                     f"> 上次更新：{timestamp}\n\n---\n\n"
                     f"{content}\n"
                 )
                 filepath.write_text(inv_content, encoding="utf-8")
+                merge_report.append(f"  {filename}: OVERWRITE")
+
+            elif filename in STATIC_FILES:
+                # Static files: section-aware merge
+                # AI passes content as "section_title: content" pairs separated by ===SECTION===
+                # Or as a single block (falls back to append)
+                if filepath.exists() and "===SECTION===" in content:
+                    existing = filepath.read_text(encoding="utf-8")
+                    # Parse section updates from AI content
+                    section_updates = {}
+                    for section_block in content.split("===SECTION==="):
+                        section_block = section_block.strip()
+                        if not section_block:
+                            continue
+                        # First line is the section title hint
+                        lines = section_block.split("\n", 1)
+                        if len(lines) == 2:
+                            section_updates[lines[0].strip()] = lines[1].strip()
+                        else:
+                            section_updates[lines[0].strip()] = ""
+
+                    merged, changed_sections = _section_merge(existing, section_updates)
+                    filepath.write_text(merged, encoding="utf-8")
+                    merge_report.append(
+                        f"  {filename}: SECTION MERGE ({len(changed_sections)} sections updated: "
+                        f"{', '.join(changed_sections) if changed_sections else 'none'})"
+                    )
+                elif filepath.exists():
+                    # No ===SECTION=== delimiter — append as before (backward compatible)
+                    with open(filepath, "a", encoding="utf-8") as f:
+                        f.write(f"\n\n---\n### [MCP Auto-Archive]\n{content}\n")
+                    merge_report.append(f"  {filename}: APPEND (no section delimiters)")
+                else:
+                    filepath.write_text(content, encoding="utf-8")
+                    merge_report.append(f"  {filename}: CREATED")
+
             else:
-                # Regular files: auto-compact then append
+                # Dynamic files (activeContext, progress): compact + append
                 if filename in ("activeContext.md", "progress.md") and filepath.exists():
                     existing = filepath.read_text(encoding="utf-8")
                     if len(existing.encode("utf-8")) > DYNAMIC_FILE_MAX_BYTES:
@@ -424,6 +554,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
 
                 with open(filepath, "a", encoding="utf-8") as f:
                     f.write(f"\n\n---\n### [MCP Auto-Archive]\n{content}\n")
+                merge_report.append(f"  {filename}: APPEND")
 
             changed_files.append(filename)
 
@@ -476,6 +607,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
             return (
                 f"SUCCESS\n"
                 f"Files updated: {', '.join(changed_files)}\n"
+                f"Merge details:\n" + "\n".join(merge_report) + "\n\n"
                 f"Git commit: {result.stdout.strip()}\n"
                 f"TaskSpec approval cleared — next code change requires new approval."
             )
