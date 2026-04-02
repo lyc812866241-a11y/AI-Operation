@@ -45,135 +45,6 @@ def _clear_mcp_flag():
         MCP_COMMIT_FLAG.unlink()
 
 
-def _llm_audit_save(current_files: dict, proposed_updates: dict, skipped: list) -> str:
-    """Call a cheap LLM to audit the save for completeness and consistency.
-
-    Acts as an independent reviewer that checks whether proposed updates
-    accurately reflect changes, and whether NO_CHANGE decisions are justified.
-
-    Supports two API backends (checked in order):
-      1. Vertex AI (Google Cloud) — set AIO_VERTEX_PROJECT + AIO_VERTEX_LOCATION
-      2. Anthropic API — set ANTHROPIC_API_KEY
-
-    Returns: Audit verdict (PASS / FAIL with reasons)
-    """
-    import os
-    import json as _json
-
-    # Build the audit prompt (shared by both backends)
-    audit_context = []
-    audit_context.append("## Current File State (before save)")
-    for fn, content in current_files.items():
-        truncated = content[:1500] + "..." if len(content) > 1500 else content
-        audit_context.append(f"### {fn} ({len(content)} chars)\n{truncated}")
-
-    audit_context.append("\n## Proposed Updates")
-    for fn, content in proposed_updates.items():
-        truncated = content[:1500] + "..." if len(content) > 1500 else content
-        audit_context.append(f"### {fn} ({len(content)} chars)\n{truncated}")
-
-    if skipped:
-        audit_context.append("\n## Skipped Files (marked NO_CHANGE)")
-        for s in skipped:
-            audit_context.append(f"- {s}")
-
-    audit_prompt = "\n".join(audit_context)
-
-    system_prompt = (
-        "You are a strict auditor reviewing an AI agent's save operation. "
-        "Your job is to FIND PROBLEMS. Be suspicious. Look for:\n\n"
-        "1. DATA LOSS: Is the update much shorter than the existing content? "
-        "Did a list of 40 items shrink to 9? Are modules or skills missing?\n"
-        "2. INCONSISTENCY: Does the activeContext say 'working on X' but "
-        "progress says 'completed Y' with no mention of X?\n"
-        "3. LAZY SKIPS: Are NO_CHANGE_BECAUSE reasons plausible? If the "
-        "session clearly changed architecture, but systemPatterns is skipped, flag it.\n"
-        "4. VAGUE CONTENT: Are updates specific (file paths, function names) "
-        "or vague ('improved the system', 'made changes')?\n"
-        "5. MISSING LESSONS: If lessons_learned is NONE but updates show "
-        "significant work was done, that's suspicious.\n\n"
-        "Respond in this exact format:\n"
-        "VERDICT: PASS or FAIL\n"
-        "ISSUES: (list each issue on its own line, or 'None found')\n"
-        "Keep your response under 300 words."
-    )
-
-    # ── Try Vertex AI first ──────────────────────────────────────
-    vertex_project = os.environ.get("AIO_VERTEX_PROJECT", "")
-    vertex_location = os.environ.get("AIO_VERTEX_LOCATION", "us-east5")
-
-    if vertex_project:
-        try:
-            import google.auth
-            import google.auth.transport.requests
-            import urllib.request
-
-            credentials, _ = google.auth.default()
-            credentials.refresh(google.auth.transport.requests.Request())
-            access_token = credentials.token
-
-            model = "claude-haiku-4-5-20251001"
-            url = (
-                f"https://{vertex_location}-aiplatform.googleapis.com/v1/"
-                f"projects/{vertex_project}/locations/{vertex_location}/"
-                f"publishers/anthropic/models/{model}:rawPredict"
-            )
-
-            body = _json.dumps({
-                "anthropic_version": "vertex-2023-10-16",
-                "max_tokens": 500,
-                "system": system_prompt,
-                "messages": [{"role": "user", "content": audit_prompt}],
-            }).encode("utf-8")
-
-            req = urllib.request.Request(url, data=body, method="POST", headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {access_token}",
-            })
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                result = _json.loads(resp.read().decode("utf-8"))
-                return result["content"][0]["text"]
-
-        except Exception as e:
-            pass  # Fall through to Anthropic API
-
-    # ── Try Anthropic API ────────────────────────────────────────
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if api_key:
-        try:
-            import urllib.request
-
-            body = _json.dumps({
-                "model": "claude-haiku-4-5-20251001",
-                "max_tokens": 500,
-                "system": system_prompt,
-                "messages": [{"role": "user", "content": audit_prompt}],
-            }).encode("utf-8")
-
-            req = urllib.request.Request(
-                "https://api.anthropic.com/v1/messages",
-                data=body, method="POST",
-                headers={
-                    "Content-Type": "application/json",
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                },
-            )
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                result = _json.loads(resp.read().decode("utf-8"))
-                return result["content"][0]["text"]
-
-        except Exception as e:
-            return f"AUDIT_ERROR: Anthropic API failed ({str(e)[:100]}). Save can proceed without audit."
-
-    return (
-        "AUDIT_SKIPPED: No LLM API configured.\n"
-        "To enable audit, set one of:\n"
-        "  - AIO_VERTEX_PROJECT + AIO_VERTEX_LOCATION (Google Vertex AI)\n"
-        "  - ANTHROPIC_API_KEY (Anthropic direct API)"
-    )
-
-
 def _compact_dynamic_file(content: str, filename: str) -> str:
     """Compact a dynamic file (activeContext/progress) that has grown too large.
 
@@ -408,22 +279,6 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
         SAVE_STAGING_FILE.parent.mkdir(parents=True, exist_ok=True)
         SAVE_STAGING_FILE.write_text(json.dumps(staging_data, ensure_ascii=False, indent=2), encoding="utf-8")
 
-        # ── LLM Audit: independent reviewer checks for data loss ──
-        current_files = {}
-        for fn in REQUIRED_FILES.values():
-            fp = PROJECT_MAP_DIR / fn
-            if fp.exists():
-                current_files[fn] = fp.read_text(encoding="utf-8")
-
-        audit_verdict = _llm_audit_save(current_files, staged_updates, skipped_files)
-
-        # Save audit result to staging
-        staging_data["audit"] = audit_verdict
-        SAVE_STAGING_FILE.write_text(json.dumps(staging_data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-        # Determine if audit blocks the save
-        audit_failed = audit_verdict.strip().startswith("VERDICT: FAIL")
-
         # Build the review report
         report = ["PENDING_REVIEW: Save prepared but NOT yet written.\n"]
         report.append("## Diff Preview\n")
@@ -441,30 +296,74 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
                 report.append(f"  {w}")
             report.append("")
 
-        # LLM audit section
-        report.append("## LLM Audit Result\n")
-        report.append(audit_verdict)
+        report.append(f"## Lessons: {staged_lessons[:150]}")
         report.append("")
 
-        if audit_failed:
-            report.append(
-                "───────────────────────────────────────────\n"
-                "❌ AUDIT FAILED. Fix the issues above, then call\n"
-                "  aio__force_architect_save again with corrected content.\n"
-                "If you believe the audit is wrong, you may still call\n"
-                "  aio__force_architect_save_confirm to override."
-            )
-        else:
-            report.append(f"## Lessons: {staged_lessons[:150]}")
-            report.append("")
-            report.append(
-                "───────────────────────────────────────────\n"
-                "✅ Audit passed. Call aio__force_architect_save_confirm to execute.\n"
-                "If something looks wrong, call aio__force_architect_save again."
+        # ── Self-Audit Checklist (forced reflection) ─────────────
+        # The AI must answer each question before calling confirm.
+        # This uses the current AI's own reasoning — no external API needed.
+        report.append("## ⚡ MANDATORY SELF-AUDIT (answer before confirming)\n")
+        report.append("You MUST think through each question below. If ANY answer is 'no',")
+        report.append("call aio__force_architect_save again with corrected content.\n")
+
+        # Build specific audit questions based on what changed
+        audit_questions = []
+
+        # Q1: Data completeness
+        for fn, content in staged_updates.items():
+            old_size = pre_save_state.get(fn, 0)
+            new_size = len(content)
+            if old_size > 300 and new_size < old_size * 0.5:
+                audit_questions.append(
+                    f"⚠️ {fn} is shrinking from {old_size} to {new_size} chars. "
+                    f"Did you read the current {fn} before writing? Is anything lost?"
+                )
+
+        # Q2: Inventory consistency
+        inv_path = PROJECT_MAP_DIR / "inventory.md"
+        if inv_path.exists():
+            inv_content = inv_path.read_text(encoding="utf-8")
+            inv_count = inv_content.count("- [")
+            if inv_count > 0:
+                audit_questions.append(
+                    f"inventory.md currently has {inv_count} items. "
+                    f"Did this session discover/create any new items that should be added?"
+                )
+
+        # Q3: Skipped file justification
+        for s in skipped_files:
+            audit_questions.append(
+                f"You skipped {s}. Given what happened in this session, "
+                f"is this truly unchanged?"
             )
 
+        # Q4: Active context accuracy
+        audit_questions.append(
+            "Does your activeContext_update accurately describe what JUST happened "
+            "and what the IMMEDIATE next step is? Compare it against what you actually "
+            "did in this conversation."
+        )
+
+        # Q5: Progress accuracy
+        audit_questions.append(
+            "Does your progress_update list ALL tasks completed this session? "
+            "Check: did you create files, modify functions, add dependencies, "
+            "or make decisions that aren't reflected?"
+        )
+
+        for i, q in enumerate(audit_questions, 1):
+            report.append(f"{i}. {q}")
+        report.append("")
+
+        report.append(
+            "───────────────────────────────────────────\n"
+            "After reviewing each question above:\n"
+            "  ✅ All correct → call aio__force_architect_save_confirm\n"
+            "  ❌ Something wrong → call aio__force_architect_save with fixes"
+        )
+
         _audit("aio__force_architect_save", "PREPARED",
-               f"staged={len(staged_updates)}, audit={'FAIL' if audit_failed else 'PASS'}")
+               f"staged={len(staged_updates)}, audit_questions={len(audit_questions)}")
         return "\n".join(report)
 
     @mcp.tool()
