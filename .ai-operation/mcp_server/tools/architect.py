@@ -131,33 +131,43 @@ DETAILS_DIR = PROJECT_MAP_DIR / "details"
 SECTION_SIZE_THRESHOLD = 1500  # chars — split section to subfile if exceeds this
 
 
-def _auto_split_oversized_sections(filepath: Path) -> list:
-    """Check each ## section in a file. If any exceeds threshold, split to subfile.
+def _auto_split_oversized_sections(filepath: Path, depth: int = 0) -> list:
+    """Recursively split oversized ## sections into detail subfiles.
+
+    Level 0: project_map/*.md → details/*.md (## sections)
+    Level 1: details/*.md → details/sub/*.md (### sub-sections)
+    Level N: keeps splitting as long as sections exceed threshold
+
+    Max depth: 3 (prevents infinite recursion on pathological content).
 
     Replaces the section body with a pointer: → [详见 details/FILENAME__SECTION.md]
-    Writes the full content to the details subfile.
+    Writes the full content to the detail subfile.
 
-    Returns: list of sections that were split.
+    Returns: list of sections that were split (with depth indicator).
     """
     import re
 
-    if not filepath.exists():
+    MAX_DEPTH = 3
+    if depth > MAX_DEPTH or not filepath.exists():
         return []
 
     content = filepath.read_text(encoding="utf-8")
     lines = content.split("\n")
-    parent_name = filepath.stem  # e.g. "systemPatterns"
+    parent_name = filepath.stem  # e.g. "systemPatterns" or "systemPatterns__可用单元清单"
 
-    # Parse sections
+    # Detect header level based on depth: ## at level 0, ### at level 1, etc.
+    header_prefix = "#" * (2 + depth) + " "
+
+    # Parse sections at this header level
     sections = []  # (title, header_line_idx, body_start_idx, body_end_idx)
     current_title = None
     current_header_idx = None
 
     for i, line in enumerate(lines):
-        if line.startswith("## "):
+        if line.startswith(header_prefix) and not line.startswith(header_prefix + "#"):
             if current_title is not None:
                 sections.append((current_title, current_header_idx, current_header_idx + 1, i))
-            raw = line[3:].strip()
+            raw = line[len(header_prefix):].strip()
             current_title = re.sub(r'^\d+\.\s*', '', raw)
             current_header_idx = i
 
@@ -167,34 +177,47 @@ def _auto_split_oversized_sections(filepath: Path) -> list:
     if not sections:
         return []
 
-    DETAILS_DIR.mkdir(parents=True, exist_ok=True)
+    # Determine output directory based on depth
+    if depth == 0:
+        out_dir = DETAILS_DIR
+    else:
+        out_dir = filepath.parent / "sub"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
     split_sections = []
-    new_lines = list(lines)  # mutable copy
-    offset = 0  # track line number shifts from replacements
+    new_lines = list(lines)
+    offset = 0
 
     for title, header_idx, body_start, body_end in sections:
         body = "\n".join(lines[body_start:body_end]).strip()
 
         # Skip if already a pointer
-        if body.startswith("→ [详见") or body.startswith("> → [详见"):
+        if "→ [详见" in body:
             continue
 
         if len(body) > SECTION_SIZE_THRESHOLD:
             # Write full content to detail file
             safe_title = re.sub(r'[^\w\u4e00-\u9fff]', '_', title).strip('_')
             detail_filename = f"{parent_name}__{safe_title}.md"
-            detail_path = DETAILS_DIR / detail_filename
-            detail_content = f"# {title}\n\n> 拆分自 {filepath.name}，完整内容如下。\n\n{body}\n"
+            detail_path = out_dir / detail_filename
+            rel_path = detail_path.relative_to(PROJECT_MAP_DIR)
+            detail_content = f"{header_prefix}{title}\n\n> 拆分自 {filepath.name}，depth={depth}。\n\n{body}\n"
             detail_path.write_text(detail_content, encoding="utf-8")
 
             # Replace body in parent with pointer
-            pointer = f"\n> → [详见 details/{detail_filename}](.ai-operation/docs/project_map/details/{detail_filename})\n"
+            pointer = f"\n> {'→' * (depth + 1)} [详见 {rel_path}]\n"
             adj_start = body_start + offset
             adj_end = body_end + offset
             new_lines[adj_start:adj_end] = [pointer]
             offset -= (body_end - body_start - 1)
 
-            split_sections.append(f"{title} → details/{detail_filename} ({len(body)} chars)")
+            split_sections.append(
+                f"{'  ' * depth}L{depth}: {title} → {rel_path} ({len(body)} chars)"
+            )
+
+            # Recurse: check if the detail file itself has oversized sub-sections
+            child_splits = _auto_split_oversized_sections(detail_path, depth + 1)
+            split_sections.extend(child_splits)
 
     if split_sections:
         filepath.write_text("\n".join(new_lines), encoding="utf-8")
@@ -1647,16 +1670,22 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
         Returns:
             Full content of the detail file.
         """
+        # Search in details/ and details/sub/ (multi-level)
         detail_path = DETAILS_DIR / detail_file
+        if not detail_path.exists():
+            detail_path = DETAILS_DIR / "sub" / detail_file
 
         if not detail_path.exists():
-            # List available files
+            # List all available files across all levels
             available = []
             if DETAILS_DIR.exists():
-                available = [f.name for f in DETAILS_DIR.glob("*.md")]
+                available.extend(f.name for f in DETAILS_DIR.glob("*.md"))
+                sub_dir = DETAILS_DIR / "sub"
+                if sub_dir.exists():
+                    available.extend(f"sub/{f.name}" for f in sub_dir.glob("*.md"))
             return (
                 f"FAILED: Detail file '{detail_file}' not found.\n"
-                f"Available detail files: {', '.join(available) if available else 'none'}"
+                f"Available: {', '.join(sorted(available)) if available else 'none'}"
             )
 
         content = detail_path.read_text(encoding="utf-8")
