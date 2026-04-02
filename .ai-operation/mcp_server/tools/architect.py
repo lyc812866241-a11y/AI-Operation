@@ -75,13 +75,14 @@ def _compact_dynamic_file(content: str, filename: str) -> str:
     result_parts = [header, compact_notice] + recent
     return "\n---\n".join(result_parts)
 
-# The 5 canonical files defined in .clinerules
+# The 6 canonical files in project_map
 REQUIRED_FILES = {
     "projectbrief": "projectbrief.md",
     "systemPatterns": "systemPatterns.md",
     "techContext": "techContext.md",
     "activeContext": "activeContext.md",
     "progress": "progress.md",
+    "inventory": "inventory.md",
 }
 
 
@@ -101,6 +102,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
         activeContext_update: str,
         progress_update: str,
         lessons_learned: str,
+        inventory_update: str = "",
         session_compaction: str = "",
     ) -> str:
         """
@@ -114,15 +116,18 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
           - Write "NO_CHANGE_BECAUSE: [specific reason]" explaining WHY no update is needed
 
         Simply writing "NO_CHANGE" is REJECTED. You must justify why each file doesn't need updating.
-        This forces you to review each file against what happened in this session.
 
         Args:
-            projectbrief_update: Updates to vision/goals, OR "NO_CHANGE_BECAUSE: [reason why vision unchanged]"
-            systemPatterns_update: New architecture/modules, OR "NO_CHANGE_BECAUSE: [reason why arch unchanged]"
-            techContext_update: New tech constraints/gotchas, OR "NO_CHANGE_BECAUSE: [reason why tech unchanged]"
+            projectbrief_update: Updates to vision/goals, OR "NO_CHANGE_BECAUSE: [reason]"
+            systemPatterns_update: New architecture/modules, OR "NO_CHANGE_BECAUSE: [reason]"
+            techContext_update: New tech constraints/gotchas, OR "NO_CHANGE_BECAUSE: [reason]"
             activeContext_update: REQUIRED. Current focus + what was done + next steps. Cannot be NO_CHANGE.
             progress_update: REQUIRED. Tasks completed + new TODOs. Cannot be NO_CHANGE.
             lessons_learned: REQUIRED. Lessons from this session. "NONE" only if truly nothing learned.
+            inventory_update: Optional but CRITICAL for list data. If this session created, discovered,
+                or modified a list of items (skills, modules, APIs, models), provide the COMPLETE LIST
+                here. This is FULL OVERWRITE, not append — if you list 40 skills, the file will have
+                exactly 40 skills. Always read inventory.md first and merge, don't rely on memory alone.
             session_compaction: Optional. Compressed summary of conversation for context overflow recovery.
 
         Returns:
@@ -137,6 +142,30 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
         }
 
         _audit("aio__force_architect_save", "CALLED")
+
+        # ── Pre-save sanity check: read current file state ──────────
+        # Show AI the current file sizes so it can detect if its update
+        # is suspiciously smaller than what's already there
+        pre_save_state = {}
+        for fn in REQUIRED_FILES.values():
+            fp = PROJECT_MAP_DIR / fn
+            if fp.exists():
+                pre_save_state[fn] = len(fp.read_text(encoding="utf-8"))
+            else:
+                pre_save_state[fn] = 0
+
+        # Check for suspicious data loss: if an update is content (not NO_CHANGE)
+        # but much shorter than a previous update to the same file, warn
+        for fn, new_content in updates.items():
+            stripped = new_content.strip()
+            if stripped.upper().startswith("NO_CHANGE"):
+                continue
+            old_size = pre_save_state.get(fn, 0)
+            new_size = len(stripped)
+            # If old file has substantial content and new update is tiny, warn
+            if old_size > 500 and new_size < old_size * 0.3:
+                _audit("aio__force_architect_save", "WARNING",
+                       f"{fn} update ({new_size} chars) much smaller than existing ({old_size} chars)")
 
         # Validate: NO bare "NO_CHANGE" allowed — must provide reason
         for filename, content in {
@@ -205,6 +234,30 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
                 "If this session involved ANY code changes, architecture decisions, or "
                 "technical discoveries, at least one static file should have been updated."
             )
+
+        # Write inventory (FULL OVERWRITE, not append — for list data like skill/module lists)
+        if inventory_update and inventory_update.strip() and inventory_update.strip().upper() != "SKIP":
+            import datetime as _dt
+            inv_timestamp = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+            inventory_path = PROJECT_MAP_DIR / "inventory.md"
+
+            # Read existing inventory to preserve sections not being updated
+            existing_inv = ""
+            if inventory_path.exists():
+                existing_inv = inventory_path.read_text(encoding="utf-8")
+
+            # Full overwrite with timestamp
+            inv_content = (
+                f"# Project Inventory (资产清单)\n\n"
+                f"> 上次更新：{inv_timestamp}\n"
+                f"> 本文件为完整覆写模式，不是追加。每次更新必须包含完整列表。\n\n"
+                f"---\n\n"
+                f"{inventory_update.strip()}\n"
+            )
+            inventory_path.write_text(inv_content, encoding="utf-8")
+
+            if "inventory.md" not in changed_files:
+                changed_files.append("inventory.md")
 
         # Write lessons learned to corrections.md (experience bank)
         import datetime
