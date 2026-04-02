@@ -16,7 +16,8 @@
         "aio__force_taskspec_approve",
         "aio__force_fast_track",
         "aio__inventory_append",
-        "aio__inventory_consolidate"
+        "aio__inventory_consolidate",
+        "aio__force_architect_save_confirm"
       ]
     }
   }

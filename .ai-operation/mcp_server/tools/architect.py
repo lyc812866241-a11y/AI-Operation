@@ -29,6 +29,9 @@ TASKSPEC_FILE = TASKSPEC_DIR / "taskSpec.md"
 TASKSPEC_APPROVED_FLAG = Path(".ai-operation/.taskspec_approved")
 FAST_TRACK_FLAG = Path(".ai-operation/.fast_track")
 
+# Two-phase save: prepare writes to staging, confirm writes to actual files
+SAVE_STAGING_FILE = Path(".ai-operation/.save_staging.json")
+
 
 def _set_mcp_flag():
     """Create flag file so git pre-commit hook allows project_map commits."""
@@ -200,112 +203,205 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
                 "or preferences expressed? Use 'NONE' only if truly nothing was learned."
             )
 
-        # Apply surgical updates (append-only, with auto-compaction for dynamic files)
-        changed_files = []
-        skipped_files = []
-        DYNAMIC_FILE_MAX_BYTES = 3_000  # Auto-compact when dynamic files exceed this
-
-        for filename, content in updates.items():
-            stripped = content.strip()
-            # NO_CHANGE_BECAUSE: means no update needed (reason logged in audit)
-            if stripped.upper().startswith("NO_CHANGE_BECAUSE:"):
-                reason = stripped.split(":", 1)[1].strip() if ":" in stripped else "unspecified"
-                skipped_files.append(f"{filename} (reason: {reason[:80]})")
-                continue
-            filepath = PROJECT_MAP_DIR / filename
-            if not filepath.parent.exists():
-                return f"FAILED: Directory {PROJECT_MAP_DIR} does not exist. Is this the correct project root?"
-
-            # Auto-compact dynamic files before appending
-            if filename in ("activeContext.md", "progress.md") and filepath.exists():
-                existing = filepath.read_text(encoding="utf-8")
-                if len(existing.encode("utf-8")) > DYNAMIC_FILE_MAX_BYTES:
-                    compacted = _compact_dynamic_file(existing, filename)
-                    filepath.write_text(compacted, encoding="utf-8")
-
-            with open(filepath, "a", encoding="utf-8") as f:
-                f.write(f"\n\n---\n### [MCP Auto-Archive]\n{stripped}\n")
-            changed_files.append(filename)
-
-        if not changed_files:
-            return (
-                "WARNING: No files were updated. All 5 files marked as no-change.\n"
-                "Skipped:\n" + "\n".join(f"  - {s}" for s in skipped_files) + "\n\n"
-                "If this session involved ANY code changes, architecture decisions, or "
-                "technical discoveries, at least one static file should have been updated."
-            )
-
-        # Write inventory (FULL OVERWRITE, not append — for list data like skill/module lists)
-        if inventory_update and inventory_update.strip() and inventory_update.strip().upper() != "SKIP":
-            import datetime as _dt
-            inv_timestamp = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
-            inventory_path = PROJECT_MAP_DIR / "inventory.md"
-
-            # Read existing inventory to preserve sections not being updated
-            existing_inv = ""
-            if inventory_path.exists():
-                existing_inv = inventory_path.read_text(encoding="utf-8")
-
-            # Full overwrite with timestamp
-            inv_content = (
-                f"# Project Inventory (资产清单)\n\n"
-                f"> 上次更新：{inv_timestamp}\n"
-                f"> 本文件为完整覆写模式，不是追加。每次更新必须包含完整列表。\n\n"
-                f"---\n\n"
-                f"{inventory_update.strip()}\n"
-            )
-            inventory_path.write_text(inv_content, encoding="utf-8")
-
-            if "inventory.md" not in changed_files:
-                changed_files.append("inventory.md")
-
-        # Write lessons learned to corrections.md (experience bank)
+        # ══════════════════════════════════════════════════════════
+        # PHASE 1: PREPARE — generate diff preview, stage to file
+        # Do NOT write to project_map yet. Let AI review first.
+        # ══════════════════════════════════════════════════════════
+        import json
         import datetime
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
-        if lessons_learned.strip().upper() != "NONE":
+        diff_preview = []
+        warnings = []
+        staged_updates = {}
+        skipped_files = []
+
+        for filename, content in updates.items():
+            stripped = content.strip()
+
+            if stripped.upper().startswith("NO_CHANGE_BECAUSE:"):
+                reason = stripped.split(":", 1)[1].strip() if ":" in stripped else "unspecified"
+                skipped_files.append(f"{filename}: {reason[:80]}")
+                continue
+
+            filepath = PROJECT_MAP_DIR / filename
+            old_content = filepath.read_text(encoding="utf-8") if filepath.exists() else "[file does not exist]"
+            old_size = len(old_content)
+            new_size = len(stripped)
+
+            # Detect suspicious shrinkage
+            if old_size > 500 and new_size < old_size * 0.3:
+                warnings.append(
+                    f"⚠️ {filename}: new update ({new_size} chars) is much smaller than "
+                    f"existing content ({old_size} chars). Possible data loss?"
+                )
+
+            # Build diff preview
+            diff_preview.append(f"### {filename}")
+            diff_preview.append(f"  Current size: {old_size} chars")
+            diff_preview.append(f"  Update size:  {new_size} chars")
+            diff_preview.append(f"  Update preview: {stripped[:200]}{'...' if len(stripped) > 200 else ''}")
+            diff_preview.append("")
+
+            staged_updates[filename] = stripped
+
+        # Stage inventory if provided
+        if inventory_update and inventory_update.strip() and inventory_update.strip().upper() != "SKIP":
+            inv_path = PROJECT_MAP_DIR / "inventory.md"
+            old_inv = inv_path.read_text(encoding="utf-8") if inv_path.exists() else ""
+            old_count = old_inv.count("- [") if old_inv else 0
+            new_count = inventory_update.count("- ") + inventory_update.count("- [")
+            if old_count > 0 and new_count < old_count * 0.5:
+                warnings.append(
+                    f"⚠️ inventory.md: new list has ~{new_count} items but existing has "
+                    f"~{old_count} items. Significant reduction — did you read inventory.md first?"
+                )
+            staged_updates["inventory.md"] = inventory_update.strip()
+            diff_preview.append(f"### inventory.md (OVERWRITE)")
+            diff_preview.append(f"  Old items: ~{old_count}")
+            diff_preview.append(f"  New items: ~{new_count}")
+            diff_preview.append("")
+
+        # Stage lessons
+        staged_lessons = lessons_learned.strip()
+
+        # Stage compaction
+        staged_compaction = session_compaction.strip() if session_compaction else ""
+
+        # Write staging file
+        staging_data = {
+            "timestamp": timestamp,
+            "updates": staged_updates,
+            "skipped": skipped_files,
+            "lessons": staged_lessons,
+            "compaction": staged_compaction,
+        }
+        SAVE_STAGING_FILE.parent.mkdir(parents=True, exist_ok=True)
+        SAVE_STAGING_FILE.write_text(json.dumps(staging_data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        # Build the review report
+        report = ["PENDING_REVIEW: Save prepared but NOT yet written.\n"]
+        report.append("## Diff Preview\n")
+        report.extend(diff_preview)
+
+        if skipped_files:
+            report.append("## Skipped (NO_CHANGE_BECAUSE)\n")
+            for s in skipped_files:
+                report.append(f"  - {s}")
+            report.append("")
+
+        if warnings:
+            report.append("## ⚠️ WARNINGS — Review Before Confirming\n")
+            for w in warnings:
+                report.append(f"  {w}")
+            report.append("")
+
+        report.append(f"## Lessons: {staged_lessons[:150]}")
+        report.append("")
+        report.append(
+            "───────────────────────────────────────────\n"
+            "Review the above diff. If correct, call:\n"
+            "  aio__force_architect_save_confirm\n"
+            "If something is wrong or incomplete, fix it and call\n"
+            "  aio__force_architect_save again with corrected content."
+        )
+
+        _audit("aio__force_architect_save", "PREPARED", f"staged={len(staged_updates)} files")
+        return "\n".join(report)
+
+    @mcp.tool()
+    def aio__force_architect_save_confirm() -> str:
+        """
+        [PHASE 2: COMMIT] Execute the staged save after AI self-review.
+
+        This tool MUST be called after aio__force_architect_save returns PENDING_REVIEW.
+        It reads the staging file, applies all updates, writes lessons, and commits.
+
+        The two-phase save ensures AI reviews the diff before writing:
+        Phase 1 (save): validate + generate diff → PENDING_REVIEW
+        Phase 2 (confirm): apply writes + git commit → SUCCESS
+
+        Returns:
+            Execution report with files updated and git commit status.
+        """
+        import json
+        import datetime
+
+        _audit("aio__force_architect_save_confirm", "CALLED")
+
+        # Read staging file
+        if not SAVE_STAGING_FILE.exists():
+            return (
+                "REJECTED: No staged save found.\n"
+                "You must call aio__force_architect_save first to prepare the save."
+            )
+
+        staging_data = json.loads(SAVE_STAGING_FILE.read_text(encoding="utf-8"))
+        timestamp = staging_data["timestamp"]
+        staged_updates = staging_data["updates"]
+        staged_lessons = staging_data["lessons"]
+        staged_compaction = staging_data.get("compaction", "")
+
+        DYNAMIC_FILE_MAX_BYTES = 3_000
+        changed_files = []
+
+        # Apply updates
+        for filename, content in staged_updates.items():
+            filepath = PROJECT_MAP_DIR / filename
+
+            if filename == "inventory.md":
+                # Inventory is full overwrite
+                inv_content = (
+                    f"# Project Inventory (资产清单)\n\n"
+                    f"> 上次更新：{timestamp}\n\n---\n\n"
+                    f"{content}\n"
+                )
+                filepath.write_text(inv_content, encoding="utf-8")
+            else:
+                # Regular files: auto-compact then append
+                if filename in ("activeContext.md", "progress.md") and filepath.exists():
+                    existing = filepath.read_text(encoding="utf-8")
+                    if len(existing.encode("utf-8")) > DYNAMIC_FILE_MAX_BYTES:
+                        compacted = _compact_dynamic_file(existing, filename)
+                        filepath.write_text(compacted, encoding="utf-8")
+
+                with open(filepath, "a", encoding="utf-8") as f:
+                    f.write(f"\n\n---\n### [MCP Auto-Archive]\n{content}\n")
+
+            changed_files.append(filename)
+
+        # Write lessons to corrections.md
+        if staged_lessons and staged_lessons.upper() != "NONE":
             corrections_path = PROJECT_MAP_DIR / "corrections.md"
-            lessons_lines = [l.strip() for l in lessons_learned.strip().split("\n") if l.strip()]
+            existing_corrections = corrections_path.read_text(encoding="utf-8") if corrections_path.exists() else ""
+            lessons_lines = [l.strip() for l in staged_lessons.split("\n") if l.strip()]
 
             with open(corrections_path, "a", encoding="utf-8") as f:
                 for lesson in lessons_lines:
-                    # Check if this lesson already exists (prevent duplicates)
-                    existing = ""
-                    if corrections_path.exists():
-                        existing = corrections_path.read_text(encoding="utf-8")
-
-                    # Extract the core lesson text (strip leading "- " if present)
                     lesson_text = lesson.lstrip("- ").strip()
-
-                    if lesson_text in existing:
-                        # Find and increment COUNT
-                        continue
-
-                    f.write(
-                        f"\n---\n"
-                        f"DATE: {timestamp}\n"
-                        f"CONTEXT: [存档] during development session\n"
-                        f"LESSON: {lesson_text}\n"
-                        f"COUNT: 1\n"
-                    )
-
+                    if lesson_text and lesson_text not in existing_corrections:
+                        f.write(
+                            f"\n---\n"
+                            f"DATE: {timestamp}\n"
+                            f"CONTEXT: [存档] during development session\n"
+                            f"LESSON: {lesson_text}\n"
+                            f"COUNT: 1\n"
+                        )
             if "corrections.md" not in changed_files:
                 changed_files.append("corrections.md")
 
-        # Write session compaction summary (context overflow recovery point)
-        if session_compaction and session_compaction.strip():
-            import datetime
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        # Write compaction summary
+        if staged_compaction:
             compaction_path = PROJECT_MAP_DIR / "activeContext.md"
             with open(compaction_path, "a", encoding="utf-8") as f:
-                f.write(
-                    f"\n\n---\n### [Session Compaction — {timestamp}]\n"
-                    f"{session_compaction.strip()}\n"
-                )
+                f.write(f"\n\n---\n### [Session Compaction — {timestamp}]\n{staged_compaction}\n")
             if "activeContext.md" not in changed_files:
                 changed_files.append("activeContext.md")
 
-        # Execute git commit (with MCP flag to pass pre-commit hook)
+        # Clean up staging file
+        SAVE_STAGING_FILE.unlink()
+
+        # Git commit
         try:
             _set_mcp_flag()
             subprocess.run(["git", "add", str(PROJECT_MAP_DIR)], check=True, capture_output=True)
@@ -314,13 +410,12 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
                 ["git", "commit", "-m", commit_msg],
                 check=True, capture_output=True, text=True
             )
-            # Clear taskSpec approval flag — forces new approval for next task
             if TASKSPEC_APPROVED_FLAG.exists():
                 TASKSPEC_APPROVED_FLAG.unlink()
             if FAST_TRACK_FLAG.exists():
                 FAST_TRACK_FLAG.unlink()
 
-            _audit("aio__force_architect_save", "SUCCESS", f"files={','.join(changed_files)}")
+            _audit("aio__force_architect_save_confirm", "SUCCESS", f"files={','.join(changed_files)}")
             return (
                 f"SUCCESS\n"
                 f"Files updated: {', '.join(changed_files)}\n"

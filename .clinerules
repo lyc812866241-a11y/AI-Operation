@@ -24,7 +24,7 @@ before responding to the user's first prompt. Do NOT proceed with any task until
 - [汇报]: Call MCP tool `aio__force_architect_report`. All 4 sections mandatory. No free-form reports.
 - [执行测试]: Call MCP tool `aio__force_test_runner`. Auto pre-cleanup + node-by-node isolation. Full pipeline runs forbidden.
 - [读档]: Call MCP tool `aio__force_architect_read`. Output macro state report. Now includes inventory.md.
-- [存档]: Call MCP tool `aio__force_architect_save`. Updates project_map + git commit. MUST include lessons_learned.
+- [存档]: Two-phase save. First call `aio__force_architect_save` (generates diff preview + warnings). Review the diff. Then call `aio__force_architect_save_confirm` to execute. MUST include lessons_learned.
 - [清理]: Call MCP tool `aio__force_garbage_collection`. List first, wait for user confirmation, then delete.
 - [整理清单]: Call MCP tool `aio__inventory_consolidate`. Deduplicate and organize inventory.md.
 - [初始化项目]: Invoke `.ai-operation/skills/project-bootstrap/SKILL.md`. Phase 4 calls `aio__force_project_bootstrap_write`. Direct file editing FORBIDDEN.
