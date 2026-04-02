@@ -23,10 +23,22 @@ before responding to the user's first prompt. Do NOT proceed with any task until
 
 - [汇报]: Call MCP tool `aio__force_architect_report`. All 4 sections mandatory. No free-form reports.
 - [执行测试]: Call MCP tool `aio__force_test_runner`. Auto pre-cleanup + node-by-node isolation. Full pipeline runs forbidden.
-- [读档]: Call MCP tool `aio__force_architect_read`. Output macro state report.
+- [读档]: Call MCP tool `aio__force_architect_read`. Output macro state report. Now includes inventory.md.
 - [存档]: Call MCP tool `aio__force_architect_save`. Updates project_map + git commit. MUST include lessons_learned.
 - [清理]: Call MCP tool `aio__force_garbage_collection`. List first, wait for user confirmation, then delete.
+- [整理清单]: Call MCP tool `aio__inventory_consolidate`. Deduplicate and organize inventory.md.
 - [初始化项目]: Invoke `.ai-operation/skills/project-bootstrap/SKILL.md`. Phase 4 calls `aio__force_project_bootstrap_write`. Direct file editing FORBIDDEN.
+
+### Real-Time Inventory Rule (实时资产追加铁律)
+
+> WHY: Long conversations cause AI to forget earlier discoveries. If you decompose 40 skills but only save at the end, you'll only remember 10. This is an LLM limitation that no framework can eliminate — but immediate persistence avoids it entirely.
+
+Whenever you discover, create, or decompose a new item (skill, module, API, data model):
+  - Call `aio__inventory_append` IMMEDIATELY with category + item description
+  - Do NOT batch items. Do NOT wait for [存档]. One item = one call.
+  - The tool appends to inventory.md in real-time, preventing context window data loss.
+  - Duplicates are automatically skipped.
+  - Run [整理清单] periodically to deduplicate and organize.
 
 > WHY all commands route through MCP tools: Text rules can be ignored. MCP tools contain hard-coded validation that physically rejects non-compliant calls. This is the difference between a suggestion and a gate.
 
