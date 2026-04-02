@@ -17,7 +17,9 @@
         "aio__force_fast_track",
         "aio__inventory_append",
         "aio__inventory_consolidate",
-        "aio__force_architect_save_confirm"
+        "aio__force_architect_save_confirm",
+        "aio__detail_read",
+        "aio__detail_list"
       ]
     }
   }

@@ -127,6 +127,81 @@ def _section_merge(existing_content: str, section_updates: dict) -> tuple:
     return "\n".join(result_lines), changed
 
 
+DETAILS_DIR = PROJECT_MAP_DIR / "details"
+SECTION_SIZE_THRESHOLD = 1500  # chars — split section to subfile if exceeds this
+
+
+def _auto_split_oversized_sections(filepath: Path) -> list:
+    """Check each ## section in a file. If any exceeds threshold, split to subfile.
+
+    Replaces the section body with a pointer: → [详见 details/FILENAME__SECTION.md]
+    Writes the full content to the details subfile.
+
+    Returns: list of sections that were split.
+    """
+    import re
+
+    if not filepath.exists():
+        return []
+
+    content = filepath.read_text(encoding="utf-8")
+    lines = content.split("\n")
+    parent_name = filepath.stem  # e.g. "systemPatterns"
+
+    # Parse sections
+    sections = []  # (title, header_line_idx, body_start_idx, body_end_idx)
+    current_title = None
+    current_header_idx = None
+
+    for i, line in enumerate(lines):
+        if line.startswith("## "):
+            if current_title is not None:
+                sections.append((current_title, current_header_idx, current_header_idx + 1, i))
+            raw = line[3:].strip()
+            current_title = re.sub(r'^\d+\.\s*', '', raw)
+            current_header_idx = i
+
+    if current_title is not None:
+        sections.append((current_title, current_header_idx, current_header_idx + 1, len(lines)))
+
+    if not sections:
+        return []
+
+    DETAILS_DIR.mkdir(parents=True, exist_ok=True)
+    split_sections = []
+    new_lines = list(lines)  # mutable copy
+    offset = 0  # track line number shifts from replacements
+
+    for title, header_idx, body_start, body_end in sections:
+        body = "\n".join(lines[body_start:body_end]).strip()
+
+        # Skip if already a pointer
+        if body.startswith("→ [详见") or body.startswith("> → [详见"):
+            continue
+
+        if len(body) > SECTION_SIZE_THRESHOLD:
+            # Write full content to detail file
+            safe_title = re.sub(r'[^\w\u4e00-\u9fff]', '_', title).strip('_')
+            detail_filename = f"{parent_name}__{safe_title}.md"
+            detail_path = DETAILS_DIR / detail_filename
+            detail_content = f"# {title}\n\n> 拆分自 {filepath.name}，完整内容如下。\n\n{body}\n"
+            detail_path.write_text(detail_content, encoding="utf-8")
+
+            # Replace body in parent with pointer
+            pointer = f"\n> → [详见 details/{detail_filename}](.ai-operation/docs/project_map/details/{detail_filename})\n"
+            adj_start = body_start + offset
+            adj_end = body_end + offset
+            new_lines[adj_start:adj_end] = [pointer]
+            offset -= (body_end - body_start - 1)
+
+            split_sections.append(f"{title} → details/{detail_filename} ({len(body)} chars)")
+
+    if split_sections:
+        filepath.write_text("\n".join(new_lines), encoding="utf-8")
+
+    return split_sections
+
+
 def _compact_dynamic_file(content: str, filename: str) -> str:
     """Compact a dynamic file (activeContext/progress) that has grown too large.
 
@@ -557,6 +632,20 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
                 merge_report.append(f"  {filename}: APPEND")
 
             changed_files.append(filename)
+
+        # Auto-split oversized sections to detail subfiles
+        split_report = []
+        for fn in ["projectbrief.md", "systemPatterns.md", "techContext.md"]:
+            fp = PROJECT_MAP_DIR / fn
+            splits = _auto_split_oversized_sections(fp)
+            if splits:
+                split_report.extend(splits)
+                if fn not in changed_files:
+                    changed_files.append(fn)
+        if split_report:
+            merge_report.append("  Auto-split oversized sections:")
+            for s in split_report:
+                merge_report.append(f"    - {s}")
 
         # Write lessons to corrections.md
         if staged_lessons and staged_lessons.upper() != "NONE":
@@ -1533,3 +1622,75 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
 
         _audit("aio__inventory_consolidate", "SUCCESS", f"total={total}")
         return "\n".join(report_lines)
+
+    # ═══════════════════════════════════════════════════════════════
+    # Hierarchical Detail Retrieval (分级检索)
+    # ═══════════════════════════════════════════════════════════════
+
+    @mcp.tool()
+    def aio__detail_read(
+        detail_file: str,
+    ) -> str:
+        """
+        [RETRIEVAL TOOL] Read a detail subfile that was split from a project_map file.
+
+        When [读档] returns a section containing "→ [详见 details/xxx.md]",
+        call this tool to read the full content of that section.
+
+        This enables hierarchical retrieval: parent files stay small (within
+        prompt budget), detail files hold the full content, read on demand.
+
+        Args:
+            detail_file: Filename in the details directory (e.g., "systemPatterns__可用单元清单.md").
+                         Do NOT include the full path — just the filename.
+
+        Returns:
+            Full content of the detail file.
+        """
+        detail_path = DETAILS_DIR / detail_file
+
+        if not detail_path.exists():
+            # List available files
+            available = []
+            if DETAILS_DIR.exists():
+                available = [f.name for f in DETAILS_DIR.glob("*.md")]
+            return (
+                f"FAILED: Detail file '{detail_file}' not found.\n"
+                f"Available detail files: {', '.join(available) if available else 'none'}"
+            )
+
+        content = detail_path.read_text(encoding="utf-8")
+        _audit("aio__detail_read", "SUCCESS", detail_file)
+
+        return (
+            f"# Detail: {detail_file}\n"
+            f"Size: {len(content)} chars\n\n"
+            f"{content}"
+        )
+
+    @mcp.tool()
+    def aio__detail_list() -> str:
+        """
+        [RETRIEVAL TOOL] List all detail subfiles and their sizes.
+
+        Use this to see what sections have been split out of parent files.
+
+        Returns:
+            List of detail files with sizes.
+        """
+        if not DETAILS_DIR.exists():
+            return "No details directory found. No sections have been split yet."
+
+        files = sorted(DETAILS_DIR.glob("*.md"))
+        if not files:
+            return "Details directory exists but is empty. No sections have been split yet."
+
+        report = ["# Detail Files (分级子文件)\n"]
+        total_size = 0
+        for f in files:
+            size = f.stat().st_size
+            total_size += size
+            report.append(f"  - {f.name} ({size:,} bytes)")
+
+        report.append(f"\nTotal: {len(files)} files, {total_size:,} bytes")
+        return "\n".join(report)
