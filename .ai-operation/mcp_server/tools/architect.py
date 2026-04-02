@@ -131,24 +131,25 @@ DETAILS_DIR = PROJECT_MAP_DIR / "details"
 SECTION_SIZE_THRESHOLD = 1500  # chars — split section to subfile if exceeds this
 
 
-def _auto_split_oversized_sections(filepath: Path, depth: int = 0) -> list:
-    """Recursively split oversized ## sections into detail subfiles.
+def _auto_split_oversized_sections(filepath: Path, depth: int = 0, _file_counter: list = None) -> list:
+    """Recursively split oversized sections into detail subfiles. No depth limit.
 
-    Level 0: project_map/*.md → details/*.md (## sections)
-    Level 1: details/*.md → details/sub/*.md (### sub-sections)
-    Level N: keeps splitting as long as sections exceed threshold
+    Level 0: ## sections in project_map/*.md → details/*.md
+    Level 1: ### sections in details/*.md → details/L1/*.md
+    Level N: #(N+2) sections → details/LN/*.md
 
-    Max depth: 3 (prevents infinite recursion on pathological content).
-
-    Replaces the section body with a pointer: → [详见 details/FILENAME__SECTION.md]
-    Writes the full content to the detail subfile.
+    No depth limit — pointer chain extends as long as content is oversized.
+    Safety: max 200 total files generated per save to prevent runaway on
+    pathological content (e.g., a single 1MB paste with no section headers).
 
     Returns: list of sections that were split (with depth indicator).
     """
     import re
 
-    MAX_DEPTH = 3
-    if depth > MAX_DEPTH or not filepath.exists():
+    MAX_TOTAL_FILES = 200
+    if _file_counter is None:
+        _file_counter = [0]
+    if _file_counter[0] >= MAX_TOTAL_FILES or not filepath.exists():
         return []
 
     content = filepath.read_text(encoding="utf-8")
@@ -177,11 +178,11 @@ def _auto_split_oversized_sections(filepath: Path, depth: int = 0) -> list:
     if not sections:
         return []
 
-    # Determine output directory based on depth
+    # Determine output directory: details/ for L0, details/L1/ for L1, details/L2/ etc.
     if depth == 0:
         out_dir = DETAILS_DIR
     else:
-        out_dir = filepath.parent / "sub"
+        out_dir = DETAILS_DIR / f"L{depth}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     split_sections = []
@@ -211,12 +212,13 @@ def _auto_split_oversized_sections(filepath: Path, depth: int = 0) -> list:
             new_lines[adj_start:adj_end] = [pointer]
             offset -= (body_end - body_start - 1)
 
+            _file_counter[0] += 1
             split_sections.append(
                 f"{'  ' * depth}L{depth}: {title} → {rel_path} ({len(body)} chars)"
             )
 
             # Recurse: check if the detail file itself has oversized sub-sections
-            child_splits = _auto_split_oversized_sections(detail_path, depth + 1)
+            child_splits = _auto_split_oversized_sections(detail_path, depth + 1, _file_counter)
             split_sections.extend(child_splits)
 
     if split_sections:
@@ -1670,19 +1672,21 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
         Returns:
             Full content of the detail file.
         """
-        # Search in details/ and details/sub/ (multi-level)
+        # Search across all levels: details/, details/L1/, details/L2/, ...
         detail_path = DETAILS_DIR / detail_file
-        if not detail_path.exists():
-            detail_path = DETAILS_DIR / "sub" / detail_file
+        if not detail_path.exists() and DETAILS_DIR.exists():
+            for sub in sorted(DETAILS_DIR.iterdir()):
+                if sub.is_dir() and (sub / detail_file).exists():
+                    detail_path = sub / detail_file
+                    break
 
         if not detail_path.exists():
-            # List all available files across all levels
             available = []
             if DETAILS_DIR.exists():
                 available.extend(f.name for f in DETAILS_DIR.glob("*.md"))
-                sub_dir = DETAILS_DIR / "sub"
-                if sub_dir.exists():
-                    available.extend(f"sub/{f.name}" for f in sub_dir.glob("*.md"))
+                for sub in sorted(DETAILS_DIR.iterdir()):
+                    if sub.is_dir():
+                        available.extend(f"{sub.name}/{f.name}" for f in sub.glob("*.md"))
             return (
                 f"FAILED: Detail file '{detail_file}' not found.\n"
                 f"Available: {', '.join(sorted(available)) if available else 'none'}"
