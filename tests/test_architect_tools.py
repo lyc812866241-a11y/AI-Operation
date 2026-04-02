@@ -106,11 +106,20 @@ class TestSaveValidation(unittest.TestCase, TestSetup):
                 projectbrief_update="NO_CHANGE_BECAUSE: only fixed a typo, no vision change",
                 systemPatterns_update="NO_CHANGE_BECAUSE: no new modules",
                 techContext_update="NO_CHANGE_BECAUSE: no new dependencies",
-                activeContext_update="Working on tests",
-                progress_update="✅ Added tests",
+                activeContext_update=(
+                    "Current focus: validating NO_CHANGE_BECAUSE mechanism in tests/test_architect_tools.py\n"
+                    "Just completed: modified .ai-operation/mcp_server/tools/architect.py parameter validation logic, "
+                    "added NO_CHANGE_BECAUSE enforcement that rejects bare NO_CHANGE without justification reason\n"
+                    "Next step: run full pytest suite to confirm all 21 tests pass across the test matrix"
+                ),
+                progress_update=(
+                    "DONE architect.py: added NO_CHANGE_BECAUSE validation, bare NO_CHANGE now REJECTED\n"
+                    "DONE tests/test_architect_tools.py: added 2 new tests covering NO_CHANGE_BECAUSE scenarios\n"
+                    "TODO run full CI matrix to confirm cross-platform compatibility"
+                ),
                 lessons_learned="NONE",
             )
-        self.assertNotIn("REJECTED", result)
+        self.assertTrue(result.startswith("PENDING_REVIEW"), f"Expected PENDING_REVIEW, got: {result[:80]}")
 
     def test_rejects_no_change_active_context(self):
         result = self.tools["aio__force_architect_save"](
@@ -155,12 +164,20 @@ class TestSaveValidation(unittest.TestCase, TestSetup):
                 projectbrief_update="NO_CHANGE_BECAUSE: no change",
                 systemPatterns_update="NO_CHANGE_BECAUSE: no change",
                 techContext_update="NO_CHANGE_BECAUSE: no change",
-                activeContext_update="Working on tests",
-                progress_update="✅ Added tests",
+                activeContext_update=(
+                    "Current focus: verifying that lessons_learned=NONE is accepted by the MCP save tool\n"
+                    "Just completed: modified tests/test_architect_tools.py to add NONE lessons test case, "
+                    "ensuring the tool does not reject valid NONE input when no lessons were learned\n"
+                    "Next step: confirm corrections.md has no new entries written when NONE is provided"
+                ),
+                progress_update=(
+                    "DONE tests/test_architect_tools.py: verified NONE lessons scenario is not REJECTED by tool\n"
+                    "TODO check corrections.md was not written to when lessons_learned is NONE"
+                ),
                 lessons_learned="NONE",
             )
         # Should not be REJECTED (may fail on git, that's ok)
-        self.assertNotIn("REJECTED", result)
+        self.assertTrue(result.startswith("PENDING_REVIEW"), f"Expected PENDING_REVIEW, got: {result[:80]}")
 
 
 class TestTaskSpecWorkflow(unittest.TestCase, TestSetup):

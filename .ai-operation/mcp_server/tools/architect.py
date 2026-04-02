@@ -313,12 +313,31 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
         Sections not mentioned are left unchanged. Use SKIP as content to explicitly skip a section.
         If no ===SECTION=== delimiters found, falls back to append mode (backward compatible).
 
+        MINIMUM DETAIL REQUIREMENTS (MCP tool will REJECT if too vague):
+        - activeContext_update must mention specific FILE PATHS that were changed
+        - activeContext_update must be at least 200 chars
+        - progress_update must list each completed task with the FILE it touched
+        - progress_update must be at least 150 chars
+        - For static files with actual content (not NO_CHANGE_BECAUSE): must be at least 100 chars
+
+        EXAMPLE of GOOD activeContext_update (this level of detail is the MINIMUM):
+          "当前焦点：Node 4B 公式模式生图方案优化
+           刚完成：
+           - src/engine/pipeline_engine.py (+186/-17): Node 1 自动扫描 inbox 视频带前缀防覆盖;
+             Node 2 轨道B 调用 formula_director 三阶编导; Node 4B 按内容分流产品还原 vs 意境场景
+           - skills/director/formula_director.py (新建 ~300行): round_1_analyze + round_2_adapt
+             + round_3a_visual_design + round_3b_to_prompt, 并发5
+           下一步：Node 4B 分流改用 LLM 判断; 产品还原换 imagen-4.0-ultra"
+
+        EXAMPLE of BAD activeContext_update (will be REJECTED):
+          "完成了三阶编导，继续优化生图"  ← too vague, no file paths, no details
+
         Args:
             projectbrief_update: Section updates OR "NO_CHANGE_BECAUSE: [reason]"
             systemPatterns_update: Section updates OR "NO_CHANGE_BECAUSE: [reason]"
             techContext_update: Section updates OR "NO_CHANGE_BECAUSE: [reason]"
-            activeContext_update: REQUIRED. Current focus + what was done + next steps. Cannot be NO_CHANGE.
-            progress_update: REQUIRED. Tasks completed + new TODOs. Cannot be NO_CHANGE.
+            activeContext_update: REQUIRED. See detail requirements above. Min 200 chars.
+            progress_update: REQUIRED. Each task with file path. Min 150 chars.
             lessons_learned: REQUIRED. Lessons from this session. "NONE" only if truly nothing learned.
             inventory_update: Optional but CRITICAL for list data. If this session created, discovered,
                 or modified a list of items (skills, modules, APIs, models), provide the COMPLETE LIST
@@ -394,6 +413,67 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
                 "REJECTED: lessons_learned cannot be empty.\n"
                 "Reflect on this session: any bugs hit, user corrections, gotchas discovered, "
                 "or preferences expressed? Use 'NONE' only if truly nothing was learned."
+            )
+
+        # ── Information density validation ────────────────────────
+        # Reject updates that are too vague to be useful as project memory.
+        # A future AI reading these files must be able to pick up exactly where you left off.
+
+        MIN_ACTIVE_CONTEXT_CHARS = 200
+        MIN_PROGRESS_CHARS = 150
+        MIN_STATIC_UPDATE_CHARS = 100
+
+        ac = activeContext_update.strip()
+        if len(ac) < MIN_ACTIVE_CONTEXT_CHARS:
+            _audit("aio__force_architect_save", "REJECTED", f"activeContext too short ({len(ac)} chars)")
+            return (
+                f"REJECTED: activeContext_update is only {len(ac)} chars (minimum {MIN_ACTIVE_CONTEXT_CHARS}).\n\n"
+                f"Your update must include:\n"
+                f"  - SPECIFIC FILE PATHS that were changed (e.g., src/engine/pipeline_engine.py)\n"
+                f"  - WHAT was changed in each file (e.g., 'Node 1 自动扫描 inbox 视频')\n"
+                f"  - NEXT STEP with enough detail that a new AI can execute it\n\n"
+                f"Think: if a completely new AI reads ONLY this text, can it continue your work?\n"
+                f"If not, add more detail."
+            )
+
+        pg = progress_update.strip()
+        if len(pg) < MIN_PROGRESS_CHARS:
+            _audit("aio__force_architect_save", "REJECTED", f"progress too short ({len(pg)} chars)")
+            return (
+                f"REJECTED: progress_update is only {len(pg)} chars (minimum {MIN_PROGRESS_CHARS}).\n\n"
+                f"Each completed task must include the FILE it touched.\n"
+                f"Bad:  '✅ 完成了编导功能'\n"
+                f"Good: '✅ 新建 skills/director/formula_director.py (~300行): "
+                f"round_1_analyze + round_2_adapt + round_3a/3b 并发画面设计'"
+            )
+
+        # Check static file updates for minimum substance
+        for label, content in [
+            ("projectbrief_update", projectbrief_update),
+            ("systemPatterns_update", systemPatterns_update),
+            ("techContext_update", techContext_update),
+        ]:
+            stripped = content.strip()
+            if stripped.upper().startswith("NO_CHANGE_BECAUSE"):
+                continue
+            if len(stripped) < MIN_STATIC_UPDATE_CHARS:
+                _audit("aio__force_architect_save", "REJECTED", f"{label} too short ({len(stripped)} chars)")
+                return (
+                    f"REJECTED: {label} is only {len(stripped)} chars (minimum {MIN_STATIC_UPDATE_CHARS}).\n"
+                    f"Static file updates must be specific enough to be useful as permanent documentation.\n"
+                    f"Include file paths, function names, and architectural reasoning."
+                )
+
+        # Check activeContext contains at least one file path indicator
+        path_indicators = ["/", ".py", ".js", ".ts", ".md", ".json", ".yaml", ".toml", "src/", "skills/"]
+        has_path = any(indicator in ac for indicator in path_indicators)
+        if not has_path:
+            _audit("aio__force_architect_save", "REJECTED", "activeContext has no file paths")
+            return (
+                "REJECTED: activeContext_update contains no file paths.\n\n"
+                "You must mention the specific files you worked on.\n"
+                "Bad:  '完成了编导功能优化'\n"
+                "Good: 'src/engine/pipeline_engine.py: Node 2 轨道B 调用 formula_director 三阶编导'"
             )
 
         # ══════════════════════════════════════════════════════════
