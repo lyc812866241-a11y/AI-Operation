@@ -792,7 +792,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
                     subprocess.run(["git", "add", str(filepath)], check=True, capture_output=True)
             commit_msg = f"chore: architect save [{', '.join(changed_files)}]"
             result = subprocess.run(
-                ["git", "commit", "-m", commit_msg],
+                ["git", "commit", "--no-status", "-m", commit_msg],
                 check=True, capture_output=True, text=True
             )
             if TASKSPEC_APPROVED_FLAG.exists():
