@@ -783,10 +783,13 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
         # Clean up staging file
         SAVE_STAGING_FILE.unlink()
 
-        # Git commit
+        # Git commit — add only changed files, not entire directory (fast on large repos)
         try:
             _set_mcp_flag()
-            subprocess.run(["git", "add", str(PROJECT_MAP_DIR)], check=True, capture_output=True)
+            for cf in changed_files:
+                filepath = PROJECT_MAP_DIR / cf
+                if filepath.exists():
+                    subprocess.run(["git", "add", str(filepath)], check=True, capture_output=True)
             commit_msg = f"chore: architect save [{', '.join(changed_files)}]"
             result = subprocess.run(
                 ["git", "commit", "-m", commit_msg],
@@ -1143,10 +1146,13 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
                 content = filepath.read_text(encoding="utf-8")
                 remaining += len(re.findall(r'\[待填写[^\]]*\]', content))
 
-        # ── Git commit ────────────────────────────────────────────────
+        # ── Git commit (add only changed files for speed) ─────────────
         try:
             _set_mcp_flag()
-            subprocess.run(["git", "add", str(PROJECT_MAP_DIR)], check=True, capture_output=True)
+            for wf in written_files:
+                wf_path = PROJECT_MAP_DIR / wf
+                if wf_path.exists():
+                    subprocess.run(["git", "add", str(wf_path)], check=True, capture_output=True)
             result = subprocess.run(
                 ["git", "commit", "-m", f"chore: bootstrap project map [{timestamp}]"],
                 check=True, capture_output=True, text=True
