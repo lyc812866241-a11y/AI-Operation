@@ -230,34 +230,36 @@ def _auto_split_oversized_sections(filepath: Path, depth: int = 0, _file_counter
 def _compact_dynamic_file(content: str, filename: str) -> str:
     """Compact a dynamic file (activeContext/progress) that has grown too large.
 
-    Strategy: Split by '---' archive entries, keep the file header + last 2 entries,
-    replace everything in between with a one-line summary of how many entries were compacted.
+    Aggressive strategy: keep ONLY the file header + the LAST entry.
+    Everything else (old archives, old compaction summaries) is replaced
+    with a one-line notice. Full history is in git log.
+
+    This ensures dynamic files never grow beyond ~header + 1 entry,
+    regardless of how many saves accumulate.
     """
     sections = content.split("\n---\n")
 
-    if len(sections) <= 3:
-        # Not enough sections to compact
+    if len(sections) <= 2:
         return content
 
-    # First section is usually the file header (title, instructions)
+    # First section = file header
     header = sections[0]
 
-    # Last 2 sections are the most recent archives
-    recent = sections[-2:]
+    # Last section = most recent archive (the only one that matters)
+    latest = sections[-1]
 
-    # Middle sections get compacted
-    compacted_count = len(sections) - 3  # -1 header, -2 recent
+    # Everything in between gets compacted
+    compacted_count = len(sections) - 2
 
     import datetime
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
     compact_notice = (
         f"\n### [Auto-Compacted — {timestamp}]\n"
-        f"{compacted_count} older archive entries were compacted to stay within prompt budget.\n"
-        f"Full history is preserved in git log."
+        f"{compacted_count} older entries compacted. History in git log."
     )
 
-    result_parts = [header, compact_notice] + recent
+    result_parts = [header, compact_notice, latest]
     return "\n---\n".join(result_parts)
 
 # The 6 canonical files in project_map
@@ -672,7 +674,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
         staged_lessons = staging_data["lessons"]
         staged_compaction = staging_data.get("compaction", "")
 
-        DYNAMIC_FILE_MAX_BYTES = 3_000
+        DYNAMIC_FILE_MAX_BYTES = 2_000  # Compact earlier to prevent budget overflow
         STATIC_FILES = {"projectbrief.md", "systemPatterns.md", "techContext.md"}
         changed_files = []
         merge_report = []
