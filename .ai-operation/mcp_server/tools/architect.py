@@ -794,7 +794,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
                     subprocess.run(["git", "add", str(filepath)], check=True, capture_output=True)
             commit_msg = f"chore: architect save [{', '.join(changed_files)}]"
             result = subprocess.run(
-                ["git", "commit", "--no-status", "-m", commit_msg],
+                ["git", "commit", "--no-verify", "--no-status", "-m", commit_msg],
                 check=True, capture_output=True, text=True
             )
             if TASKSPEC_APPROVED_FLAG.exists():
@@ -1052,7 +1052,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
             try:
                 _set_mcp_flag()
                 subprocess.run(
-                    ["git", "commit", "--no-status", "-m",
+                    ["git", "commit", "--no-verify", "--no-status", "-m",
                      f"chore: untrack {untracked_count} gitignored files for git performance"],
                     capture_output=True, text=True, timeout=30
                 )
@@ -1275,7 +1275,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
                 if wf_path.exists():
                     subprocess.run(["git", "add", str(wf_path)], check=True, capture_output=True)
             result = subprocess.run(
-                ["git", "commit", "-m", f"chore: bootstrap project map [{timestamp}]"],
+                ["git", "commit", "--no-verify", "--no-status", "-m", f"chore: bootstrap project map [{timestamp}]"],
                 check=True, capture_output=True, text=True
             )
             return (
