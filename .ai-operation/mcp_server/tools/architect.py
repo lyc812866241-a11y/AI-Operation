@@ -20,8 +20,8 @@ PROJECT_MAP_DIR = Path(".ai-operation/docs/project_map")
 MCP_COMMIT_FLAG = Path(".ai-operation/.mcp_commit_flag")
 
 # Prompt budget limits (inspired by Claude Code internals)
-MAX_FILE_CHARS = 4_000       # Max chars per project_map file injected into prompt
-MAX_TOTAL_CHARS = 12_000     # Max total chars across all files
+MAX_FILE_CHARS = 16_000      # Max chars per project_map file (16KB per file)
+MAX_TOTAL_CHARS = 50_000     # Max total chars across all files (50KB total, ~12K tokens)
 
 # TaskSpec workflow enforcement
 TASKSPEC_DIR = Path(".ai-operation/docs")
@@ -149,7 +149,7 @@ def _generate_toc(content: str, filename: str) -> str:
 
     toc_lines.append(f"\n({len(content)} chars, {content.count(chr(10))} lines)")
     return "\n".join(toc_lines)
-SECTION_SIZE_THRESHOLD = 1500  # chars — split section to subfile if exceeds this
+SECTION_SIZE_THRESHOLD = 8_000  # chars — split section to subfile if exceeds 8KB
 
 
 def _auto_split_oversized_sections(filepath: Path, depth: int = 0, _file_counter: list = None) -> list:
@@ -248,7 +248,7 @@ def _auto_split_oversized_sections(filepath: Path, depth: int = 0, _file_counter
     return split_sections
 
 
-CORRECTIONS_MAX_BYTES = 3_000  # Auto-archive old lessons when corrections exceeds this
+CORRECTIONS_MAX_BYTES = 10_000  # Auto-archive old lessons when corrections exceeds 10KB
 
 
 def _compact_corrections(filepath: Path) -> str:
@@ -764,7 +764,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
         staged_lessons = staging_data["lessons"]
         staged_compaction = staging_data.get("compaction", "")
 
-        DYNAMIC_FILE_MAX_BYTES = 2_000  # Compact earlier to prevent budget overflow
+        DYNAMIC_FILE_MAX_BYTES = 8_000  # Compact dynamic files when exceeding 8KB
         STATIC_FILES = {"projectbrief.md", "systemPatterns.md", "techContext.md"}
         changed_files = []
         merge_report = []
