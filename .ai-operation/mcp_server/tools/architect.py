@@ -248,6 +248,75 @@ def _auto_split_oversized_sections(filepath: Path, depth: int = 0, _file_counter
     return split_sections
 
 
+CORRECTIONS_MAX_BYTES = 3_000  # Auto-archive old lessons when corrections exceeds this
+
+
+def _compact_corrections(filepath: Path) -> str:
+    """Compact corrections.md when it exceeds threshold.
+
+    Strategy:
+    1. Parse all LESSON entries
+    2. Keep the 5 most recent entries in the main file
+    3. Move older entries to details/corrections__archive_N.md
+    4. Leave a pointer in the main file
+
+    Returns: description of what was archived, or empty string if no action.
+    """
+    if not filepath.exists():
+        return ""
+
+    content = filepath.read_text(encoding="utf-8")
+    if len(content.encode("utf-8")) <= CORRECTIONS_MAX_BYTES:
+        return ""
+
+    import re
+    import datetime
+
+    # Split into entries by "---" delimiter
+    parts = content.split("\n---\n")
+
+    # Separate header (everything before first DATE: entry) from entries
+    header_parts = []
+    entry_parts = []
+    for part in parts:
+        if "DATE:" in part and "LESSON:" in part:
+            entry_parts.append(part)
+        else:
+            header_parts.append(part)
+
+    if len(entry_parts) <= 5:
+        return ""  # Not enough to archive
+
+    # Keep last 5, archive the rest
+    to_archive = entry_parts[:-5]
+    to_keep = entry_parts[-5:]
+
+    # Write archive file
+    DETAILS_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+    archive_name = f"corrections__archive_{timestamp}.md"
+    archive_path = DETAILS_DIR / archive_name
+
+    archive_content = (
+        f"# Corrections Archive ({len(to_archive)} entries)\n\n"
+        f"> Archived from corrections.md on {timestamp}\n\n"
+    )
+    archive_content += "\n---\n".join(to_archive)
+    archive_path.write_text(archive_content, encoding="utf-8")
+
+    # Rebuild main file: header + pointer + recent 5
+    pointer = (
+        f"\n> → [旧经验归档: {len(to_archive)} 条已移至 details/{archive_name}]\n"
+    )
+
+    rebuilt = "\n---\n".join(header_parts)
+    rebuilt += f"\n---\n{pointer}\n---\n"
+    rebuilt += "\n---\n".join(to_keep)
+
+    filepath.write_text(rebuilt, encoding="utf-8")
+    return f"corrections.md: archived {len(to_archive)} old entries → details/{archive_name}"
+
+
 def _compact_dynamic_file(content: str, filename: str) -> str:
     """Compact a dynamic file (activeContext/progress) that has grown too large.
 
@@ -774,6 +843,13 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
             merge_report.append("  Auto-split oversized sections:")
             for s in split_report:
                 merge_report.append(f"    - {s}")
+
+        # Auto-compact corrections.md if oversized
+        corrections_archive = _compact_corrections(PROJECT_MAP_DIR / "corrections.md")
+        if corrections_archive:
+            merge_report.append(f"  {corrections_archive}")
+            if "corrections.md" not in changed_files:
+                changed_files.append("corrections.md")
 
         # Write lessons to corrections.md
         if staged_lessons and staged_lessons.upper() != "NONE":
