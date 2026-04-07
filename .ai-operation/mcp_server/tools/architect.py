@@ -251,6 +251,52 @@ def _auto_split_oversized_sections(filepath: Path, depth: int = 0, _file_counter
 CORRECTIONS_MAX_BYTES = 10_000  # Auto-archive old lessons when corrections exceeds 10KB
 
 
+def _enforce_file_size_limit(filepath: Path) -> str:
+    """Universal fallback: if ANY file exceeds MAX_FILE_CHARS, force-split it.
+
+    This catches files that _auto_split_oversized_sections misses because
+    they have no ## headers (e.g., plain text, flat record lists).
+
+    Strategy: keep first 2KB as summary in main file, move the rest to
+    details/ with a pointer. If the overflow file itself exceeds the limit
+    after being written, this function is called again recursively.
+
+    Returns: description of action taken, or empty string.
+    """
+    if not filepath.exists():
+        return ""
+
+    content = filepath.read_text(encoding="utf-8")
+    if len(content) <= MAX_FILE_CHARS:
+        return ""
+
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+    parent_name = filepath.stem
+
+    DETAILS_DIR.mkdir(parents=True, exist_ok=True)
+    overflow_name = f"{parent_name}__overflow_{timestamp}.md"
+    overflow_path = DETAILS_DIR / overflow_name
+    rel_path = overflow_path.relative_to(PROJECT_MAP_DIR) if PROJECT_MAP_DIR in overflow_path.parents else overflow_name
+
+    # Keep first 2KB as summary, move rest to overflow file
+    keep_chars = 2000
+    summary = content[:keep_chars]
+    overflow = content[keep_chars:]
+
+    overflow_content = (
+        f"# Overflow: {filepath.name}\n\n"
+        f"> Auto-split on {timestamp} because file exceeded {MAX_FILE_CHARS} chars.\n\n"
+        f"{overflow}\n"
+    )
+    overflow_path.write_text(overflow_content, encoding="utf-8")
+
+    pointer = f"\n\n> → [剩余内容: details/{overflow_name}] ({len(overflow)} chars)\n"
+    filepath.write_text(summary + pointer, encoding="utf-8")
+
+    return f"{filepath.name}: overflow split → details/{overflow_name} ({len(overflow)} chars moved)"
+
+
 def _compact_corrections(filepath: Path) -> str:
     """Compact corrections.md when it exceeds threshold.
 
@@ -882,6 +928,17 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
         # Clean up staging file
         SAVE_STAGING_FILE.unlink()
 
+        # ── Universal size limit enforcement (last safety net) ────
+        # Catches ANY file that exceeded MAX_FILE_CHARS after all writes,
+        # regardless of whether it has ## headers or not.
+        for fn in list(REQUIRED_FILES.values()) + ["corrections.md"]:
+            fp = PROJECT_MAP_DIR / fn
+            overflow_result = _enforce_file_size_limit(fp)
+            if overflow_result:
+                merge_report.append(f"  ⚠️ {overflow_result}")
+                if fn not in changed_files:
+                    changed_files.append(fn)
+
         # Git commit — add only changed files, not entire directory (fast on large repos)
         try:
             _set_mcp_flag()
@@ -889,6 +946,10 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
                 filepath = PROJECT_MAP_DIR / cf
                 if filepath.exists():
                     subprocess.run(["git", "add", str(filepath)], check=True, capture_output=True)
+            # Also add any detail files created by splits/overflow
+            if DETAILS_DIR.exists():
+                for df in DETAILS_DIR.glob("**/*.md"):
+                    subprocess.run(["git", "add", str(df)], check=True, capture_output=True)
             commit_msg = f"chore: architect save [{', '.join(changed_files)}]"
             result = subprocess.run(
                 ["git", "commit", "--no-verify", "--no-status", "-m", commit_msg],
