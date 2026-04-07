@@ -1047,20 +1047,27 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
                     changed_files.append(fn)
 
         # Git commit — add only changed files, not entire directory (fast on large repos)
+        GIT_TIMEOUT = 30  # seconds — prevents infinite hang on git lock or large repo
         try:
             _set_mcp_flag()
+            # Batch all files into a single git add call (1 process instead of N)
+            files_to_add = []
             for cf in changed_files:
                 filepath = PROJECT_MAP_DIR / cf
                 if filepath.exists():
-                    subprocess.run(["git", "add", str(filepath)], check=True, capture_output=True)
-            # Also add any detail files created by splits/overflow
+                    files_to_add.append(str(filepath))
             if DETAILS_DIR.exists():
-                for df in DETAILS_DIR.glob("**/*.md"):
-                    subprocess.run(["git", "add", str(df)], check=True, capture_output=True)
+                for df in DETAILS_DIR.glob("*.md"):
+                    files_to_add.append(str(df))
+            if files_to_add:
+                subprocess.run(
+                    ["git", "add"] + files_to_add,
+                    check=True, capture_output=True, timeout=GIT_TIMEOUT
+                )
             commit_msg = f"chore: architect save [{', '.join(changed_files)}]"
             result = subprocess.run(
                 ["git", "commit", "--no-verify", "--no-status", "-m", commit_msg],
-                check=True, capture_output=True, text=True
+                check=True, capture_output=True, text=True, timeout=GIT_TIMEOUT
             )
             if TASKSPEC_APPROVED_FLAG.exists():
                 TASKSPEC_APPROVED_FLAG.unlink()
@@ -1074,6 +1081,13 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
                 f"Merge details:\n" + "\n".join(merge_report) + "\n\n"
                 f"Git commit: {result.stdout.strip()}\n"
                 f"TaskSpec approval cleared — next code change requires new approval."
+            )
+        except subprocess.TimeoutExpired:
+            return (
+                f"PARTIAL SUCCESS\n"
+                f"Files updated: {', '.join(changed_files)}\n"
+                f"Git commit TIMED OUT after {GIT_TIMEOUT}s — possible git lock.\n"
+                f"Try: git status / delete .git/index.lock if stale / manual commit."
             )
         except subprocess.CalledProcessError as e:
             stderr = e.stderr if hasattr(e, 'stderr') and e.stderr else str(e)
@@ -1585,15 +1599,15 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
                 remaining += len(re.findall(r'\[待填写[^\]]*\]', content))
 
         # ── Git commit (add only changed files for speed) ─────────────
+        GIT_TIMEOUT = 30
         try:
             _set_mcp_flag()
-            for wf in written_files:
-                wf_path = PROJECT_MAP_DIR / wf
-                if wf_path.exists():
-                    subprocess.run(["git", "add", str(wf_path)], check=True, capture_output=True)
+            files_to_add = [str(PROJECT_MAP_DIR / wf) for wf in written_files if (PROJECT_MAP_DIR / wf).exists()]
+            if files_to_add:
+                subprocess.run(["git", "add"] + files_to_add, check=True, capture_output=True, timeout=GIT_TIMEOUT)
             result = subprocess.run(
                 ["git", "commit", "--no-verify", "--no-status", "-m", f"chore: bootstrap project map [{timestamp}]"],
-                check=True, capture_output=True, text=True
+                check=True, capture_output=True, text=True, timeout=GIT_TIMEOUT
             )
             return (
                 f"SUCCESS: Project bootstrap merge complete.\n\n"
