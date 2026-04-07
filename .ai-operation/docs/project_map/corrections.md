@@ -1,6 +1,6 @@
 # Bootstrap Corrections Log
 
-> 经验库。COUNT >= 3 自动升级为 SKILL.md 检查项。
+> 经验库。COUNT >= 3 自动升级到 conventions.md 成为项目契约。
 
 ---
 DATE: 2026-04-07

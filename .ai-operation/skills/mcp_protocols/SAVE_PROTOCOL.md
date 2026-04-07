@@ -70,7 +70,7 @@
   - **AI 纠错**：AI 判断失误后被用户纠正的记录
   - **架构决策**：为什么选 A 不选 B 的理由
 - 仅当本次会话确实没有任何新发现时，填写 `NONE`
-- **进化链路**：corrections.md 中同类经验 COUNT >= 3 → 自动升级为 SKILL.md 强制检查项
+- **进化链路**：corrections.md 中同类经验 COUNT >= 3 → 自动升级到 conventions.md 成为项目契约（由 architect.py 代码执行，非文本指令）
 
 ---
 
