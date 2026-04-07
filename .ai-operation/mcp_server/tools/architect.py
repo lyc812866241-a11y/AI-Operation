@@ -267,7 +267,8 @@ def _enforce_file_size_limit(filepath: Path) -> str:
         return ""
 
     content = filepath.read_text(encoding="utf-8")
-    if len(content) <= MAX_FILE_CHARS:
+    byte_size = len(content.encode("utf-8"))
+    if byte_size <= MAX_FILE_CHARS:
         return ""
 
     import datetime
@@ -330,12 +331,22 @@ def _compact_corrections(filepath: Path) -> str:
         else:
             header_parts.append(part)
 
+    # If file is over threshold but has few entries, the header is too fat — trim it
     if len(entry_parts) <= 5:
-        return ""  # Not enough to archive
+        # Slim the header: keep only the title + one-line description
+        slim_header = "# Bootstrap Corrections Log\n\n> 经验库。COUNT >= 3 自动升级为 SKILL.md 检查项。\n"
+        rebuilt = slim_header + "\n---\n".join(entry_parts)
+        filepath.write_text(rebuilt, encoding="utf-8")
+        new_size = len(rebuilt.encode("utf-8"))
+        if new_size <= CORRECTIONS_MAX_BYTES:
+            return f"corrections.md: header trimmed ({len(content.encode('utf-8'))} → {new_size} bytes)"
+        # Still over? Fall through to archive entries
+        content = rebuilt
+        header_parts = [slim_header]
 
     # Keep last 5, archive the rest
-    to_archive = entry_parts[:-5]
-    to_keep = entry_parts[-5:]
+    to_archive = entry_parts[:-5] if len(entry_parts) > 5 else []
+    to_keep = entry_parts[-5:] if len(entry_parts) > 5 else entry_parts
 
     # Write archive file
     DETAILS_DIR.mkdir(parents=True, exist_ok=True)
