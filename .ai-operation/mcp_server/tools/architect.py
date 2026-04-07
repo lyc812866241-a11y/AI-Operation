@@ -334,7 +334,7 @@ def _compact_corrections(filepath: Path) -> str:
     # If file is over threshold but has few entries, the header is too fat — trim it
     if len(entry_parts) <= 5:
         # Slim the header: keep only the title + one-line description
-        slim_header = "# Bootstrap Corrections Log\n\n> 经验库。COUNT >= 3 自动升级为 SKILL.md 检查项。\n"
+        slim_header = "# Bootstrap Corrections Log\n\n> 经验库。COUNT >= 3 自动升级到 conventions.md 成为项目契约。\n"
         rebuilt = slim_header + "\n---\n".join(entry_parts)
         filepath.write_text(rebuilt, encoding="utf-8")
         new_size = len(rebuilt.encode("utf-8"))
@@ -414,6 +414,7 @@ REQUIRED_FILES = {
     "projectbrief": "projectbrief.md",
     "systemPatterns": "systemPatterns.md",
     "techContext": "techContext.md",
+    "conventions": "conventions.md",
     "activeContext": "activeContext.md",
     "progress": "progress.md",
     "inventory": "inventory.md",
@@ -437,6 +438,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
         progress_update: str,
         lessons_learned: str,
         inventory_update: str = "",
+        conventions_update: str = "",
         session_compaction: str = "",
     ) -> str:
         """
@@ -445,13 +447,13 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
         This tool MUST be called when the user issues the [存档] command.
         The AI agent MUST NOT manually edit project_map files or run git commands directly.
 
-        CRITICAL: For ALL 5 file parameters, you must EITHER:
+        CRITICAL: For ALL 6 file parameters (5 core + conventions), you must EITHER:
           - Provide update content (see format below)
           - Write "NO_CHANGE_BECAUSE: [specific reason]" explaining WHY no update is needed
 
         Simply writing "NO_CHANGE" is REJECTED. You must justify why each file doesn't need updating.
 
-        SECTION-AWARE MERGE (for static files: projectbrief, systemPatterns, techContext):
+        SECTION-AWARE MERGE (for static files: projectbrief, systemPatterns, techContext, conventions):
         Instead of dumping all content as one blob, use ===SECTION=== delimiters to target
         specific sections. The tool will update ONLY those sections, leaving others untouched.
 
@@ -492,6 +494,10 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
                 or modified a list of items (skills, modules, APIs, models), provide the COMPLETE LIST
                 here. This is FULL OVERWRITE, not append — if you list 40 skills, the file will have
                 exactly 40 skills. Always read inventory.md first and merge, don't rely on memory alone.
+            conventions_update: Optional. Project-wide conventions (naming, API format, UI tokens, error
+                handling patterns). Section-aware merge like other static files. Use ===SECTION===
+                delimiters. Use "NO_CHANGE_BECAUSE: [reason]" to skip. Conventions are proactive
+                contracts that prevent consistency errors before they happen.
             session_compaction: Optional. Compressed summary of conversation for context overflow recovery.
 
         Returns:
@@ -504,6 +510,12 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
             "activeContext.md": activeContext_update,
             "progress.md": progress_update,
         }
+
+        # Add conventions if provided (optional field — default to NO_CHANGE)
+        if conventions_update and conventions_update.strip():
+            updates["conventions.md"] = conventions_update
+        else:
+            updates["conventions.md"] = "NO_CHANGE_BECAUSE: No convention changes this session"
 
         _audit("aio__force_architect_save", "CALLED")
 
@@ -532,11 +544,16 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
                        f"{fn} update ({new_size} chars) much smaller than existing ({old_size} chars)")
 
         # Validate: NO bare "NO_CHANGE" allowed — must provide reason
-        for filename, content in {
+        # Build static file validation list (conventions is optional, only validate if provided)
+        static_validations = {
             "projectbrief_update": projectbrief_update,
             "systemPatterns_update": systemPatterns_update,
             "techContext_update": techContext_update,
-        }.items():
+        }
+        if conventions_update and conventions_update.strip():
+            static_validations["conventions_update"] = conventions_update
+
+        for filename, content in static_validations.items():
             stripped = content.strip()
             if stripped == "NO_CHANGE":
                 _audit("aio__force_architect_save", "REJECTED", f"{filename} bare NO_CHANGE")
@@ -597,11 +614,14 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
             )
 
         # Check static file updates for minimum substance
-        for label, content in [
+        static_content_checks = [
             ("projectbrief_update", projectbrief_update),
             ("systemPatterns_update", systemPatterns_update),
             ("techContext_update", techContext_update),
-        ]:
+        ]
+        if conventions_update and conventions_update.strip():
+            static_content_checks.append(("conventions_update", conventions_update))
+        for label, content in static_content_checks:
             stripped = content.strip()
             if stripped.upper().startswith("NO_CHANGE_BECAUSE"):
                 continue
@@ -773,6 +793,16 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
             "or make decisions that aren't reflected?"
         )
 
+        # Q6: Conventions consistency
+        conv_path = PROJECT_MAP_DIR / "conventions.md"
+        if conv_path.exists():
+            audit_questions.append(
+                "Did this session establish any new naming patterns, API formats, "
+                "UI decisions, or error handling conventions? If so, did you update "
+                "conventions.md? If you corrected the AI on a consistency issue, "
+                "that correction should become a convention."
+            )
+
         for i, q in enumerate(audit_questions, 1):
             report.append(f"{i}. {q}")
         report.append("")
@@ -822,7 +852,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
         staged_compaction = staging_data.get("compaction", "")
 
         DYNAMIC_FILE_MAX_BYTES = 8_000  # Compact dynamic files when exceeding 8KB
-        STATIC_FILES = {"projectbrief.md", "systemPatterns.md", "techContext.md"}
+        STATIC_FILES = {"projectbrief.md", "systemPatterns.md", "techContext.md", "conventions.md"}
         changed_files = []
         merge_report = []
 
@@ -889,7 +919,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
 
         # Auto-split oversized sections to detail subfiles
         split_report = []
-        for fn in ["projectbrief.md", "systemPatterns.md", "techContext.md"]:
+        for fn in ["projectbrief.md", "systemPatterns.md", "techContext.md", "conventions.md"]:
             fp = PROJECT_MAP_DIR / fn
             splits = _auto_split_oversized_sections(fp)
             if splits:
@@ -908,16 +938,34 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
             if "corrections.md" not in changed_files:
                 changed_files.append("corrections.md")
 
-        # Write lessons to corrections.md
+        # Write lessons to corrections.md (with COUNT increment for duplicates)
         if staged_lessons and staged_lessons.upper() != "NONE":
             corrections_path = PROJECT_MAP_DIR / "corrections.md"
             existing_corrections = corrections_path.read_text(encoding="utf-8") if corrections_path.exists() else ""
             lessons_lines = [l.strip() for l in staged_lessons.split("\n") if l.strip()]
 
-            with open(corrections_path, "a", encoding="utf-8") as f:
-                for lesson in lessons_lines:
-                    lesson_text = lesson.lstrip("- ").strip()
-                    if lesson_text and lesson_text not in existing_corrections:
+            for lesson in lessons_lines:
+                lesson_text = lesson.lstrip("- ").strip()
+                if not lesson_text:
+                    continue
+
+                # Check if this lesson already exists — if so, increment COUNT
+                if lesson_text in existing_corrections:
+                    import re as re_mod
+                    # Find the entry containing this lesson and increment its COUNT
+                    pattern = re_mod.compile(
+                        r'(LESSON:\s*' + re_mod.escape(lesson_text) + r'\s*\nCOUNT:\s*)(\d+)',
+                        re_mod.MULTILINE
+                    )
+                    match = pattern.search(existing_corrections)
+                    if match:
+                        old_count = int(match.group(2))
+                        new_count = old_count + 1
+                        existing_corrections = existing_corrections[:match.start(2)] + str(new_count) + existing_corrections[match.end(2):]
+                        corrections_path.write_text(existing_corrections, encoding="utf-8")
+                else:
+                    # New lesson — append
+                    with open(corrections_path, "a", encoding="utf-8") as f:
                         f.write(
                             f"\n---\n"
                             f"DATE: {timestamp}\n"
@@ -925,8 +973,56 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
                             f"LESSON: {lesson_text}\n"
                             f"COUNT: 1\n"
                         )
+                    # Re-read for subsequent duplicate checks
+                    existing_corrections = corrections_path.read_text(encoding="utf-8")
+
             if "corrections.md" not in changed_files:
                 changed_files.append("corrections.md")
+
+            # ── Corrections → Conventions upgrade loop ────────────
+            # Scan for entries with COUNT >= 3 that haven't been promoted yet.
+            # Promote them to conventions.md as new convention entries.
+            import re as re_mod
+            existing_corrections = corrections_path.read_text(encoding="utf-8")
+            conventions_path = PROJECT_MAP_DIR / "conventions.md"
+            conventions_content = conventions_path.read_text(encoding="utf-8") if conventions_path.exists() else ""
+
+            promoted = []
+            entries = existing_corrections.split("\n---\n")
+            rebuilt_entries = []
+            for entry in entries:
+                # Find entries with COUNT >= 3 and not already promoted
+                count_match = re_mod.search(r'COUNT:\s*(\d+)', entry)
+                lesson_match = re_mod.search(r'LESSON:\s*(.+)', entry)
+                if count_match and lesson_match:
+                    count = int(count_match.group(1))
+                    lesson = lesson_match.group(1).strip()
+                    if count >= 3 and "STATUS: 已升级" not in entry and lesson not in conventions_content:
+                        # Mark as promoted in corrections.md
+                        entry = entry.rstrip() + "\nSTATUS: 已升级 → conventions.md\n"
+                        promoted.append(lesson)
+                rebuilt_entries.append(entry)
+
+            if promoted:
+                # Rewrite corrections.md with promoted markers
+                corrections_path.write_text("\n---\n".join(rebuilt_entries), encoding="utf-8")
+
+                # Append promoted lessons to conventions.md
+                # Check if the auto-upgrade section already exists to avoid duplicate headers
+                UPGRADE_SECTION = "## 自动升级的契约 (从 corrections.md COUNT >= 3)"
+                conv_content = conventions_path.read_text(encoding="utf-8") if conventions_path.exists() else ""
+                with open(conventions_path, "a", encoding="utf-8") as f:
+                    if UPGRADE_SECTION not in conv_content:
+                        f.write(f"\n\n{UPGRADE_SECTION}\n\n")
+                    for p in promoted:
+                        f.write(f"- {p}\n")
+
+                merge_report.append(
+                    f"  🔄 corrections → conventions: {len(promoted)} entries promoted "
+                    f"(COUNT >= 3): {', '.join(p[:40] for p in promoted)}"
+                )
+                if "conventions.md" not in changed_files:
+                    changed_files.append("conventions.md")
 
         # Write compaction summary
         if staged_compaction:
@@ -1022,6 +1118,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
         priority_order = [
             ("activeContext", "activeContext.md", True),    # always full
             ("progress", "progress.md", True),              # always full
+            ("conventions", "conventions.md", True),        # always full — AI needs contracts when coding
             ("projectbrief", "projectbrief.md", False),     # TOC if tight
             ("systemPatterns", "systemPatterns.md", False),  # TOC if tight
             ("techContext", "techContext.md", False),        # TOC if tight
@@ -1290,6 +1387,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
         activeContext_focus: str,
         progress_initial: str,
         user_confirmed: bool,
+        conventions_content: str = "",
     ) -> str:
         """
         [BOOTSTRAP ENFORCEMENT TOOL] Merge AI-generated content into project_map templates.
@@ -1320,6 +1418,9 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
             activeContext_focus: Current focus statement for activeContext.md.
             progress_initial: Initial milestone entry for progress.md.
             user_confirmed: MUST be True.
+            conventions_content: Optional. Project conventions (naming, API format, UI tokens,
+                error handling patterns). Use "SKIP" to leave empty for now. If provided,
+                merges into conventions.md template like other static files.
 
         Returns:
             Execution report with merge results and git commit status.
@@ -1336,13 +1437,16 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
             )
 
         # Gate 2: Reject [TODO] (but allow SKIP and [待确认])
-        for field_name, content in {
+        gate2_fields = {
             "projectbrief_content": projectbrief_content,
             "systemPatterns_content": systemPatterns_content,
             "techContext_content": techContext_content,
             "activeContext_focus": activeContext_focus,
             "progress_initial": progress_initial,
-        }.items():
+        }
+        if conventions_content and conventions_content.strip():
+            gate2_fields["conventions_content"] = conventions_content
+        for field_name, content in gate2_fields.items():
             if "[TODO]" in content:
                 return (
                     f"REJECTED: {field_name} still contains [TODO] placeholders.\n"
@@ -1420,6 +1524,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
             "projectbrief.md": projectbrief_content,
             "systemPatterns.md": systemPatterns_content,
             "techContext.md": techContext_content,
+            "conventions.md": conventions_content if conventions_content and conventions_content.strip() else "SKIP",
         }
 
         written_files = []

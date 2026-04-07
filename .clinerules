@@ -10,6 +10,7 @@ CRITICAL: At the start of EVERY new conversation, before responding to the user'
 
 1. .ai-operation/docs/project_map/activeContext.md (What are we doing right now?)
 2. .ai-operation/docs/project_map/systemPatterns.md (What are the architectural rules?)
+3. .ai-operation/docs/project_map/conventions.md (What are the consistency contracts?)
 
 If you haven't read them, DO NOT guess. Read them immediately.
 
@@ -108,6 +109,15 @@ NEVER run [存档] if Section 6 doc updates are marked but not yet completed.
 - LESSONS ARE MANDATORY: Every [存档] must include lessons_learned. The MCP tool rejects empty values.
   > WHY: A framework that doesn't learn from its mistakes is just a template. Every session teaches something — capture it or lose it. This is how the framework evolves.
 
+- CONVENTIONS FIRST: Before writing code, read conventions.md. All naming, API format, UI token, and
+  error handling decisions must align with project conventions. If a convention doesn't exist yet
+  for the decision you're making, propose adding it during [存档].
+  > WHY: Implicit decisions cause inconsistency across sessions. Explicit conventions = every AI window writes code that looks like one person wrote it.
+
+- CORRECTIONS AUTO-UPGRADE: When a lesson in corrections.md reaches COUNT >= 3, it is automatically
+  promoted to conventions.md as a project contract. This closes the loop: mistake → lesson → convention → prevention.
+  > WHY: Corrections are reactive (fix after failure). Conventions are proactive (prevent before failure). Auto-upgrade turns pain into permanent immunity.
+
 - HIERARCHICAL DETAIL RETRIEVAL: When [读档] returns a section containing "→ [详见 details/xxx.md]",
   that section has been split to a subfile because it exceeded 1.5KB. Call `aio__detail_read` with
   the filename to get the full content. Call `aio__detail_list` to see all available detail files.
@@ -128,6 +138,7 @@ All core context is located in .ai-operation/docs/project_map/:
 - projectbrief.md — Core vision and business goals [STATIC]
 - systemPatterns.md — Architecture rules, module definitions [STATIC]
 - techContext.md — Tech stack constraints, known gotchas [STATIC]
+- conventions.md — Project-wide consistency contracts (naming, API, UI tokens) [STATIC]
 - activeContext.md — Current focus, immediate next steps [DYNAMIC]
 - progress.md — TODO list, completed milestones [DYNAMIC]
 

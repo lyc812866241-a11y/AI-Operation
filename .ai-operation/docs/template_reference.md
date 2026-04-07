@@ -47,6 +47,39 @@
 
 ---
 
+## conventions.md 填写规范
+
+### 1. 命名契约
+明确每种命名场景的规则。格式：`[场景]: [规则]`
+示例：
+- API 路由: kebab-case (`/user-profile`, `/order-history`)
+- 数据库字段: snake_case (`created_at`, `user_id`)
+- React 组件: PascalCase (`UserCard`, `OrderList`)
+- Python 函数: snake_case (`get_user_profile`)
+- 常量: UPPER_SNAKE_CASE (`MAX_RETRY_COUNT`)
+
+### 2. API / 数据契约
+统一的请求/响应格式，确保所有接口一致。
+示例：`所有 API 统一返回 { code: int, message: str, data: any }，错误码 4xx 客户端错误 / 5xx 服务端错误`
+
+### 3. UI 契约（无前端项目写 N/A）
+把设计决策写成精确的 token，AI 生成 UI 时会自动对齐。
+示例：
+- 网格: 8px base
+- 间距阶梯: 4 / 8 / 12 / 16 / 24 / 32 / 48
+- 圆角: 4px (按钮) / 8px (卡片) / 16px (模态框)
+- 主色: #2563EB, 成功: #16A34A, 错误: #DC2626
+
+### 4. 错误处理契约
+统一的错误处理模式，避免每个模块各写各的。
+示例：`后端: 所有异常统一 try-catch 到 middleware，返回标准格式。前端: toast 提示 3 秒自动消失。`
+
+### 5. 代码风格契约
+从代码库已有风格提取，写明边界。
+示例：`单文件不超过 300 行 / 函数不超过 40 行 / import 分三段：stdlib → third-party → local`
+
+---
+
 ## techContext.md 填写规范
 
 ### 1. 核心技术栈

@@ -260,6 +260,7 @@ MCP 工具是框架的强制执行层。直接编辑文件意味着 AI 可以在
   techContext_content   = [Phase 3.3 用户确认后的完整内容，不含任何 [TODO]]
   activeContext_focus   = [Phase 3.4 用户回答的当前最紧迫任务]
   progress_initial      = [当前待办事项列表]
+  conventions_content   = [从代码库提取的命名/API/UI/错误处理契约，或 "SKIP" 稍后填写]
   user_confirmed        = True  ← 只有在用户明确表示"可以写入"后才能设为 True
 ```
 
@@ -271,7 +272,7 @@ MCP 工具是框架的强制执行层。直接编辑文件意味着 AI 可以在
 | Gate 2 | 所有内容字段 | 任意字段含 `[TODO]` 时拒绝，要求替换为真实内容或 `[待确认]` |
 | Gate 3 | `.ai-operation/docs/project_map/` 目录 | 目录不存在时拒绝，提示框架未正确植入 |
 
-**Phase 4 完成标准**：MCP 工具返回 `SUCCESS`，5 个文件已写入，git commit 已创建。
+**Phase 4 完成标准**：MCP 工具返回 `SUCCESS`，6 个文件（含 conventions.md）已写入，git commit 已创建。
 
 ---
 

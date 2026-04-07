@@ -29,6 +29,8 @@
 - [Mechanism] NO_CHANGE_BECAUSE — 跳过文件必须写理由
 - [Mechanism] 动态文件压缩 — > 8KB 只保留最新 1 条
 - [Mechanism] Section 拆分 — > 8KB 的 ## section 拆到子文件
+- [Mechanism] Corrections→Conventions 升级 — COUNT >= 3 自动升级为项目契约
+- [Mechanism] Conventions 契约层 — conventions.md 存储命名/API/UI/错误处理全局约定
 - [Mechanism] Corrections 归档 — > 10KB 瘦身头部 + 旧条目归档
 - [Mechanism] 通用 overflow 兜底 — 任何文件 > 16KB 强制拆分
 - [Mechanism] TOC 模式读档 — 总量超预算时静态文件只显示标题

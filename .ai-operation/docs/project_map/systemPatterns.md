@@ -39,3 +39,10 @@
 - MCP server 每次调用冷启动 Python 进程（~2 秒），两阶段存档 = 2 次冷启动。
 - 所有文件大小阈值用字节数（encode utf-8），不是字符数。
 - .clinerules 是 canonical source，其他 3 个 IDE 文件由 sync-rules 自动生成。
+
+## 5. Conventions 契约体系
+
+- conventions.md 是 project_map 第 7 个文件，存储全局一致性契约。
+- 读档时优先级高于静态文件（always full），确保 AI 写代码前看到契约。
+- corrections.md 中 COUNT >= 3 的条目自动升级到 conventions.md（闭环）。
+- Bootstrap 时 conventions_content 为可选参数，可 SKIP。
