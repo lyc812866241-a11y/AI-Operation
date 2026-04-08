@@ -1095,44 +1095,71 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
         # pipe open, causing communicate() to block forever. The only safe approach is
         # Popen without waiting — files are already written, git commit is best-effort.
         git_status = "not attempted"
+        git_diag = {}
         try:
+            import shutil
+            import time
+
             _set_mcp_flag()
+
+            # ── Diagnostics: capture environment for debugging git issues ──
+            git_diag["cwd"] = str(Path.cwd())
+            git_diag["project_map_dir"] = str(PROJECT_MAP_DIR.resolve()) if PROJECT_MAP_DIR.exists() else "MISSING"
+            git_diag["git_path"] = shutil.which("git") or "NOT FOUND"
+            git_diag["files_exist"] = {}
+
             files_to_add = []
             for cf in changed_files:
                 filepath = PROJECT_MAP_DIR / cf
+                git_diag["files_exist"][cf] = filepath.exists()
                 if filepath.exists():
                     files_to_add.append(str(filepath))
             if DETAILS_DIR.exists():
                 for df in DETAILS_DIR.glob("*.md"):
                     files_to_add.append(str(df))
+
+            git_diag["files_to_add_count"] = len(files_to_add)
+
             if files_to_add:
-                # Use Popen for git add — wait briefly, kill if stuck
+                # Use Popen for git add — wait, kill if stuck
+                t0 = time.time()
                 add_proc = subprocess.Popen(
                     ["git", "add"] + files_to_add,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE
                 )
                 try:
-                    add_proc.wait(timeout=60)
+                    add_stdout, add_stderr = add_proc.communicate(timeout=60)
+                    git_diag["add_time"] = f"{time.time() - t0:.1f}s"
+                    git_diag["add_rc"] = add_proc.returncode
+                    if add_stderr:
+                        git_diag["add_stderr"] = add_stderr.decode("utf-8", errors="replace")[:200]
                 except subprocess.TimeoutExpired:
                     add_proc.kill()
-                    add_proc.wait()
+                    add_proc.communicate()
+                    git_diag["add_time"] = f"{time.time() - t0:.1f}s (TIMEOUT)"
                     git_status = "git add timed out"
 
                 if add_proc.returncode == 0:
                     commit_msg = f"chore: architect save [{', '.join(changed_files)}]"
+                    t1 = time.time()
                     commit_proc = subprocess.Popen(
                         ["git", "commit", "--no-verify", "--no-status", "-m", commit_msg, "--"] + files_to_add,
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE
                     )
                     try:
-                        commit_proc.wait(timeout=30)
+                        commit_stdout, commit_stderr = commit_proc.communicate(timeout=30)
+                        git_diag["commit_time"] = f"{time.time() - t1:.1f}s"
+                        git_diag["commit_rc"] = commit_proc.returncode
+                        if commit_stderr:
+                            git_diag["commit_stderr"] = commit_stderr.decode("utf-8", errors="replace")[:200]
                         if commit_proc.returncode == 0:
                             git_status = "committed"
                         else:
                             git_status = f"commit exited {commit_proc.returncode}"
                     except subprocess.TimeoutExpired:
                         commit_proc.kill()
-                        commit_proc.wait()
+                        commit_proc.communicate()
+                        git_diag["commit_time"] = f"{time.time() - t1:.1f}s (TIMEOUT)"
                         git_status = "commit timed out — run manually"
         except Exception as e:
             git_status = f"error: {str(e)[:100]}"
@@ -1143,13 +1170,21 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
             if FAST_TRACK_FLAG.exists():
                 FAST_TRACK_FLAG.unlink()
 
-        _audit("aio__force_architect_save_confirm", "SUCCESS", f"files={','.join(changed_files)},git={git_status}")
+        # Format diagnostics for debugging
+        diag_str = ""
+        if git_status != "committed" and git_diag:
+            import json as json_mod
+            diag_str = f"\n\nGit Diagnostics (for debugging):\n{json_mod.dumps(git_diag, indent=2, ensure_ascii=False)}"
+
+        _audit("aio__force_architect_save_confirm", "SUCCESS",
+               f"files={','.join(changed_files)},git={git_status},cwd={git_diag.get('cwd','?')}")
         return (
             f"SUCCESS\n"
             f"Files updated: {', '.join(changed_files)}\n"
             f"Merge details:\n" + "\n".join(merge_report) + "\n\n"
             f"Git: {git_status}\n"
             f"{'Run `git add .ai-operation/docs/project_map/ && git commit -m \"save\"` if git failed.' if git_status != 'committed' else 'TaskSpec approval cleared.'}"
+            f"{diag_str}"
         )
 
     @mcp.tool()
