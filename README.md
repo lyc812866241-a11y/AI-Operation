@@ -72,6 +72,19 @@ Then open your IDE and type:
 
 The AI scans your codebase, drafts a project profile, asks you to verify, and writes it. From that point on, every session starts with context and every save captures lessons.
 
+### Updating an Existing Installation
+
+```powershell
+# Windows
+.\setup.ps1 -Update
+```
+```bash
+# Linux / macOS
+bash setup.sh --update
+```
+
+Updates framework code (MCP tools, scripts, skills, hooks, rules) while **preserving** your project data (venv, project_map, audit.log, MCP configs).
+
 ## Supported IDEs
 
 | IDE | Rule File | MCP Config | Auto-Synced |

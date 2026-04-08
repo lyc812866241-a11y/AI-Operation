@@ -20,6 +20,10 @@
 #   8. Verifies the MCP server can start
 # =============================================================================
 
+param(
+    [switch]$Update  # Update mode: only overwrite framework code, preserve local products
+)
+
 $ErrorActionPreference = "Stop"
 
 # -- Colors --
@@ -31,13 +35,33 @@ function Write-Info($msg)  { Write-Host "  $msg" }
 
 # -- Banner --
 Write-Host ""
-Write-Host "+==================================================+" -ForegroundColor White
-Write-Host "|     Vibe Coding Agent Framework - Setup           |" -ForegroundColor White
-Write-Host "+==================================================+" -ForegroundColor White
+if ($Update) {
+    Write-Host "+==================================================+" -ForegroundColor Cyan
+    Write-Host "|     Vibe Coding Agent Framework - UPDATE          |" -ForegroundColor Cyan
+    Write-Host "+==================================================+" -ForegroundColor Cyan
+} else {
+    Write-Host "+==================================================+" -ForegroundColor White
+    Write-Host "|     Vibe Coding Agent Framework - Setup           |" -ForegroundColor White
+    Write-Host "+==================================================+" -ForegroundColor White
+}
 Write-Host ""
 
 $REPO_URL = "https://github.com/lyc812866241-a11y/AI-Operation.git"
 $INSTALL_DIR = Get-Location
+
+# Framework code directories — these get overwritten on update
+$FRAMEWORK_DIRS = @(
+    "mcp_server",
+    "scripts",
+    "skills",
+    "hooks",
+    "cli",
+    "rules.d"
+)
+
+# Local products — NEVER overwritten on update
+# venv/, docs/project_map/, audit.log, .save_staging.json
+
 $SCAFFOLD_ITEMS = @(
     ".ai-operation",
     ".clinerules",
@@ -77,7 +101,114 @@ if (-not $PYTHON_CMD) {
     exit 1
 }
 
-# -- Step 2: Download scaffold files --
+# ── UPDATE MODE ─────────────────────────────────────────────────────────────
+# Only overwrite framework code directories, preserve local products
+# (venv, project_map, audit.log, .save_staging.json, MCP configs)
+if ($Update) {
+    Write-Step "Update: Downloading latest framework code"
+
+    if (-not (Test-Path ".ai-operation" -PathType Container)) {
+        Write-Err ".ai-operation/ not found. Run setup.ps1 without -Update first."
+        exit 1
+    }
+
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        Write-Err "git is required but not found."
+        exit 1
+    }
+
+    $TMP_DIR = Join-Path $env:TEMP "ai-operation-update-$(Get-Random)"
+    try {
+        Write-Info "Cloning latest from GitHub..."
+        git clone --depth=1 --quiet $REPO_URL $TMP_DIR 2>&1 | Out-Null
+
+        # Overwrite framework code directories only
+        foreach ($dir in $FRAMEWORK_DIRS) {
+            $src = Join-Path $TMP_DIR ".ai-operation\$dir"
+            $dst = Join-Path $INSTALL_DIR ".ai-operation\$dir"
+            if (Test-Path $src) {
+                if (Test-Path $dst) {
+                    Remove-Item $dst -Recurse -Force
+                }
+                Copy-Item $src $dst -Recurse -Force
+                Write-Ok "Updated .ai-operation\$dir"
+            }
+        }
+
+        # Update template/reference docs (not project_map content)
+        $docFiles = @("template_reference.md", "taskSpec_template.md", "codebaseSummary.md")
+        foreach ($df in $docFiles) {
+            $src = Join-Path $TMP_DIR ".ai-operation\docs\$df"
+            $dst = Join-Path $INSTALL_DIR ".ai-operation\docs\$df"
+            if (Test-Path $src) {
+                Copy-Item $src $dst -Force
+                Write-Ok "Updated docs\$df"
+            }
+        }
+
+        # Update rule files
+        $ruleFiles = @(".clinerules", "CLAUDE.md", ".cursorrules", ".windsurfrules")
+        foreach ($rf in $ruleFiles) {
+            $src = Join-Path $TMP_DIR $rf
+            $dst = Join-Path $INSTALL_DIR $rf
+            if (Test-Path $src) {
+                Copy-Item $src $dst -Force
+                Write-Ok "Updated $rf"
+            }
+        }
+
+        # Update setup scripts themselves
+        Copy-Item (Join-Path $TMP_DIR "setup.sh") (Join-Path $INSTALL_DIR "setup.sh") -Force
+        Copy-Item (Join-Path $TMP_DIR "setup.ps1") (Join-Path $INSTALL_DIR "setup.ps1") -Force
+        Write-Ok "Updated setup scripts"
+
+    } finally {
+        if (Test-Path $TMP_DIR) { Remove-Item $TMP_DIR -Recurse -Force }
+    }
+
+    # Rebuild venv if missing
+    $VENV_DIR = Join-Path $INSTALL_DIR ".ai-operation\venv"
+    if (-not (Test-Path $VENV_DIR)) {
+        Write-Warn "venv missing — rebuilding..."
+        & $PYTHON_CMD -m venv $VENV_DIR
+        $VENV_PIP = Join-Path $VENV_DIR "Scripts\pip.exe"
+        & $VENV_PIP install --quiet --upgrade pip 2>&1 | Out-Null
+        & $VENV_PIP install --quiet "mcp[cli]" fastmcp 2>&1 | Out-Null
+        Write-Ok "venv rebuilt and dependencies installed"
+    }
+
+    # Verify MCP server
+    $VENV_PYTHON = Join-Path $VENV_DIR "Scripts\python.exe"
+    $mcpServerDir = Join-Path $INSTALL_DIR ".ai-operation\mcp_server"
+    $verifyResult = & $VENV_PYTHON -c @"
+import sys
+sys.path.insert(0, r'$mcpServerDir')
+from tools.architect import register_architect_tools
+from mcp.server.fastmcp import FastMCP
+mcp = FastMCP('test')
+register_architect_tools(mcp)
+print('OK')
+"@ 2>&1
+    if ($verifyResult -match "OK") {
+        Write-Ok "MCP server verified"
+    } else {
+        Write-Warn "MCP server verification failed — check manually"
+    }
+
+    Write-Host ""
+    Write-Host "+==================================================+" -ForegroundColor Green
+    Write-Host "|   Update complete!                                |" -ForegroundColor Green
+    Write-Host "+==================================================+" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Preserved: venv/, project_map/, audit.log, MCP configs" -ForegroundColor Yellow
+    Write-Host "Updated:   mcp_server/, scripts/, skills/, hooks/, cli/, rules" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Restart your IDE to reload MCP servers." -ForegroundColor White
+    Write-Host ""
+    exit 0
+}
+
+# -- Step 2: Download scaffold files (FRESH INSTALL) --
 Write-Step "Step 2/7: Downloading scaffold files"
 
 $isLocal = Test-Path ".ai-operation" -PathType Container

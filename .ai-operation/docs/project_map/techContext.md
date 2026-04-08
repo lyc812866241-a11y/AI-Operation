@@ -20,6 +20,7 @@
 - **pre-commit hook 扫描**：hook 里的 `git diff --cached` 在大 repo 上很慢。MCP commit 用 `--no-verify` 跳过。
 - **corrections.md 头部膨胀**：使用规则说明文字占 14KB，实际条目只有 3 条。需要先瘦身头部再计算。
 - **`[存档]` 缩水警告假阳性**：动态文件 append 后比上次整体内容"短"是正常的（因为压缩了旧条目），但工具会报 size warning。
+- **subtree 更新切勿 `rm -rf .ai-operation`**：目录里有不在 git 中的本地产物（venv/、audit.log），删了重建会丢失。正确做法：只更新 git 跟踪的文件，或更新后重跑 `setup.ps1` 恢复 venv。
 
 ## 3. 环境依赖
 

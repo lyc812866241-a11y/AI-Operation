@@ -20,6 +20,15 @@
 
 set -e
 
+# ── Parse arguments ─────────────────────────────────────────────────────────
+UPDATE_MODE=false
+if [ "$1" = "--update" ] || [ "$1" = "-u" ]; then
+    UPDATE_MODE=true
+fi
+
+# Framework code directories — overwritten on update
+FRAMEWORK_DIRS=("mcp_server" "scripts" "skills" "hooks" "cli" "rules.d")
+
 # ── Colors ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -36,9 +45,15 @@ print_info()  { echo -e "  ${NC}$1${NC}"; }
 
 # ── Banner ────────────────────────────────────────────────────────────────────
 echo ""
-echo -e "${BOLD}╔══════════════════════════════════════════════════╗${NC}"
-echo -e "${BOLD}║     Vibe Coding Agent Framework — Setup          ║${NC}"
-echo -e "${BOLD}╚══════════════════════════════════════════════════╝${NC}"
+if [ "$UPDATE_MODE" = true ]; then
+    echo -e "${BLUE}${BOLD}╔══════════════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}${BOLD}║     Vibe Coding Agent Framework — UPDATE         ║${NC}"
+    echo -e "${BLUE}${BOLD}╚══════════════════════════════════════════════════╝${NC}"
+else
+    echo -e "${BOLD}╔══════════════════════════════════════════════════╗${NC}"
+    echo -e "${BOLD}║     Vibe Coding Agent Framework — Setup          ║${NC}"
+    echo -e "${BOLD}╚══════════════════════════════════════════════════╝${NC}"
+fi
 echo ""
 
 # ── Determine install target directory ───────────────────────────────────────
@@ -88,7 +103,85 @@ if [ -z "$PYTHON_CMD" ]; then
     exit 1
 fi
 
-# ── Step 2: Download scaffold files (remote mode only) ───────────────────────
+# ── UPDATE MODE ─────────────────────────────────────────────────────────────
+if [ "$UPDATE_MODE" = true ]; then
+    print_step "Update: Downloading latest framework code"
+
+    if [ ! -d ".ai-operation" ]; then
+        print_error ".ai-operation/ not found. Run setup.sh without --update first."
+        exit 1
+    fi
+
+    if ! command -v git &>/dev/null; then
+        print_error "git is required but not found."
+        exit 1
+    fi
+
+    TMP_DIR=$(mktemp -d)
+    trap "rm -rf $TMP_DIR" EXIT
+
+    print_info "Cloning latest from GitHub..."
+    git clone --depth=1 --quiet "$REPO_URL" "$TMP_DIR"
+
+    # Overwrite framework code directories only
+    for dir in "${FRAMEWORK_DIRS[@]}"; do
+        if [ -d "$TMP_DIR/.ai-operation/$dir" ]; then
+            rm -rf "$SCRIPT_DIR/.ai-operation/$dir"
+            cp -r "$TMP_DIR/.ai-operation/$dir" "$SCRIPT_DIR/.ai-operation/$dir"
+            print_ok "Updated .ai-operation/$dir"
+        fi
+    done
+
+    # Update template/reference docs (not project_map content)
+    for df in template_reference.md taskSpec_template.md codebaseSummary.md; do
+        if [ -f "$TMP_DIR/.ai-operation/docs/$df" ]; then
+            cp "$TMP_DIR/.ai-operation/docs/$df" "$SCRIPT_DIR/.ai-operation/docs/$df"
+            print_ok "Updated docs/$df"
+        fi
+    done
+
+    # Update rule files
+    for rf in .clinerules CLAUDE.md .cursorrules .windsurfrules; do
+        if [ -f "$TMP_DIR/$rf" ]; then
+            cp "$TMP_DIR/$rf" "$SCRIPT_DIR/$rf"
+            print_ok "Updated $rf"
+        fi
+    done
+
+    # Update setup scripts
+    cp "$TMP_DIR/setup.sh" "$SCRIPT_DIR/setup.sh"
+    [ -f "$TMP_DIR/setup.ps1" ] && cp "$TMP_DIR/setup.ps1" "$SCRIPT_DIR/setup.ps1"
+    print_ok "Updated setup scripts"
+
+    # Rebuild venv if missing
+    VENV_DIR="$SCRIPT_DIR/.ai-operation/venv"
+    if [ ! -d "$VENV_DIR" ]; then
+        print_warn "venv missing — rebuilding..."
+        "$PYTHON_CMD" -m venv "$VENV_DIR"
+        if [ -f "$VENV_DIR/bin/pip" ]; then
+            "$VENV_DIR/bin/pip" install --quiet --upgrade pip
+            "$VENV_DIR/bin/pip" install --quiet "mcp[cli]" fastmcp
+        elif [ -f "$VENV_DIR/Scripts/pip.exe" ]; then
+            "$VENV_DIR/Scripts/pip.exe" install --quiet --upgrade pip
+            "$VENV_DIR/Scripts/pip.exe" install --quiet "mcp[cli]" fastmcp
+        fi
+        print_ok "venv rebuilt and dependencies installed"
+    fi
+
+    echo ""
+    echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}${BOLD}║   ✅  Update complete!                            ║${NC}"
+    echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "  ${YELLOW}Preserved:${NC} venv/, project_map/, audit.log, MCP configs"
+    echo -e "  ${YELLOW}Updated:${NC}   mcp_server/, scripts/, skills/, hooks/, cli/, rules"
+    echo ""
+    echo -e "  Restart your IDE to reload MCP servers."
+    echo ""
+    exit 0
+fi
+
+# ── Step 2: Download scaffold files (FRESH INSTALL, remote mode only) ────────
 print_step "Step 2/7: Downloading scaffold files"
 
 if [ "$REMOTE_MODE" = true ]; then
