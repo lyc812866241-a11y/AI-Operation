@@ -282,8 +282,9 @@ Write-Ok "Using Python at: $VENV_PYTHON"
 # -- Step 4: Install MCP dependencies --
 Write-Step "Step 4/7: Installing MCP dependencies"
 
-& $VENV_PIP install --quiet --upgrade pip 2>&1 | Out-Null
-& $VENV_PIP install --quiet "mcp[cli]" fastmcp 2>&1 | Out-Null
+# Use python -m pip to avoid Windows "pip.exe in use" error during self-upgrade
+& $VENV_PYTHON -m pip install --quiet --upgrade pip 2>&1 | Out-Null
+& $VENV_PYTHON -m pip install --quiet "mcp[cli]" fastmcp 2>&1 | Out-Null
 
 $testImport = & $VENV_PYTHON -c "import mcp; import fastmcp; print('OK')" 2>&1
 if ($testImport -match "OK") {
