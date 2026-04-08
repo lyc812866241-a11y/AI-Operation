@@ -712,8 +712,9 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
 
             staged_updates[filename] = stripped
 
-        # Stage inventory if provided
-        if inventory_update and inventory_update.strip() and inventory_update.strip().upper() != "SKIP":
+        # Stage inventory if provided (but respect NO_CHANGE_BECAUSE)
+        inv_stripped = inventory_update.strip() if inventory_update else ""
+        if inv_stripped and inv_stripped.upper() != "SKIP" and not inv_stripped.upper().startswith("NO_CHANGE"):
             inv_path = PROJECT_MAP_DIR / "inventory.md"
             old_inv = inv_path.read_text(encoding="utf-8") if inv_path.exists() else ""
             old_count = old_inv.count("- [") if old_inv else 0
@@ -935,10 +936,12 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
                         f"{', '.join(changed_sections) if changed_sections else 'none'})"
                     )
                 elif filepath.exists():
-                    # No ===SECTION=== delimiter — append as before (backward compatible)
-                    with open(filepath, "a", encoding="utf-8") as f:
-                        f.write(f"\n\n---\n### [MCP Auto-Archive]\n{content}\n")
-                    merge_report.append(f"  {filename}: APPEND (no section delimiters)")
+                    # No ===SECTION=== delimiter — full overwrite of static file.
+                    # APPEND was causing infinite content duplication. Static files
+                    # should be replaced entirely when AI provides a full update.
+                    # For partial updates, AI MUST use ===SECTION=== delimiters.
+                    filepath.write_text(content, encoding="utf-8")
+                    merge_report.append(f"  {filename}: OVERWRITE (no section delimiters — use ===SECTION=== for partial updates)")
                 else:
                     filepath.write_text(content, encoding="utf-8")
                     merge_report.append(f"  {filename}: CREATED")
