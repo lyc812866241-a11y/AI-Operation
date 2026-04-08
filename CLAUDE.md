@@ -38,6 +38,8 @@ before responding to the user's first prompt. Do NOT proceed with any task until
 - [清理]: Call MCP tool `aio__force_garbage_collection`. List first, wait for user confirmation, then delete.
 - [整理清单]: Call MCP tool `aio__inventory_consolidate`. Deduplicate and organize inventory.md.
 - [初始化项目]: Invoke `.ai-operation/skills/project-bootstrap/SKILL.md`. Phase 4 calls `aio__force_project_bootstrap_write`. Direct file editing FORBIDDEN.
+- [架构扫描]: Run `omm-scan` — AI 扫描代码库，生成 `.omm/` 架构图 + 7 维文档。完成后提示用户 `omm view` 查看。
+  > WHY: AI 写代码几秒，人类理解代码几小时。架构图让项目负责人随时验证 AI 对项目的理解是否正确。
 
 ### Real-Time Inventory Rule (实时资产追加铁律)
 
