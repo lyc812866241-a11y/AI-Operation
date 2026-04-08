@@ -4,15 +4,18 @@
 
 ## 1. 当前焦点
 
-框架 v1.0 功能完成，进入实战验证阶段。5 个项目并行使用中（火火兔AI化、COOLUMO、AIsaasV1、AIsaasV2、vibe-harness-os）。
+框架 v1.1 — 吸收外部洞察（vibe coding 帖子 + DeerFlow）+ 实战 bug 修复。5 个项目并行验证中。
 
 ## 2. 正在处理的问题
 
-- 火火兔项目 corrections.md 16KB 膨胀问题（头部说明 14KB + 3 条记录），已修复字节/字符 bug + 头部瘦身逻辑
-- 两阶段存档 MCP 冷启动延迟（每次 ~2 秒 × 2 = 4 秒），考虑合回一阶段
+- Windows subprocess 死锁已修复（Popen + DEVNULL 替代 subprocess.run + capture_output）
+- 存档 APPEND 膨胀 bug 已修复（静态文件改为 OVERWRITE）
+- inventory NO_CHANGE 覆盖 bug 已修复
+- setup.ps1 pip 自升级报错已修复（python -m pip）
+- git add timeout 从 10s 调到 60s
 
 ## 3. 即将执行的下一步
 
-1. 用户在 5 个项目中实战验证框架
-2. 收集实战 bug 反馈，迭代修复
-3. 考虑 architect.py 拆分（当前 2000+ 行单文件）
+1. 5 个项目实战验证新版框架（v1.1）
+2. 确认 git commit 在大项目上能正常完成（60s timeout 够不够）
+3. architect.py 拆分（已超 2200 行）
