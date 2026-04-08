@@ -1105,8 +1105,11 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
                     check=True, capture_output=True, timeout=GIT_TIMEOUT
                 )
             commit_msg = f"chore: architect save [{', '.join(changed_files)}]"
+            # CRITICAL: use "-- <files>" to commit ONLY project_map files.
+            # Without this, git commit would include ALL staged files (e.g., 176 files
+            # from a previous failed "git add -A"), causing hangs on large/locked files.
             result = subprocess.run(
-                ["git", "commit", "--no-verify", "--no-status", "-m", commit_msg],
+                ["git", "commit", "--no-verify", "--no-status", "-m", commit_msg, "--"] + files_to_add,
                 check=True, capture_output=True, text=True, timeout=GIT_TIMEOUT
             )
             if TASKSPEC_APPROVED_FLAG.exists():
@@ -1698,7 +1701,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
             if files_to_add:
                 subprocess.run(["git", "add"] + files_to_add, check=True, capture_output=True, timeout=GIT_TIMEOUT)
             result = subprocess.run(
-                ["git", "commit", "--no-verify", "--no-status", "-m", f"chore: bootstrap project map [{timestamp}]"],
+                ["git", "commit", "--no-verify", "--no-status", "-m", f"chore: bootstrap project map [{timestamp}]", "--"] + files_to_add,
                 check=True, capture_output=True, text=True, timeout=GIT_TIMEOUT
             )
             return (
