@@ -1086,11 +1086,14 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
                 if fn not in changed_files:
                     changed_files.append(fn)
 
-        # Git commit — add only changed files, not entire directory (fast on large repos)
-        GIT_TIMEOUT = 30  # seconds — prevents infinite hang on git lock or large repo
+        # Git commit — non-blocking fire-and-forget on Windows
+        # WHY: subprocess.run(timeout=N) with capture_output=True deadlocks on Windows
+        # when git spawns child processes. Python kills the parent but children hold the
+        # pipe open, causing communicate() to block forever. The only safe approach is
+        # Popen without waiting — files are already written, git commit is best-effort.
+        git_status = "not attempted"
         try:
             _set_mcp_flag()
-            # Batch all files into a single git add call (1 process instead of N)
             files_to_add = []
             for cf in changed_files:
                 filepath = PROJECT_MAP_DIR / cf
@@ -1100,48 +1103,51 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
                 for df in DETAILS_DIR.glob("*.md"):
                     files_to_add.append(str(df))
             if files_to_add:
-                subprocess.run(
+                # Use Popen for git add — wait briefly, kill if stuck
+                add_proc = subprocess.Popen(
                     ["git", "add"] + files_to_add,
-                    check=True, capture_output=True, timeout=GIT_TIMEOUT
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                 )
-            commit_msg = f"chore: architect save [{', '.join(changed_files)}]"
-            # CRITICAL: use "-- <files>" to commit ONLY project_map files.
-            # Without this, git commit would include ALL staged files (e.g., 176 files
-            # from a previous failed "git add -A"), causing hangs on large/locked files.
-            result = subprocess.run(
-                ["git", "commit", "--no-verify", "--no-status", "-m", commit_msg, "--"] + files_to_add,
-                check=True, capture_output=True, text=True, timeout=GIT_TIMEOUT
-            )
+                try:
+                    add_proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    add_proc.kill()
+                    add_proc.wait()
+                    git_status = "git add timed out"
+
+                if add_proc.returncode == 0:
+                    commit_msg = f"chore: architect save [{', '.join(changed_files)}]"
+                    commit_proc = subprocess.Popen(
+                        ["git", "commit", "--no-verify", "--no-status", "-m", commit_msg, "--"] + files_to_add,
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                    )
+                    try:
+                        commit_proc.wait(timeout=15)
+                        if commit_proc.returncode == 0:
+                            git_status = "committed"
+                        else:
+                            git_status = f"commit exited {commit_proc.returncode}"
+                    except subprocess.TimeoutExpired:
+                        commit_proc.kill()
+                        commit_proc.wait()
+                        git_status = "commit timed out — run manually"
+        except Exception as e:
+            git_status = f"error: {str(e)[:100]}"
+        finally:
+            _clear_mcp_flag()
             if TASKSPEC_APPROVED_FLAG.exists():
                 TASKSPEC_APPROVED_FLAG.unlink()
             if FAST_TRACK_FLAG.exists():
                 FAST_TRACK_FLAG.unlink()
 
-            _audit("aio__force_architect_save_confirm", "SUCCESS", f"files={','.join(changed_files)}")
-            return (
-                f"SUCCESS\n"
-                f"Files updated: {', '.join(changed_files)}\n"
-                f"Merge details:\n" + "\n".join(merge_report) + "\n\n"
-                f"Git commit: {result.stdout.strip()}\n"
-                f"TaskSpec approval cleared — next code change requires new approval."
-            )
-        except subprocess.TimeoutExpired:
-            return (
-                f"PARTIAL SUCCESS\n"
-                f"Files updated: {', '.join(changed_files)}\n"
-                f"Git commit TIMED OUT after {GIT_TIMEOUT}s — possible git lock.\n"
-                f"Try: git status / delete .git/index.lock if stale / manual commit."
-            )
-        except subprocess.CalledProcessError as e:
-            stderr = e.stderr if hasattr(e, 'stderr') and e.stderr else str(e)
-            return (
-                f"PARTIAL SUCCESS\n"
-                f"Files updated: {', '.join(changed_files)}\n"
-                f"Git commit FAILED: {stderr}\n"
-                f"Manual commit required."
-            )
-        finally:
-            _clear_mcp_flag()
+        _audit("aio__force_architect_save_confirm", "SUCCESS", f"files={','.join(changed_files)},git={git_status}")
+        return (
+            f"SUCCESS\n"
+            f"Files updated: {', '.join(changed_files)}\n"
+            f"Merge details:\n" + "\n".join(merge_report) + "\n\n"
+            f"Git: {git_status}\n"
+            f"{'Run `git add .ai-operation/docs/project_map/ && git commit -m \"save\"` if git failed.' if git_status != 'committed' else 'TaskSpec approval cleared.'}"
+        )
 
     @mcp.tool()
     def aio__force_architect_read() -> str:
@@ -1693,36 +1699,51 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
                 content = filepath.read_text(encoding="utf-8")
                 remaining += len(re.findall(r'\[待填写[^\]]*\]', content))
 
-        # ── Git commit (add only changed files for speed) ─────────────
-        GIT_TIMEOUT = 30
+        # ── Git commit (non-blocking, same approach as save_confirm) ────
+        git_status = "not attempted"
         try:
             _set_mcp_flag()
             files_to_add = [str(PROJECT_MAP_DIR / wf) for wf in written_files if (PROJECT_MAP_DIR / wf).exists()]
             if files_to_add:
-                subprocess.run(["git", "add"] + files_to_add, check=True, capture_output=True, timeout=GIT_TIMEOUT)
-            result = subprocess.run(
-                ["git", "commit", "--no-verify", "--no-status", "-m", f"chore: bootstrap project map [{timestamp}]", "--"] + files_to_add,
-                check=True, capture_output=True, text=True, timeout=GIT_TIMEOUT
-            )
-            return (
-                f"SUCCESS: Project bootstrap merge complete.\n\n"
-                f"Merge report:\n" + "\n".join(merge_report) + "\n\n"
-                f"Remaining [待填写] placeholders: {remaining}\n"
-                f"{'Re-run [初始化项目] to fill remaining sections.' if remaining > 0 else 'All sections filled!'}\n\n"
-                f"Git commit: {result.stdout.strip()}\n\n"
-                f"Next step: Run [读档] to verify the initialized state."
-            )
-        except subprocess.CalledProcessError as e:
-            stderr = e.stderr if hasattr(e, "stderr") and e.stderr else str(e)
-            return (
-                f"PARTIAL SUCCESS: Files merged but git commit failed.\n\n"
-                f"Merge report:\n" + "\n".join(merge_report) + "\n\n"
-                f"Remaining [待填写] placeholders: {remaining}\n"
-                f"Git error: {stderr}\n"
-                f"Manual commit required."
-            )
+                add_proc = subprocess.Popen(
+                    ["git", "add"] + files_to_add,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+                try:
+                    add_proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    add_proc.kill()
+                    add_proc.wait()
+
+                if add_proc.returncode == 0:
+                    commit_proc = subprocess.Popen(
+                        ["git", "commit", "--no-verify", "--no-status", "-m",
+                         f"chore: bootstrap project map [{timestamp}]", "--"] + files_to_add,
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                    )
+                    try:
+                        commit_proc.wait(timeout=15)
+                        git_status = "committed" if commit_proc.returncode == 0 else f"exit {commit_proc.returncode}"
+                    except subprocess.TimeoutExpired:
+                        commit_proc.kill()
+                        commit_proc.wait()
+                        git_status = "commit timed out"
+                else:
+                    git_status = "git add failed"
+        except Exception as e:
+            git_status = f"error: {str(e)[:100]}"
         finally:
             _clear_mcp_flag()
+
+        return (
+            f"SUCCESS: Project bootstrap merge complete.\n\n"
+            f"Merge report:\n" + "\n".join(merge_report) + "\n\n"
+            f"Remaining [待填写] placeholders: {remaining}\n"
+            f"{'Re-run [初始化项目] to fill remaining sections.' if remaining > 0 else 'All sections filled!'}\n\n"
+            f"Git: {git_status}\n"
+            f"{'Run git commit manually if needed.' if git_status != 'committed' else ''}\n"
+            f"Next step: Run [读档] to verify the initialized state."
+        )
 
     @mcp.tool()
     def aio__force_architect_report(
