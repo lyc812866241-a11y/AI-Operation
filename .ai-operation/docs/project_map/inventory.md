@@ -36,4 +36,5 @@
 - [Mechanism] TOC 模式读档 — 总量超预算时静态文件只显示标题
 - [Mechanism] 信任评分 — corrections 频率动态调整 fast-track 阈值
 - [Mechanism] 审计日志 — audit.log 记录所有 MCP 调用
+- [Mechanism] 循环检测 — 同工具+同参数 5 分钟内 3 次警告、5 次拒绝
 - [Mechanism] 心理学 WHY — 每条规则附带理由提升 AI 遵守率

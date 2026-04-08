@@ -421,13 +421,19 @@ REQUIRED_FILES = {
 }
 
 
-def register_architect_tools(mcp: FastMCP, audit_fn=None):
+def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
     """Register all architect enforcement tools onto the MCP server instance."""
 
     def _audit(tool_name: str, status: str, details: str = ""):
         """Log tool call if audit function is provided."""
         if audit_fn:
             audit_fn(tool_name, status, details)
+
+    def _loop_guard(tool_name: str, args_str: str = "") -> str | None:
+        """Check for loop and return block/warning message, or None if OK."""
+        if loop_check_fn:
+            return loop_check_fn(tool_name, args_str)
+        return None
 
     @mcp.tool()
     def aio__force_architect_save(
@@ -518,6 +524,15 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
             updates["conventions.md"] = "NO_CHANGE_BECAUSE: No convention changes this session"
 
         _audit("aio__force_architect_save", "CALLED")
+
+        # ── Loop detection ──────────────────────────────────────────
+        _loop_warning = ""
+        loop_msg = _loop_guard("aio__force_architect_save", activeContext_update[:100])
+        if loop_msg:
+            if "BLOCKED" in loop_msg:
+                _audit("aio__force_architect_save", "LOOP_BLOCKED")
+                return loop_msg
+            _loop_warning = loop_msg  # will be prepended to result
 
         # ── Pre-save sanity check: read current file state ──────────
         # Show AI the current file sizes so it can detect if its update
@@ -816,7 +831,8 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
 
         _audit("aio__force_architect_save", "PREPARED",
                f"staged={len(staged_updates)}, audit_questions={len(audit_questions)}")
-        return "\n".join(report)
+        result = "\n".join(report)
+        return f"{_loop_warning}\n\n{result}" if _loop_warning else result
 
     @mcp.tool()
     def aio__force_architect_save_confirm() -> str:
@@ -837,6 +853,12 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
         import datetime
 
         _audit("aio__force_architect_save_confirm", "CALLED")
+
+        # ── Loop detection ──────────────────────────────────────────
+        loop_msg = _loop_guard("aio__force_architect_save_confirm")
+        if loop_msg and "BLOCKED" in loop_msg:
+            _audit("aio__force_architect_save_confirm", "LOOP_BLOCKED")
+            return loop_msg
 
         # Read staging file
         if not SAVE_STAGING_FILE.exists():
@@ -1814,6 +1836,10 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
 
         _audit("aio__force_taskspec_submit", "CALLED", task_goal[:100] if task_goal else "")
 
+        loop_msg = _loop_guard("aio__force_taskspec_submit", task_goal[:100] if task_goal else "")
+        if loop_msg and "BLOCKED" in loop_msg:
+            return loop_msg
+
         # Validate: all fields must be non-empty
         fields = {
             "task_goal": task_goal,
@@ -1879,6 +1905,10 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
             Approval confirmation with execution permission granted.
         """
         _audit("aio__force_taskspec_approve", "CALLED", user_said[:50] if user_said else "")
+
+        loop_msg = _loop_guard("aio__force_taskspec_approve", user_said[:50] if user_said else "")
+        if loop_msg and "BLOCKED" in loop_msg:
+            return loop_msg
         # Gate 1: taskSpec file must exist
         if not TASKSPEC_FILE.exists():
             return (
@@ -1955,6 +1985,10 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None):
         import re
 
         _audit("aio__force_fast_track", "CALLED", reason[:80] if reason else "")
+
+        loop_msg = _loop_guard("aio__force_fast_track", reason[:80] if reason else "")
+        if loop_msg and "BLOCKED" in loop_msg:
+            return loop_msg
 
         if not reason or not reason.strip():
             return "REJECTED: reason cannot be empty. Explain why this qualifies for fast-track."
