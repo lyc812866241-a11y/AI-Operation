@@ -1109,7 +1109,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                 )
                 try:
-                    add_proc.wait(timeout=10)
+                    add_proc.wait(timeout=60)
                 except subprocess.TimeoutExpired:
                     add_proc.kill()
                     add_proc.wait()
@@ -1122,7 +1122,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                     )
                     try:
-                        commit_proc.wait(timeout=15)
+                        commit_proc.wait(timeout=30)
                         if commit_proc.returncode == 0:
                             git_status = "committed"
                         else:
@@ -1710,7 +1710,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                 )
                 try:
-                    add_proc.wait(timeout=10)
+                    add_proc.wait(timeout=60)
                 except subprocess.TimeoutExpired:
                     add_proc.kill()
                     add_proc.wait()
@@ -1722,7 +1722,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                     )
                     try:
-                        commit_proc.wait(timeout=15)
+                        commit_proc.wait(timeout=30)
                         git_status = "committed" if commit_proc.returncode == 0 else f"exit {commit_proc.returncode}"
                     except subprocess.TimeoutExpired:
                         commit_proc.kill()
