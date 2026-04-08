@@ -1125,7 +1125,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
                 t0 = time.time()
                 add_proc = subprocess.Popen(
                     ["git", "add"] + files_to_add,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                 )
                 try:
                     add_proc.wait(timeout=60)
@@ -1142,7 +1142,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
                     t1 = time.time()
                     commit_proc = subprocess.Popen(
                         ["git", "commit", "--no-verify", "--no-status", "-m", commit_msg, "--"] + files_to_add,
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                     )
                     try:
                         commit_proc.wait(timeout=30)
@@ -1741,7 +1741,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
             if files_to_add:
                 add_proc = subprocess.Popen(
                     ["git", "add"] + files_to_add,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                 )
                 try:
                     add_proc.wait(timeout=60)
@@ -1753,7 +1753,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
                     commit_proc = subprocess.Popen(
                         ["git", "commit", "--no-verify", "--no-status", "-m",
                          f"chore: bootstrap project map [{timestamp}]", "--"] + files_to_add,
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                     )
                     try:
                         commit_proc.wait(timeout=30)
