@@ -660,6 +660,16 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
                 "Good: 'src/engine/pipeline_engine.py: Node 2 轨道B 调用 formula_director 三阶编导'"
             )
 
+        # ── Inventory quality gate ────────────────────────────────
+        # Warn (not reject) if inventory is still empty after code exploration
+        inv_path = PROJECT_MAP_DIR / "inventory.md"
+        if inv_path.exists():
+            inv_content = inv_path.read_text(encoding="utf-8")
+            if inv_content.count("[待填写") >= 2:
+                if not inventory_update or not inventory_update.strip() or inventory_update.strip().upper() == "SKIP":
+                    # Don't reject — but add a loud warning that will show in diff preview
+                    _audit("aio__force_architect_save", "WARNING", "inventory still all placeholders")
+
         # ══════════════════════════════════════════════════════════
         # PHASE 1: PREPARE — generate diff preview, stage to file
         # Do NOT write to project_map yet. Let AI review first.
@@ -780,8 +790,16 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
         inv_path = PROJECT_MAP_DIR / "inventory.md"
         if inv_path.exists():
             inv_content = inv_path.read_text(encoding="utf-8")
+            inv_placeholder_count = inv_content.count("[待填写")
             inv_count = inv_content.count("- [")
-            if inv_count > 0:
+            if inv_placeholder_count >= 2:
+                audit_questions.append(
+                    f"⚠️ CRITICAL: inventory.md still has {inv_placeholder_count} unfilled [待填写] sections. "
+                    f"You have NO asset inventory. If you scanned or explored the codebase in this session, "
+                    f"you MUST populate inventory_update with discovered skills, modules, APIs, and data models. "
+                    f"Do NOT leave inventory empty after a code exploration session."
+                )
+            elif inv_count > 0:
                 audit_questions.append(
                     f"inventory.md currently has {inv_count} items. "
                     f"Did this session discover/create any new items that should be added?"
@@ -1245,7 +1263,59 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
                 f"Consider archiving older entries in activeContext.md and progress.md."
             )
 
-        _audit("aio__force_architect_read", "SUCCESS", f"budget={budget_pct}%,size={total_map_size}")
+        # ── Data Quality Checks ────────────────────────────────────
+        quality_warnings = []
+
+        # Check 1: inventory.md still has [待填写] placeholders
+        inv_path = PROJECT_MAP_DIR / "inventory.md"
+        if inv_path.exists():
+            inv_content = inv_path.read_text(encoding="utf-8")
+            placeholder_count = inv_content.count("[待填写")
+            if placeholder_count >= 2:
+                quality_warnings.append(
+                    f"⚠️ inventory.md has {placeholder_count} unfilled [待填写] sections. "
+                    f"You have NO asset inventory. After scanning the codebase, "
+                    f"use aio__inventory_append to populate skills, APIs, data models."
+                )
+
+        # Check 2: systemPatterns.md vs techContext.md consistency
+        sp_path = PROJECT_MAP_DIR / "systemPatterns.md"
+        tc_path = PROJECT_MAP_DIR / "techContext.md"
+        if sp_path.exists() and tc_path.exists():
+            sp_content = sp_path.read_text(encoding="utf-8").lower()
+            tc_content = tc_path.read_text(encoding="utf-8").lower()
+            # Extract tech keywords from techContext, check if systemPatterns contradicts
+            stale_pairs = [
+                ("langgraph", "自研 react", "systemPatterns still mentions LangGraph but techContext says 自研 ReAct"),
+                ("langchain", "零框架", "systemPatterns still mentions LangChain but techContext says 零框架依赖"),
+                ("gemini", "minimax", "systemPatterns still mentions Gemini but techContext says MiniMax"),
+                ("gpt-4", "minimax", "systemPatterns still mentions GPT-4 but techContext says MiniMax"),
+            ]
+            for old_term, new_term, msg in stale_pairs:
+                if old_term in sp_content and new_term in tc_content:
+                    quality_warnings.append(f"⚠️ STALE DATA: {msg}. Update systemPatterns.md during next [存档].")
+
+        # Check 3: conventions.md missing or all placeholders
+        conv_path = PROJECT_MAP_DIR / "conventions.md"
+        if not conv_path.exists():
+            quality_warnings.append(
+                "ℹ️ conventions.md does not exist yet. Create it during next [存档] "
+                "to define naming, API, and code style conventions."
+            )
+        elif conv_path.exists():
+            conv_content = conv_path.read_text(encoding="utf-8")
+            if conv_content.count("[待填写") >= 3:
+                quality_warnings.append(
+                    "⚠️ conventions.md has 3+ unfilled sections. "
+                    "Fill in project conventions during next [存档] to improve code consistency."
+                )
+
+        if quality_warnings:
+            report.append("\n## 🔍 Data Quality Warnings\n")
+            for w in quality_warnings:
+                report.append(f"  {w}")
+
+        _audit("aio__force_architect_read", "SUCCESS", f"budget={budget_pct}%,size={total_map_size},quality_warnings={len(quality_warnings)}")
         return "\n".join(report)
 
     @mcp.tool()
