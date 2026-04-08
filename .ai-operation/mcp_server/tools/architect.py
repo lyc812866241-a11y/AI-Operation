@@ -1102,7 +1102,7 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
 
             _set_mcp_flag()
 
-            # ── Diagnostics: capture environment for debugging git issues ──
+            # ── Diagnostics: capture environment BEFORE any git calls ──
             git_diag["cwd"] = str(Path.cwd())
             git_diag["project_map_dir"] = str(PROJECT_MAP_DIR.resolve()) if PROJECT_MAP_DIR.exists() else "MISSING"
             git_diag["git_path"] = shutil.which("git") or "NOT FOUND"
@@ -1121,21 +1121,19 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
             git_diag["files_to_add_count"] = len(files_to_add)
 
             if files_to_add:
-                # Use Popen for git add — wait, kill if stuck
+                # DEVNULL only — PIPE deadlocks on Windows (confirmed twice)
                 t0 = time.time()
                 add_proc = subprocess.Popen(
                     ["git", "add"] + files_to_add,
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                 )
                 try:
-                    add_stdout, add_stderr = add_proc.communicate(timeout=60)
+                    add_proc.wait(timeout=60)
                     git_diag["add_time"] = f"{time.time() - t0:.1f}s"
                     git_diag["add_rc"] = add_proc.returncode
-                    if add_stderr:
-                        git_diag["add_stderr"] = add_stderr.decode("utf-8", errors="replace")[:200]
                 except subprocess.TimeoutExpired:
                     add_proc.kill()
-                    add_proc.communicate()
+                    add_proc.wait()
                     git_diag["add_time"] = f"{time.time() - t0:.1f}s (TIMEOUT)"
                     git_status = "git add timed out"
 
@@ -1144,21 +1142,19 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
                     t1 = time.time()
                     commit_proc = subprocess.Popen(
                         ["git", "commit", "--no-verify", "--no-status", "-m", commit_msg, "--"] + files_to_add,
-                        stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                     )
                     try:
-                        commit_stdout, commit_stderr = commit_proc.communicate(timeout=30)
+                        commit_proc.wait(timeout=30)
                         git_diag["commit_time"] = f"{time.time() - t1:.1f}s"
                         git_diag["commit_rc"] = commit_proc.returncode
-                        if commit_stderr:
-                            git_diag["commit_stderr"] = commit_stderr.decode("utf-8", errors="replace")[:200]
                         if commit_proc.returncode == 0:
                             git_status = "committed"
                         else:
                             git_status = f"commit exited {commit_proc.returncode}"
                     except subprocess.TimeoutExpired:
                         commit_proc.kill()
-                        commit_proc.communicate()
+                        commit_proc.wait()
                         git_diag["commit_time"] = f"{time.time() - t1:.1f}s (TIMEOUT)"
                         git_status = "commit timed out — run manually"
         except Exception as e:
