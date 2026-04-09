@@ -300,6 +300,25 @@ if [ "$REPOMIX_INSTALLED" = false ]; then
     fi
 fi
 
+# ── Step 5.6: Install oh-my-mermaid ─────────────────────────────────────────
+print_step "Step 5.6/7: Installing oh-my-mermaid (architecture diagrams)"
+
+if command -v npm &>/dev/null; then
+    if npm list -g oh-my-mermaid &>/dev/null; then
+        print_ok "oh-my-mermaid already installed"
+    else
+        if npm install -g oh-my-mermaid &>/dev/null; then
+            print_ok "oh-my-mermaid installed (omm CLI for [架构扫描])"
+        else
+            print_warn "oh-my-mermaid install failed. [架构扫描] will not work."
+            print_info "  To install manually: npm install -g oh-my-mermaid"
+        fi
+    fi
+else
+    print_warn "npm not found — skipping oh-my-mermaid install"
+    print_info "  Install Node.js, then: npm install -g oh-my-mermaid"
+fi
+
 # ── Step 6: Verify MCP server ─────────────────────────────────────────────────
 print_step "Step 6/7: Verifying MCP server"
 

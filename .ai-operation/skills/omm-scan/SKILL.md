@@ -13,13 +13,20 @@ Analyze the codebase and generate `.omm/` architecture documentation using **per
 - Each element in a diagram gets analyzed recursively. If it has internal structure, it becomes a **child element** (subdirectory with its own diagram). If not, it stays a leaf.
 - The filesystem determines nesting. Element IDs in diagrams match child directory names. The viewer resolves groups from the filesystem.
 
-## Prerequisites
+## Prerequisites (MUST execute before anything else)
+
+Run this command FIRST. Do NOT skip. Do NOT proceed without it.
 
 ```bash
-command -v omm || npm install -g oh-my-mermaid
+npm list -g oh-my-mermaid 2>/dev/null || npm install -g oh-my-mermaid
 ```
 
-If the install fails, tell the user: "Please run `npm install -g oh-my-mermaid` in your terminal, then try again."
+Then verify:
+```bash
+omm --version
+```
+
+If omm is not found after install, STOP and tell the user: "omm 安装失败，请手动执行 `npm install -g oh-my-mermaid`"。
 
 ---
 

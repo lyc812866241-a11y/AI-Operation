@@ -338,6 +338,27 @@ if (-not $repomixInstalled) {
     }
 }
 
+# -- Step 5.6: Install oh-my-mermaid (architecture diagram tool) --
+Write-Step "Step 5.6/7: Installing oh-my-mermaid (architecture diagrams)"
+
+if (Get-Command npm -ErrorAction SilentlyContinue) {
+    try {
+        $ommCheck = npm list -g oh-my-mermaid 2>$null
+        if ($ommCheck -match "oh-my-mermaid") {
+            Write-Ok "oh-my-mermaid already installed"
+        } else {
+            npm install -g oh-my-mermaid 2>&1 | Out-Null
+            Write-Ok "oh-my-mermaid installed (omm CLI for [架构扫描])"
+        }
+    } catch {
+        Write-Warn "oh-my-mermaid install failed. [架构扫描] will not work."
+        Write-Info "  To install manually: npm install -g oh-my-mermaid"
+    }
+} else {
+    Write-Warn "npm not found — skipping oh-my-mermaid install"
+    Write-Info "  Install Node.js, then: npm install -g oh-my-mermaid"
+}
+
 # -- Step 6: Verify MCP server --
 Write-Step "Step 6/7: Verifying MCP server"
 
