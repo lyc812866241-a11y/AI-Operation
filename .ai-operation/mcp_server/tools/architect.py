@@ -1119,6 +1119,53 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
         # Clean up staging file
         SAVE_STAGING_FILE.unlink()
 
+        # ── Copy last conversation from Claude Code ──────────────
+        # Claude Code VSCode stores conversations as .jsonl files in
+        # ~/.claude/projects/{project-dir-name}/{session-id}.jsonl
+        # We copy the most recently modified .jsonl to sessions/last_conversation.jsonl
+        # so the next session can read the full previous conversation.
+        session_status = ""
+        try:
+            import glob as glob_mod
+            home = str(Path.home())
+            claude_projects_dir = Path(home) / ".claude" / "projects"
+            if claude_projects_dir.exists():
+                cwd_str = str(Path.cwd())
+                # Find matching project directory by checking all project dirs
+                best_match = None
+                best_match_len = 0
+                for proj_dir in claude_projects_dir.iterdir():
+                    if not proj_dir.is_dir():
+                        continue
+                    # Convert dir name back to path fragments for matching
+                    # e.g., "c--Users-Administrator-AI-Operation" should match "C:\Users\Administrator\AI-Operation"
+                    dir_parts = [p for p in proj_dir.name.split("-") if p]
+                    cwd_parts = [p for p in cwd_str.replace("\\", "/").replace(":", "").split("/") if p]
+                    # Check if dir_parts match cwd_parts (case-insensitive)
+                    if len(dir_parts) == len(cwd_parts):
+                        if all(a.lower() == b.lower() for a, b in zip(dir_parts, cwd_parts)):
+                            if len(dir_parts) > best_match_len:
+                                best_match = proj_dir
+                                best_match_len = len(dir_parts)
+
+                if best_match:
+                    jsonl_files = sorted(
+                        glob_mod.glob(str(best_match / "*.jsonl")),
+                        key=lambda f: Path(f).stat().st_mtime,
+                        reverse=True
+                    )
+                    if jsonl_files:
+                        sessions_dir = PROJECT_MAP_DIR.parent / "sessions"
+                        sessions_dir.mkdir(parents=True, exist_ok=True)
+                        dest = sessions_dir / "last_conversation.jsonl"
+                        import shutil
+                        shutil.copy2(jsonl_files[0], str(dest))
+                        size_kb = Path(jsonl_files[0]).stat().st_size // 1024
+                        session_status = f"conversation saved ({size_kb}KB)"
+                        merge_report.append(f"  Session: copied {Path(jsonl_files[0]).name} → sessions/last_conversation.jsonl ({size_kb}KB)")
+        except Exception as e:
+            session_status = f"session copy failed: {str(e)[:80]}"
+
         # ── Universal size limit enforcement (last safety net) ────
         # Catches ANY file that exceeded MAX_FILE_CHARS after all writes,
         # regardless of whether it has ## headers or not.

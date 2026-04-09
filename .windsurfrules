@@ -8,10 +8,11 @@
 
 ## 开机自检
 
-每次新对话，先读这三个文件：
+每次新对话，先读这些文件：
 1. .ai-operation/docs/project_map/activeContext.md
 2. .ai-operation/docs/project_map/systemPatterns.md
 3. .ai-operation/docs/project_map/conventions.md
+4. .ai-operation/docs/sessions/last_conversation.jsonl（上一轮完整对话，按需检索）
 
 3+ 个文件有 [待填写] → 读 .ai-operation/skills/project-bootstrap/SKILL.md
 
