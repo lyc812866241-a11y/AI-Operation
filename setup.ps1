@@ -250,6 +250,24 @@ if ($isLocal) {
     Write-Ok "Scaffold files installed"
 }
 
+# -- Step 2.5: Initialize project_map from templates --
+$PROJECT_MAP_DIR = Join-Path $INSTALL_DIR ".ai-operation\docs\project_map"
+$TEMPLATES_DIR = Join-Path $INSTALL_DIR ".ai-operation\docs\templates\project_map"
+
+if (-not (Test-Path $PROJECT_MAP_DIR)) {
+    Write-Step "Step 2.5: Initializing project_map from templates"
+    New-Item -ItemType Directory -Path $PROJECT_MAP_DIR -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $PROJECT_MAP_DIR "details") -Force | Out-Null
+    if (Test-Path $TEMPLATES_DIR) {
+        Copy-Item "$TEMPLATES_DIR\*" $PROJECT_MAP_DIR -Force
+        Write-Ok "project_map initialized with templates (all [待填写])"
+    } else {
+        Write-Warn "Templates not found at $TEMPLATES_DIR"
+    }
+} else {
+    Write-Ok "project_map already exists — skipping template copy"
+}
+
 # -- Step 3: Create virtual environment --
 Write-Step "Step 3/7: Creating virtual environment at .ai-operation\venv\"
 

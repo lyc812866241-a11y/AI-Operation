@@ -213,6 +213,23 @@ else
     print_ok "Running from local scaffold directory — skipping download"
 fi
 
+# ── Step 2.5: Initialize project_map from templates ──────────────────────────
+PROJECT_MAP_DIR="$SCRIPT_DIR/.ai-operation/docs/project_map"
+TEMPLATES_DIR="$SCRIPT_DIR/.ai-operation/docs/templates/project_map"
+
+if [ ! -d "$PROJECT_MAP_DIR" ]; then
+    print_step "Step 2.5: Initializing project_map from templates"
+    mkdir -p "$PROJECT_MAP_DIR/details"
+    if [ -d "$TEMPLATES_DIR" ]; then
+        cp "$TEMPLATES_DIR"/*.md "$PROJECT_MAP_DIR/"
+        print_ok "project_map initialized with templates (all [待填写])"
+    else
+        print_warn "Templates not found at $TEMPLATES_DIR"
+    fi
+else
+    print_ok "project_map already exists — skipping template copy"
+fi
+
 # ── Step 3: Create virtual environment ───────────────────────────────────────
 print_step "Step 3/7: Creating virtual environment at .ai-operation/venv/"
 
