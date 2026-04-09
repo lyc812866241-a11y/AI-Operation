@@ -30,17 +30,24 @@
 | [整理] | `.ai-operation/skills/consolidate/SKILL.md` |
 | 功能开发 | `aio__force_taskspec_submit` → `_approve` → 执行 → [存档] |
 
-## 源文件索引
+## 源文件索引（常用）
 
 | 要找什么 | 去哪里 |
 |---|---|
 | 项目记忆 | `.ai-operation/docs/project_map/` |
 | 填写规范 | `.ai-operation/docs/template_reference.md` |
+| 上轮对话 | `.ai-operation/docs/sessions/last_conversation.jsonl` |
+
+## 源文件索引（按需查阅）
+
+| 要找什么 | 去哪里 |
+|---|---|
 | 初始化协议 | `.ai-operation/skills/project-bootstrap/SKILL.md` |
 | 调试协议 | `.ai-operation/skills/systematic-debugging/SKILL.md` |
 | TDD 协议 | `.ai-operation/skills/test-driven-development/SKILL.md` |
 | 架构扫描协议 | `.ai-operation/skills/omm-scan/SKILL.md` |
+| 整理协议 | `.ai-operation/skills/consolidate/SKILL.md` |
 | MCP 工具协议 | `.ai-operation/skills/mcp_protocols/` |
-| MCP 工具代码 | `.ai-operation/mcp_server/tools/architect.py` |
+| MCP 工具代码 | `.ai-operation/mcp_server/tools/` |
 | Git Hook | `.ai-operation/hooks/pre-commit` |
 | 审计日志 | `.ai-operation/audit.log` |
