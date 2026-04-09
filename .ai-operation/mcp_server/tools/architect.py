@@ -660,6 +660,30 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
                 "Good: 'src/engine/pipeline_engine.py: Node 2 轨道B 调用 formula_director 三阶编导'"
             )
 
+        # ── Completion verification gate ──────────────────────────
+        # If activeContext claims completion, must include terminal evidence
+        completion_keywords = ["完成", "完毕", "done", "completed", "finished", "已完成"]
+        evidence_indicators = ["$", ">", "exit code", "output:", "stdout", "stderr", "ls -", "cat ", "wc "]
+        ac_lower = ac.lower()
+        if any(kw in ac_lower for kw in completion_keywords):
+            if not any(ev in ac_lower for ev in evidence_indicators):
+                _audit("aio__force_architect_save", "WARNING", "completion claimed without terminal evidence")
+                # Warning only, not rejection — prepended to diff preview later
+
+        # ── Pointer format gate for static files ─────────────────
+        # systemPatterns should be pointer-style (module + path + short description)
+        # Lines > 200 chars without a file path indicator are likely content leaking in
+        sp = systemPatterns_update.strip()
+        if not sp.upper().startswith("NO_CHANGE"):
+            long_content_lines = []
+            for line in sp.split("\n"):
+                stripped_line = line.strip()
+                if len(stripped_line) > 200 and not any(ind in stripped_line for ind in path_indicators):
+                    long_content_lines.append(stripped_line[:80] + "...")
+            if long_content_lines:
+                _audit("aio__force_architect_save", "WARNING",
+                       f"systemPatterns has {len(long_content_lines)} lines > 200 chars without file paths")
+
         # ── Inventory quality gate ────────────────────────────────
         # Warn (not reject) if inventory is still empty after code exploration
         inv_path = PROJECT_MAP_DIR / "inventory.md"
@@ -836,6 +860,23 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
                 "conventions.md? If you corrected the AI on a consistency issue, "
                 "that correction should become a convention."
             )
+
+        # Q7: Completion verification
+        if any(kw in ac_lower for kw in completion_keywords):
+            if not any(ev in ac_lower for ev in evidence_indicators):
+                audit_questions.append(
+                    "⚠️ You claim completion but activeContext has no terminal evidence "
+                    "(command output, ls, cat, exit code). Add evidence or remove completion claim."
+                )
+
+        # Q8: Pointer format
+        if not sp.upper().startswith("NO_CHANGE"):
+            if long_content_lines:
+                audit_questions.append(
+                    f"⚠️ systemPatterns has {len(long_content_lines)} lines over 200 chars without file paths. "
+                    f"project_map should be pointer-style: module name + file path + one-line description. "
+                    f"Move detailed descriptions to the source files themselves."
+                )
 
         for i, q in enumerate(audit_questions, 1):
             report.append(f"{i}. {q}")

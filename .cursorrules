@@ -4,124 +4,44 @@
 //   bash .ai-operation/scripts/sync-rules.sh
 // MCP tools are configured in .cursor/mcp.json.
 
-You are an elite AI Developer operating within a Project Map (Memory Bank) architecture. Your primary goal is to maintain system entropy, strictly adhere to pipeline boundaries, and never rely on hallucinations.
+# AI-Operation
 
-# ═══════════════════════════════════════════════════════════════════
-# STATIC LAYER — Iron Laws (never changes during a session)
-# ═══════════════════════════════════════════════════════════════════
+## 开机自检
 
-## 0. CLINERULES STRUCTURE RULE (本文件的结构铁律)
-
-This file (.clinerules) is a POINTER FILE, not a content file.
-
-- Trigger commands: ONE LINE each — tool name or SKILL.md path. No execution details.
-- Iron Laws: ONE SENTENCE + WHY each. No multi-step procedures.
-- All procedures, phases, parameters, and step-by-step instructions belong in:
-  - SKILL.md files (for multi-step protocols)
-  - MCP tool docstrings (for tool-specific validation rules)
-  - template_reference.md (for fill instructions)
-
-> WHY: When execution details leak into .clinerules, they drift out of sync with the actual code. SKILL.md and tool docstrings are co-located with the implementation — they stay accurate. .clinerules is synced to 4 IDE files; bloating it wastes every AI's context budget.
-
-## 1. AUTO-INITIALIZATION (强制开机自检)
-
-At the start of EVERY new conversation, silently read these files before responding:
-
+每次新对话，先读这三个文件：
 1. .ai-operation/docs/project_map/activeContext.md
 2. .ai-operation/docs/project_map/systemPatterns.md
 3. .ai-operation/docs/project_map/conventions.md
 
-> WHY: Without reading these files, you will hallucinate about project state.
+3+ 个文件有 [待填写] → 读 .ai-operation/skills/project-bootstrap/SKILL.md
 
-[BOOTSTRAP CHECK] If 3+ project_map files still contain [待填写] → invoke [初始化项目] before any task.
+## 指令路由
 
-## 2. Trigger Commands (触发指令 → 指针路由)
+| 指令 | 去哪里 |
+|---|---|
+| [汇报] | `aio__force_architect_report` |
+| [执行测试] | `aio__force_test_runner` |
+| [读档] | `aio__force_architect_read` |
+| [存档] | `aio__force_architect_save` → `_confirm` |
+| [清理] | `aio__force_garbage_collection` |
+| [整理清单] | `aio__inventory_consolidate` |
+| [初始化项目] | `.ai-operation/skills/project-bootstrap/SKILL.md` |
+| [架构扫描] | `.ai-operation/skills/omm-scan/SKILL.md` |
+| 功能开发 | `aio__force_taskspec_submit` → `_approve` → 执行 → [存档] |
+| 小改动 | `aio__force_fast_track` |
+| 发现新资产 | `aio__inventory_append` |
 
-Each command below is a POINTER. Read the target tool docstring or SKILL.md for execution details.
+## 源文件索引
 
-- [汇报]: → MCP tool `aio__force_architect_report`
-- [执行测试]: → MCP tool `aio__force_test_runner`
-- [读档]: → MCP tool `aio__force_architect_read`
-- [存档]: → MCP tool `aio__force_architect_save` then `aio__force_architect_save_confirm`
-- [清理]: → MCP tool `aio__force_garbage_collection`
-- [整理清单]: → MCP tool `aio__inventory_consolidate`
-- [初始化项目]: → `.ai-operation/skills/project-bootstrap/SKILL.md`
-- [架构扫描]: → `.ai-operation/skills/omm-scan/SKILL.md`
-
-> WHY: MCP tools contain hard-coded validation. Text rules can be ignored; tool code cannot.
-
-### Real-Time Inventory Rule
-
-Whenever you discover or create a new item (skill, module, API, data model):
-→ Call `aio__inventory_append` IMMEDIATELY. One item = one call. Do NOT batch.
-
-> WHY: Long conversations cause AI to forget earlier discoveries. Immediate persistence prevents context window data loss.
-
-## 3. Dual-Layer Agent Workflow (双层代理架构)
-
-All feature work follows: Plan → Approve → Execute → Save.
-
-- **Plan**: → MCP tool `aio__force_taskspec_submit`
-- **Approve**: → MCP tool `aio__force_taskspec_approve` (creates flag for Git Hook Gate 3)
-- **Execute**: ONLY what the approved spec says. No scope creep.
-- **Save**: → [存档] after execution.
-
-> WHY: Projects where AI writes code without a reviewed plan have 3x higher rework rates.
-
-### Fast-Track Exemption
-
-Single-file changes < 5 lines / pure docs / same-session reverts:
-→ MCP tool `aio__force_fast_track` (dynamic threshold based on trust score)
-
-## 4. Development Iron Laws (开发铁律)
-
-Each law is ONE SENTENCE + WHY. Implementation details are in the relevant tool/SKILL.md.
-
-- NODE-BY-NODE TESTING: Test one module at a time, never full pipeline blind runs.
-  > WHY: Full pipeline tests mask which module failed.
-
-- CONTRACT-DRIVEN SKILLS: Every skill has strict Input/Output contract.
-  > WHY: Monolithic code cannot be tested or replaced independently.
-
-- VERIFICATION BEFORE COMPLETION: Provide terminal evidence (ls -lh, cat) when reporting changes.
-  > WHY: AI tends to report "done" without verifying. Terminal evidence prevents hallucinated success.
-
-- SKILL LIBRARY FIRST: Check skills/ directory before implementing complex logic.
-  > WHY: Reimplementing existing functionality wastes time and introduces inconsistency.
-
-- LESSONS ARE MANDATORY: Every [存档] must include lessons_learned. Empty values are rejected.
-  > WHY: A framework that doesn't learn from its mistakes is just a template.
-
-- CONVENTIONS FIRST: Before writing code, read conventions.md. Align all decisions with project conventions.
-  > WHY: Implicit decisions cause inconsistency across sessions.
-
-- CORRECTIONS AUTO-UPGRADE: corrections.md COUNT >= 3 → auto-promoted to conventions.md.
-  > WHY: Corrections are reactive. Conventions are proactive. Auto-upgrade turns pain into immunity.
-
-- HIERARCHICAL DETAIL RETRIEVAL: "→ [详见 details/xxx.md]" means the section was split. Use `aio__detail_read`.
-  > WHY: Project map files must stay within prompt budget. Split sections scale to large projects.
-
-# ═══════════════════════════════════════════════════════════════════
-# __DYNAMIC_CONTEXT_BOUNDARY__
-# Everything below this line is refreshed by [读档] and [存档].
-# Do NOT place permanent rules below this boundary.
-# ═══════════════════════════════════════════════════════════════════
-
-## 5. Project Map Navigation (项目地图)
-
-All core context is located in .ai-operation/docs/project_map/:
-
-- projectbrief.md — Core vision and business goals [STATIC]
-- systemPatterns.md — Architecture rules, module definitions [STATIC]
-- techContext.md — Tech stack constraints, known gotchas [STATIC]
-- conventions.md — Project-wide consistency contracts [STATIC]
-- activeContext.md — Current focus, immediate next steps [DYNAMIC]
-- progress.md — TODO list, completed milestones [DYNAMIC]
-
-## 6. Environment Context (环境上下文)
-
-[AUTO-POPULATED by [读档] — current working directory, OS, date, git status]
-
-## 7. Active Session Summary (会话压缩摘要)
-
-[AUTO-POPULATED by [存档] — compacted summary of earlier conversation when context grows large]
+| 要找什么 | 去哪里 |
+|---|---|
+| 项目记忆 | `.ai-operation/docs/project_map/` |
+| 填写规范 | `.ai-operation/docs/template_reference.md` |
+| 初始化协议 | `.ai-operation/skills/project-bootstrap/SKILL.md` |
+| 调试协议 | `.ai-operation/skills/systematic-debugging/SKILL.md` |
+| TDD 协议 | `.ai-operation/skills/test-driven-development/SKILL.md` |
+| 架构扫描协议 | `.ai-operation/skills/omm-scan/SKILL.md` |
+| MCP 工具协议 | `.ai-operation/skills/mcp_protocols/` |
+| MCP 工具代码 | `.ai-operation/mcp_server/tools/architect.py` |
+| Git Hook | `.ai-operation/hooks/pre-commit` |
+| 审计日志 | `.ai-operation/audit.log` |
