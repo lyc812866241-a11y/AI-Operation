@@ -565,12 +565,16 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                     merge_report.append(f"  {filename}: CREATED")
 
             else:
-                # Dynamic files (activeContext, progress): compact + append
+                # Dynamic files (activeContext, progress): append only
+                # No auto-compact — cleanup is handled by [整理] skill (human-in-the-loop)
                 if filename in ("activeContext.md", "progress.md") and filepath.exists():
                     existing = filepath.read_text(encoding="utf-8")
-                    if len(existing.encode("utf-8")) > DYNAMIC_FILE_MAX_BYTES:
-                        compacted = _compact_dynamic_file(existing, filename)
-                        filepath.write_text(compacted, encoding="utf-8")
+                    file_bytes = len(existing.encode("utf-8"))
+                    if file_bytes > DYNAMIC_FILE_MAX_BYTES:
+                        merge_report.append(
+                            f"  ⚠️ {filename} is {file_bytes // 1024}KB (>{DYNAMIC_FILE_MAX_BYTES // 1024}KB). "
+                            f"Run [整理] to clean up."
+                        )
 
                 with open(filepath, "a", encoding="utf-8") as f:
                     f.write(f"\n\n---\n### [MCP Auto-Archive]\n{content}\n")
