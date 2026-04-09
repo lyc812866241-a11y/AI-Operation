@@ -57,9 +57,16 @@ ls -la .ai-operation/docs/project_map/details/ 2>/dev/null
 
 #### 2.3 corrections.md（动态文件）
 
-向用户展示，提问：
-- "这些经验还有效吗？有没有已经不适用的？"
-- "COUNT >= 3 的已经升级到 conventions，要从 corrections 里删掉吗？"
+向用户展示每条经验，逐条提问：
+
+- "这条还有效吗？"
+  - 无效 → 删掉
+  - 有效 → 继续问：
+
+- "要固化吗？"
+  - **固化为一阶机制**（只对本项目生效）→ 写入 `conventions.md`，从 corrections 删掉
+  - **固化为二阶机制**（对所有项目生效）→ 记录下来，提醒用户去更新框架的 SKILL.md 或 MCP 代码
+  - **暂不固化** → 保留在 corrections 里
 
 用户确认后 → **overwrite**。
 

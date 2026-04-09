@@ -644,50 +644,15 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             if "corrections.md" not in changed_files:
                 changed_files.append("corrections.md")
 
-            # ── Corrections → Conventions upgrade loop ────────────
-            # Scan for entries with COUNT >= 3 that haven't been promoted yet.
-            # Promote them to conventions.md as new convention entries.
-            import re as re_mod
-            existing_corrections = corrections_path.read_text(encoding="utf-8")
-            conventions_path = PROJECT_MAP_DIR / "conventions.md"
-            conventions_content = conventions_path.read_text(encoding="utf-8") if conventions_path.exists() else ""
-
-            promoted = []
-            entries = existing_corrections.split("\n---\n")
-            rebuilt_entries = []
-            for entry in entries:
-                # Find entries with COUNT >= 3 and not already promoted
-                count_match = re_mod.search(r'COUNT:\s*(\d+)', entry)
-                lesson_match = re_mod.search(r'LESSON:\s*(.+)', entry)
-                if count_match and lesson_match:
-                    count = int(count_match.group(1))
-                    lesson = lesson_match.group(1).strip()
-                    if count >= 3 and "STATUS: 已升级" not in entry and lesson not in conventions_content:
-                        # Mark as promoted in corrections.md
-                        entry = entry.rstrip() + "\nSTATUS: 已升级 → conventions.md\n"
-                        promoted.append(lesson)
-                rebuilt_entries.append(entry)
-
-            if promoted:
-                # Rewrite corrections.md with promoted markers
-                corrections_path.write_text("\n---\n".join(rebuilt_entries), encoding="utf-8")
-
-                # Append promoted lessons to conventions.md
-                # Check if the auto-upgrade section already exists to avoid duplicate headers
-                UPGRADE_SECTION = "## 自动升级的契约 (从 corrections.md COUNT >= 3)"
-                conv_content = conventions_path.read_text(encoding="utf-8") if conventions_path.exists() else ""
-                with open(conventions_path, "a", encoding="utf-8") as f:
-                    if UPGRADE_SECTION not in conv_content:
-                        f.write(f"\n\n{UPGRADE_SECTION}\n\n")
-                    for p in promoted:
-                        f.write(f"- {p}\n")
-
-                merge_report.append(
-                    f"  🔄 corrections → conventions: {len(promoted)} entries promoted "
-                    f"(COUNT >= 3): {', '.join(p[:40] for p in promoted)}"
-                )
-                if "conventions.md" not in changed_files:
-                    changed_files.append("conventions.md")
+            # ── Corrections → Conventions: manual only ─────────────
+            # Upgrade from corrections to conventions is now a manual decision
+            # made during [整理] (human-in-the-loop). User chooses:
+            #   → 固化为一阶机制（conventions.md，本项目）
+            #   → 固化为二阶机制（框架 SKILL.md / MCP 代码，所有项目）
+            #   → 暂不固化（保留在 corrections）
+            # Auto-upgrade removed because text matching is unreliable —
+            # same error described differently never reaches COUNT >= 3.
+            pass  # Intentionally empty — upgrade happens in [整理] skill
 
         # Write compaction summary
         if staged_compaction:
