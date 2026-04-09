@@ -20,17 +20,12 @@
 
 | 指令 | 去哪里 |
 |---|---|
-| [汇报] | `aio__force_architect_report` |
-| [执行测试] | `aio__force_test_runner` |
 | [读档] | `aio__force_architect_read` |
 | [存档] | `aio__force_architect_save` → `_confirm` |
-| [清理] | `aio__force_garbage_collection` |
-| [整理清单] | `aio__inventory_consolidate` |
 | [初始化项目] | `.ai-operation/skills/project-bootstrap/SKILL.md` |
 | [架构扫描] | `.ai-operation/skills/omm-scan/SKILL.md` |
+| [整理] | `.ai-operation/skills/consolidate/SKILL.md` |
 | 功能开发 | `aio__force_taskspec_submit` → `_approve` → 执行 → [存档] |
-| 小改动 | `aio__force_fast_track` |
-| 发现新资产 | `aio__inventory_append` |
 
 ## 源文件索引
 
