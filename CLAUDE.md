@@ -13,128 +13,96 @@ You are an elite AI Developer operating within a Project Map (Memory Bank) archi
 # STATIC LAYER — Iron Laws (never changes during a session)
 # ═══════════════════════════════════════════════════════════════════
 
-## 0. AUTO-INITIALIZATION (强制开机自检)
+## 0. CLINERULES STRUCTURE RULE (本文件的结构铁律)
 
-CRITICAL: At the start of EVERY new conversation, before responding to the user's first prompt, you MUST silently read the following files to restore your context:
+This file (.clinerules) is a POINTER FILE, not a content file.
 
-1. .ai-operation/docs/project_map/activeContext.md (What are we doing right now?)
-2. .ai-operation/docs/project_map/systemPatterns.md (What are the architectural rules?)
-3. .ai-operation/docs/project_map/conventions.md (What are the consistency contracts?)
+- Trigger commands: ONE LINE each — tool name or SKILL.md path. No execution details.
+- Iron Laws: ONE SENTENCE + WHY each. No multi-step procedures.
+- All procedures, phases, parameters, and step-by-step instructions belong in:
+  - SKILL.md files (for multi-step protocols)
+  - MCP tool docstrings (for tool-specific validation rules)
+  - template_reference.md (for fill instructions)
 
-If you haven't read them, DO NOT guess. Read them immediately.
+> WHY: When execution details leak into .clinerules, they drift out of sync with the actual code. SKILL.md and tool docstrings are co-located with the implementation — they stay accurate. .clinerules is synced to 4 IDE files; bloating it wastes every AI's context budget.
 
-> WHY: Without reading these files, you will hallucinate about project state. Every agent that skipped this step caused rework. This is a non-negotiable precondition.
+## 1. AUTO-INITIALIZATION (强制开机自检)
 
-[BOOTSTRAP CHECK] After reading, scan all 5 project_map files for [待填写] placeholders.
-If 3 or more [待填写] remain: the project_map has NOT been fully initialized. Invoke `.ai-operation/skills/project-bootstrap/SKILL.md`
-before responding to the user's first prompt. Do NOT proceed with any task until bootstrap is complete.
+At the start of EVERY new conversation, silently read these files before responding:
 
-## 1. Trigger Commands (触发指令 → MCP 工具路由)
+1. .ai-operation/docs/project_map/activeContext.md
+2. .ai-operation/docs/project_map/systemPatterns.md
+3. .ai-operation/docs/project_map/conventions.md
 
-- [汇报]: Call MCP tool `aio__force_architect_report`. All 4 sections mandatory. No free-form reports.
-- [执行测试]: Call MCP tool `aio__force_test_runner`. Auto pre-cleanup + node-by-node isolation. Full pipeline runs forbidden.
-- [读档]: Call MCP tool `aio__force_architect_read`. Output macro state report. Now includes inventory.md.
-- [存档]: Two-phase save. First call `aio__force_architect_save` (generates diff preview + warnings). Review the diff. Then call `aio__force_architect_save_confirm` to execute. MUST include lessons_learned.
-- [清理]: Call MCP tool `aio__force_garbage_collection`. List first, wait for user confirmation, then delete.
-- [整理清单]: Call MCP tool `aio__inventory_consolidate`. Deduplicate and organize inventory.md.
-- [初始化项目]: Invoke `.ai-operation/skills/project-bootstrap/SKILL.md`. Phase 4 calls `aio__force_project_bootstrap_write`. Direct file editing FORBIDDEN.
-- [架构扫描]: Invoke `.ai-operation/skills/omm-scan/SKILL.md`. You MUST read this file and follow every step exactly. Use `omm write` commands to generate `.omm/` directory with Mermaid diagrams. After completion, run `omm view` to open the browser viewer. Do NOT write a text report — you must produce actual `.omm/` files with `omm write`.
-  > WHY: AI 写代码几秒，人类理解代码几小时。架构图让项目负责人随时验证 AI 对项目的理解是否正确。文本报告没有用，必须出图。
+> WHY: Without reading these files, you will hallucinate about project state.
 
-### Real-Time Inventory Rule (实时资产追加铁律)
+[BOOTSTRAP CHECK] If 3+ project_map files still contain [待填写] → invoke [初始化项目] before any task.
 
-> WHY: Long conversations cause AI to forget earlier discoveries. If you decompose 40 skills but only save at the end, you'll only remember 10. This is an LLM limitation that no framework can eliminate — but immediate persistence avoids it entirely.
+## 2. Trigger Commands (触发指令 → 指针路由)
 
-Whenever you discover, create, or decompose a new item (skill, module, API, data model):
-  - Call `aio__inventory_append` IMMEDIATELY with category + item description
-  - Do NOT batch items. Do NOT wait for [存档]. One item = one call.
-  - The tool appends to inventory.md in real-time, preventing context window data loss.
-  - Duplicates are automatically skipped.
-  - Run [整理清单] periodically to deduplicate and organize.
+Each command below is a POINTER. Read the target tool docstring or SKILL.md for execution details.
 
-> WHY all commands route through MCP tools: Text rules can be ignored. MCP tools contain hard-coded validation that physically rejects non-compliant calls. This is the difference between a suggestion and a gate.
+- [汇报]: → MCP tool `aio__force_architect_report`
+- [执行测试]: → MCP tool `aio__force_test_runner`
+- [读档]: → MCP tool `aio__force_architect_read`
+- [存档]: → MCP tool `aio__force_architect_save` then `aio__force_architect_save_confirm`
+- [清理]: → MCP tool `aio__force_garbage_collection`
+- [整理清单]: → MCP tool `aio__inventory_consolidate`
+- [初始化项目]: → `.ai-operation/skills/project-bootstrap/SKILL.md`
+- [架构扫描]: → `.ai-operation/skills/omm-scan/SKILL.md`
 
-## 2. Dual-Layer Agent Workflow (双层代理架构)
+> WHY: MCP tools contain hard-coded validation. Text rules can be ignored; tool code cannot.
 
-This workflow is IDE-agnostic. Enforced by MCP tools + git pre-commit hooks.
+### Real-Time Inventory Rule
 
-> WHY dual-layer: Projects where AI writes code without a reviewed plan have 3x higher rework rates. The 5 minutes spent writing a spec saves hours of debugging wrong implementations. Plan first, code second — this is engineering discipline, not bureaucracy.
+Whenever you discover or create a new item (skill, module, API, data model):
+→ Call `aio__inventory_append` IMMEDIATELY. One item = one call. Do NOT batch.
 
-### Fast-Track Exemption (小改动豁免)
-The following MAY skip full taskSpec:
-  - Single-file changes < 5 lines (rename, typo, constant)
-  - Pure documentation updates (.md only)
-  - Same-session reverts
-Rules: Call `aio__force_fast_track` MCP tool with reason + change description.
-The tool creates a single-use commit permission. Still must run [存档] after.
+> WHY: Long conversations cause AI to forget earlier discoveries. Immediate persistence prevents context window data loss.
 
-### Phase 1: LEAD (Architect) — MCP ENFORCED
-When user submits a feature request:
-  - You MUST call `aio__force_taskspec_submit` MCP tool with all 6 sections filled
-  - The tool writes the spec and returns it for user review
-  - End with: "⏸ 等待审批。未开始执行任何代码变更。"
-  - Do NOT write any code until Phase 2
+## 3. Dual-Layer Agent Workflow (双层代理架构)
 
-> WHY MCP-enforced spec: Without this tool call, the git pre-commit hook will BLOCK your code commits. This is not optional — it is a physical gate. Writing code without a spec is like driving without a license — you can try, but you will be stopped.
+All feature work follows: Plan → Approve → Execute → Save.
 
-### Gate: User Approval — MCP ENFORCED
-After user says "批准/approved/ok go/执行":
-  - You MUST call `aio__force_taskspec_approve` MCP tool with the user's approval message
-  - The tool creates an approval flag checked by git pre-commit hook
-  - WITHOUT this flag, git commits modifying project code will be PHYSICALLY BLOCKED
+- **Plan**: → MCP tool `aio__force_taskspec_submit`
+- **Approve**: → MCP tool `aio__force_taskspec_approve` (creates flag for Git Hook Gate 3)
+- **Execute**: ONLY what the approved spec says. No scope creep.
+- **Save**: → [存档] after execution.
 
-### Phase 2: WORKER (Code)
-After approval tool returns SUCCESS:
-  - Execute ONLY what the approved taskSpec specifies
-  - Do NOT add features, refactor, or fix unrelated issues
-  - If Section 6 marked doc updates → complete them BEFORE [存档]
-  - End with: "✅ 执行完毕。运行 [存档] 保存检查点。"
+> WHY: Projects where AI writes code without a reviewed plan have 3x higher rework rates.
 
-> WHY strict scope: Scope creep is the #1 cause of AI-introduced bugs. Every "while I'm here, let me also fix..." creates untested side effects. Do exactly what was approved. Nothing more.
+### Fast-Track Exemption
 
-### Auto-Return to LEAD
-After Phase 2 completes, return to Architect posture. Wait for next user request.
+Single-file changes < 5 lines / pure docs / same-session reverts:
+→ MCP tool `aio__force_fast_track` (dynamic threshold based on trust score)
 
-> WHY auto-return: Prevents the AI from entering a "coding loop" where it keeps making changes without human review. The human drives, the AI navigates.
+## 4. Development Iron Laws (开发铁律)
 
-NEVER modify core code without an approved taskSpec.md.
-NEVER run [存档] if Section 6 doc updates are marked but not yet completed.
+Each law is ONE SENTENCE + WHY. Implementation details are in the relevant tool/SKILL.md.
 
-## 3. Development Iron Laws (开发铁律)
+- NODE-BY-NODE TESTING: Test one module at a time, never full pipeline blind runs.
+  > WHY: Full pipeline tests mask which module failed.
 
-- STRICT NODE-BY-NODE TESTING: Test one module at a time. Full pipeline blind runs forbidden.
-  > WHY: Full pipeline tests mask which module actually failed. Isolate first, integrate later.
-
-- CONTRACT-DRIVEN SKILLS: Every skill has strict Input/Output contract. No monolithic code.
-  > WHY: Monolithic code cannot be tested, replaced, or understood independently. Contracts enable composition.
+- CONTRACT-DRIVEN SKILLS: Every skill has strict Input/Output contract.
+  > WHY: Monolithic code cannot be tested or replaced independently.
 
 - VERIFICATION BEFORE COMPLETION: Provide terminal evidence (ls -lh, cat) when reporting changes.
-  > WHY: AI has a tendency to report "done" without verifying. Terminal evidence prevents hallucinated success.
+  > WHY: AI tends to report "done" without verifying. Terminal evidence prevents hallucinated success.
 
-- STATELESS EXECUTION: Never rely on UI for core logic. API/Agent logic is the source of truth.
-  > WHY: UI can lie (cached state, stale render). API responses are authoritative.
-
-- SKILL LIBRARY FIRST: Check skills/ directory before implementing complex logic. Do not reinvent.
+- SKILL LIBRARY FIRST: Check skills/ directory before implementing complex logic.
   > WHY: Reimplementing existing functionality wastes time and introduces inconsistency.
 
-- LESSONS ARE MANDATORY: Every [存档] must include lessons_learned. The MCP tool rejects empty values.
-  > WHY: A framework that doesn't learn from its mistakes is just a template. Every session teaches something — capture it or lose it. This is how the framework evolves.
+- LESSONS ARE MANDATORY: Every [存档] must include lessons_learned. Empty values are rejected.
+  > WHY: A framework that doesn't learn from its mistakes is just a template.
 
-- CONVENTIONS FIRST: Before writing code, read conventions.md. All naming, API format, UI token, and
-  error handling decisions must align with project conventions. If a convention doesn't exist yet
-  for the decision you're making, propose adding it during [存档].
-  > WHY: Implicit decisions cause inconsistency across sessions. Explicit conventions = every AI window writes code that looks like one person wrote it.
+- CONVENTIONS FIRST: Before writing code, read conventions.md. Align all decisions with project conventions.
+  > WHY: Implicit decisions cause inconsistency across sessions.
 
-- CORRECTIONS AUTO-UPGRADE: When a lesson in corrections.md reaches COUNT >= 3, it is automatically
-  promoted to conventions.md as a project contract. This closes the loop: mistake → lesson → convention → prevention.
-  > WHY: Corrections are reactive (fix after failure). Conventions are proactive (prevent before failure). Auto-upgrade turns pain into permanent immunity.
+- CORRECTIONS AUTO-UPGRADE: corrections.md COUNT >= 3 → auto-promoted to conventions.md.
+  > WHY: Corrections are reactive. Conventions are proactive. Auto-upgrade turns pain into immunity.
 
-- HIERARCHICAL DETAIL RETRIEVAL: When [读档] returns a section containing "→ [详见 details/xxx.md]",
-  that section has been split to a subfile because it exceeded 1.5KB. Call `aio__detail_read` with
-  the filename to get the full content. Call `aio__detail_list` to see all available detail files.
-  > WHY: Project map files must stay within 12KB prompt budget. Large sections (e.g., 42-skill module
-  table) are automatically split to subfiles during [存档]. Parent file keeps a pointer, detail file
-  keeps the full data. This is how the framework scales to large projects without hitting token limits.
+- HIERARCHICAL DETAIL RETRIEVAL: "→ [详见 details/xxx.md]" means the section was split. Use `aio__detail_read`.
+  > WHY: Project map files must stay within prompt budget. Split sections scale to large projects.
 
 # ═══════════════════════════════════════════════════════════════════
 # __DYNAMIC_CONTEXT_BOUNDARY__
@@ -142,21 +110,21 @@ NEVER run [存档] if Section 6 doc updates are marked but not yet completed.
 # Do NOT place permanent rules below this boundary.
 # ═══════════════════════════════════════════════════════════════════
 
-## 4. Project Map Navigation (项目地图)
+## 5. Project Map Navigation (项目地图)
 
 All core context is located in .ai-operation/docs/project_map/:
 
 - projectbrief.md — Core vision and business goals [STATIC]
 - systemPatterns.md — Architecture rules, module definitions [STATIC]
 - techContext.md — Tech stack constraints, known gotchas [STATIC]
-- conventions.md — Project-wide consistency contracts (naming, API, UI tokens) [STATIC]
+- conventions.md — Project-wide consistency contracts [STATIC]
 - activeContext.md — Current focus, immediate next steps [DYNAMIC]
 - progress.md — TODO list, completed milestones [DYNAMIC]
 
-## 5. Environment Context (环境上下文)
+## 6. Environment Context (环境上下文)
 
 [AUTO-POPULATED by [读档] — current working directory, OS, date, git status]
 
-## 6. Active Session Summary (会话压缩摘要)
+## 7. Active Session Summary (会话压缩摘要)
 
 [AUTO-POPULATED by [存档] — compacted summary of earlier conversation when context grows large]

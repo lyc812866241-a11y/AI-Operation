@@ -25,6 +25,17 @@ fi
 
 RULES_BODY=$(cat "$CLINERULES")
 
+# ── Validate: trigger commands should be pointer-only (1 line each) ──────────
+# Detect trigger commands that leak execution details (multi-line after "- [xxx]:")
+TRIGGER_SECTION=$(sed -n '/^##.*Trigger Commands/,/^## /p' "$CLINERULES" | head -30)
+LONG_TRIGGERS=$(echo "$TRIGGER_SECTION" | grep '^- \[' | awk 'length > 120 {print NR": "$0}')
+if [ -n "$LONG_TRIGGERS" ]; then
+    echo "[sync-rules] WARNING: Trigger commands should be short pointers, not detailed instructions."
+    echo "  The following lines exceed 120 chars (likely leaking execution details):"
+    echo "$LONG_TRIGGERS" | head -5
+    echo "  Move details to SKILL.md or MCP tool docstring."
+fi
+
 # ── Generate CLAUDE.md ───────────────────────────────────────────────────────
 cat > "$PROJECT_ROOT/CLAUDE.md" << CLAUDE_EOF
 # AI-Operation Framework Rules (Claude Code)
