@@ -1,0 +1,9 @@
+created: 2026-04-09T01:56:25.805Z
+updated: 2026-04-09T01:56:25.812Z
+update_count: 1
+last_field: description
+kind: nested-class
+title: read
+children: []
+parentPath:
+  - architect-tools

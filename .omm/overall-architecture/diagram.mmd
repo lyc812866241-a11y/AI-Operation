@@ -1,0 +1,31 @@
+graph LR
+    rules["规则层\n.clinerules / CLAUDE.md"]
+    mcp-server["MCP Server\n.ai-operation/mcp_server/"]
+    architect-tools["Architect 工具集\n.ai-operation/mcp_server/tools/architect.py"]
+    project-map["Project Map\n.ai-operation/docs/project_map/"]
+    git-hooks["Git Hooks\n.ai-operation/hooks/pre-commit"]
+    skills["Skills 技能库\n.ai-operation/skills/"]
+    cli["CLI 工具\n.ai-operation/cli/"]
+    setup["安装脚本\nsetup.ps1 / setup.sh"]
+    ide-configs["IDE 配置\n.roo/ .cursor/ .windsurf/ .mcp.json"]
+    ci["CI/CD\n.github/workflows/"]
+
+    rules -->|"AI 开机读取"| mcp-server
+    mcp-server -->|"注册 14 个工具"| architect-tools
+    architect-tools -->|"读写 8 个文件"| project-map
+    architect-tools -->|"git add/commit"| git-hooks
+    git-hooks -->|"3 层门控拦截"| project-map
+    skills -->|"[初始化项目] [架构扫描]"| architect-tools
+    cli -->|"终端操作"| project-map
+    setup -->|"安装 + 更新"| mcp-server
+    setup -->|"生成"| ide-configs
+    rules -->|"sync-rules 同步"| ide-configs
+    ci -->|"pytest 21 tests"| architect-tools
+
+    classDef entry fill:#89b4fa,stroke:#89b4fa,color:#1e1e2e
+    classDef store fill:#a6e3a1,stroke:#a6e3a1,color:#1e1e2e
+    classDef concern fill:#f38ba8,stroke:#f38ba8,color:#1e1e2e
+
+    class rules entry
+    class project-map store
+    class git-hooks concern

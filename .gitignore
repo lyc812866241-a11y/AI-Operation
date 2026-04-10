@@ -11,6 +11,7 @@ venv/
 .ai-operation/.taskspec_approved
 .ai-operation/.fast_track
 .ai-operation/.session_confirmed
+.cursor-plugin/
 *.egg-info/
 dist/
 build/

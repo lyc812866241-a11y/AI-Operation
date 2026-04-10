@@ -1,0 +1,1 @@
+项目记忆系统 — 8 个 Markdown 文件存储项目全貌：projectbrief（愿景）、systemPatterns（架构）、techContext（技术栈）、conventions（一致性契约）、activeContext（当前焦点）、progress（进度）、inventory（资产清单）、corrections（经验库）。AI 每次开机读取这些文件恢复上下文。支持 auto-split 分层存储 + TOC 模式预算控制。

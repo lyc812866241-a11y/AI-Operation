@@ -1,0 +1,1 @@
+两阶段存档 Phase 2 — 读取 staging.json，执行：静态文件 section-aware merge 或 OVERWRITE、动态文件 compact + append、inventory 全量覆盖、lessons 写入 corrections.md（重复 COUNT +1）、COUNT >= 3 自动升级到 conventions.md。Git commit 使用 Popen + stdin=DEVNULL 避免 Windows 死锁。

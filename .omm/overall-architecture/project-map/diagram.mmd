@@ -1,0 +1,23 @@
+graph TD
+    brief["projectbrief.md\n核心愿景 [STATIC]"]
+    patterns["systemPatterns.md\n系统架构 [STATIC]"]
+    tech["techContext.md\n技术栈+坑点 [STATIC]"]
+    conv["conventions.md\n一致性契约 [STATIC]"]
+    active["activeContext.md\n当前焦点 [DYNAMIC]"]
+    progress["progress.md\n进度里程碑 [DYNAMIC]"]
+    inventory["inventory.md\n资产清单 [STATIC]"]
+    corrections["corrections.md\n经验库 [DYNAMIC]"]
+    details["details/\n归档+分拆子文件"]
+
+    corrections -->|"COUNT >= 3"| conv
+    active -->|"> 8KB compact"| details
+    corrections -->|"> 10KB archive"| details
+    patterns -->|"section > 8KB split"| details
+
+    classDef static fill:#89b4fa,stroke:#89b4fa,color:#1e1e2e
+    classDef dynamic fill:#a6e3a1,stroke:#a6e3a1,color:#1e1e2e
+    classDef archive fill:#585b70,stroke:#585b70,color:#cdd6f4
+
+    class brief,patterns,tech,conv,inventory static
+    class active,progress,corrections dynamic
+    class details archive

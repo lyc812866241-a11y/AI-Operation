@@ -1,0 +1,1 @@
+两阶段存档 Phase 1 — 接收 6 个文件参数 + lessons + inventory + conventions + session_compaction。执行：NO_CHANGE_BECAUSE 强制理由校验、信息密度检查（200/150/100 字符）、文件路径必须、数据缩水预警、inventory 空白检测。通过后写入 .save_staging.json，返回 diff 预览 + 6 个自审问题。

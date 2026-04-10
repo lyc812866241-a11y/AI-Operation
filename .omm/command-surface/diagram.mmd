@@ -1,0 +1,31 @@
+graph TD
+    trigger["触发指令体系"]
+    save["[存档]\n两阶段存档"]
+    read["[读档]\n全量读取 + 数据质量检查"]
+    init["[初始化项目]\n5 阶段 Bootstrap"]
+    report["[汇报]\n4 段结构化报告"]
+    test["[执行测试]\n隔离测试"]
+    clean["[清理]\n垃圾回收 + git 健康"]
+    consolidate["[整理清单]\n去重排序 inventory"]
+    scan["[架构扫描]\nomm-scan 出图"]
+
+    trigger --> save
+    trigger --> read
+    trigger --> init
+    trigger --> report
+    trigger --> test
+    trigger --> clean
+    trigger --> consolidate
+    trigger --> scan
+
+    save -->|"Phase 1"| save1["aio__force_architect_save\n校验 + diff 预览 + 自审"]
+    save -->|"Phase 2"| save2["aio__force_architect_save_confirm\n写入 + git commit"]
+    init --> bootstrap["aio__force_project_bootstrap_write\n模板 merge + 3 门控"]
+    read --> readtool["aio__force_architect_read\n优先级 + 预算 + 质量检查"]
+    scan --> omm["omm write\n递归生成 .omm/ 架构图"]
+
+    classDef cmd fill:#89b4fa,stroke:#89b4fa,color:#1e1e2e
+    classDef tool fill:#a6e3a1,stroke:#a6e3a1,color:#1e1e2e
+
+    class save,read,init,report,test,clean,consolidate,scan cmd
+    class save1,save2,bootstrap,readtool,omm tool

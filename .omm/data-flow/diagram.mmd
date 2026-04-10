@@ -1,0 +1,35 @@
+graph LR
+    user["用户指令\n[存档] [读档] [初始化项目]"]
+    ai["AI Agent\nCursor / Roo Code / Claude Code"]
+    rules["规则文件\n.clinerules → CLAUDE.md"]
+    mcp["MCP Server\nstdio JSON-RPC"]
+    tools["architect.py\n14 个工具函数"]
+    staging[".save_staging.json\n两阶段暂存"]
+    pmap["project_map/\n8 个 Markdown 文件"]
+    details["details/\n归档+分拆文件"]
+    corrections["corrections.md\n经验库"]
+    conventions["conventions.md\n契约层"]
+    git["Git 仓库\npre-commit hook"]
+    audit["audit.log\n审计日志"]
+
+    user -->|"触发指令"| ai
+    ai -->|"开机读取"| rules
+    ai -->|"调用工具"| mcp
+    mcp -->|"路由"| tools
+    tools -->|"Phase 1 暂存"| staging
+    staging -->|"Phase 2 写入"| pmap
+    pmap -->|"超限拆分"| details
+    tools -->|"lessons_learned"| corrections
+    corrections -->|"COUNT >= 3"| conventions
+    conventions -->|"读档注入"| ai
+    tools -->|"git add/commit"| git
+    git -->|"3 层门控"| pmap
+    mcp -->|"每次调用"| audit
+
+    classDef user fill:#89b4fa,stroke:#89b4fa,color:#1e1e2e
+    classDef store fill:#a6e3a1,stroke:#a6e3a1,color:#1e1e2e
+    classDef flow fill:#cba6f7,stroke:#cba6f7,color:#1e1e2e
+
+    class user user
+    class pmap,corrections,conventions,details store
+    class staging,audit flow

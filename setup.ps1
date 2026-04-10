@@ -136,7 +136,7 @@ if ($Update) {
         }
 
         # Update template/reference docs (not project_map content)
-        $docFiles = @("template_reference.md", "taskSpec_template.md", "codebaseSummary.md")
+        $docFiles = @("template_reference.md")
         foreach ($df in $docFiles) {
             $src = Join-Path $TMP_DIR ".ai-operation\docs\$df"
             $dst = Join-Path $INSTALL_DIR ".ai-operation\docs\$df"

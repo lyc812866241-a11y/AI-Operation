@@ -133,7 +133,7 @@ if [ "$UPDATE_MODE" = true ]; then
     done
 
     # Update template/reference docs (not project_map content)
-    for df in template_reference.md taskSpec_template.md codebaseSummary.md; do
+    for df in template_reference.md; do
         if [ -f "$TMP_DIR/.ai-operation/docs/$df" ]; then
             cp "$TMP_DIR/.ai-operation/docs/$df" "$SCRIPT_DIR/.ai-operation/docs/$df"
             print_ok "Updated docs/$df"

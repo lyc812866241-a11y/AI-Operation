@@ -1,0 +1,30 @@
+graph LR
+    save-phase1["存档 Phase 1\naio__force_architect_save"]
+    save-phase2["存档 Phase 2\naio__force_architect_save_confirm"]
+    read["读档\naio__force_architect_read"]
+    bootstrap["初始化\naio__force_project_bootstrap_write"]
+    taskspec["TaskSpec 流程\nsubmit + approve"]
+    fasttrack["快速通道\naio__force_fast_track"]
+    inventory-tools["资产管理\nappend + consolidate"]
+    detail-tools["详情读取\ndetail_read + detail_list"]
+    gc["垃圾回收\naio__force_garbage_collection"]
+    report["汇报\naio__force_architect_report"]
+    test-runner["测试\naio__force_test_runner"]
+    corrections["经验闭环\ncorrections → conventions"]
+
+    save-phase1 -->|"staging.json"| save-phase2
+    save-phase2 -->|"写入 project_map"| read
+    save-phase2 -->|"COUNT >= 3 升级"| corrections
+    corrections -->|"自动追加"| read
+    bootstrap -->|"模板 merge"| read
+    taskspec -->|"创建审批 flag"| save-phase2
+    fasttrack -->|"单次提交权限"| save-phase2
+    read -->|"数据质量检查"| inventory-tools
+    detail-tools -->|"按需加载"| read
+
+    classDef entry fill:#89b4fa,stroke:#89b4fa,color:#1e1e2e
+    classDef store fill:#a6e3a1,stroke:#a6e3a1,color:#1e1e2e
+
+    class save-phase1 entry
+    class read entry
+    class corrections store
