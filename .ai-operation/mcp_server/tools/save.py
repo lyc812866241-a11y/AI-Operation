@@ -662,6 +662,28 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             if "activeContext.md" not in changed_files:
                 changed_files.append("activeContext.md")
 
+        # ── Regenerate SESSION_KEY for next session ────────────
+        # Forces next session's AI to re-read corrections.md to get the new key
+        import secrets
+        new_key = secrets.token_hex(4)
+        corrections_path = PROJECT_MAP_DIR / "corrections.md"
+        if corrections_path.exists():
+            corr_content = corrections_path.read_text(encoding="utf-8")
+            # Replace existing key or append new one
+            if "SESSION_KEY:" in corr_content:
+                import re as re_key
+                corr_content = re_key.sub(r'SESSION_KEY:.*', f'SESSION_KEY: {new_key}', corr_content)
+            else:
+                corr_content += f"\n\nSESSION_KEY: {new_key}\n"
+            corrections_path.write_text(corr_content, encoding="utf-8")
+            if "corrections.md" not in changed_files:
+                changed_files.append("corrections.md")
+
+        # Invalidate current session confirmation (next session must re-confirm)
+        session_flag = Path(".ai-operation/.session_confirmed")
+        if session_flag.exists():
+            session_flag.unlink()
+
         # Clean up staging file
         SAVE_STAGING_FILE.unlink()
 

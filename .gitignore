@@ -10,6 +10,7 @@ venv/
 .ai-operation/.mcp_commit_flag
 .ai-operation/.taskspec_approved
 .ai-operation/.fast_track
+.ai-operation/.session_confirmed
 *.egg-info/
 dist/
 build/

@@ -1,3 +1,5 @@
 # Bootstrap Corrections Log
 
-> 经验库。COUNT >= 3 自动升级到 conventions.md 成为项目契约。
+> 项目经验库。[整理] 时由用户决定是否固化到 conventions.md。
+
+SESSION_KEY: init000

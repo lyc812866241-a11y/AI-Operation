@@ -2,7 +2,8 @@
 
 ## 开机自检 + 源文件索引
 
-每次新对话，先读 ★ 标记的文件。其余按需查阅。
+每次新对话，先读 ★ 标记的文件，然后调 `aio__confirm_read` 传入 corrections.md 末尾的 SESSION_KEY。
+不 confirm 则所有 Edit/Write/Bash 工具将被 Hook 拦截。每 30 次文件操作需重新 confirm。
 
 
 ### 项目记忆（★ 开机必读）
