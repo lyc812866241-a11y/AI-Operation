@@ -603,56 +603,65 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             if "corrections.md" not in changed_files:
                 changed_files.append("corrections.md")
 
-        # Write lessons to corrections.md (with COUNT increment for duplicates)
+        # ── Write lessons to corrections key-value system ──────────
+        # Lessons go to corrections/{key}.md files (values).
+        # New keys are registered in corrections.md (index).
+        # AI specifies category with "category: lesson text" format.
+        # If no category prefix, defaults to "general".
         if staged_lessons and staged_lessons.upper() != "NONE":
-            corrections_path = PROJECT_MAP_DIR / "corrections.md"
-            existing_corrections = corrections_path.read_text(encoding="utf-8") if corrections_path.exists() else ""
+            corrections_dir = PROJECT_MAP_DIR.parent / "corrections"
+            corrections_dir.mkdir(parents=True, exist_ok=True)
+            corrections_index = PROJECT_MAP_DIR / "corrections.md"
+
             lessons_lines = [l.strip() for l in staged_lessons.split("\n") if l.strip()]
+            updated_keys = set()
 
             for lesson in lessons_lines:
                 lesson_text = lesson.lstrip("- ").strip()
                 if not lesson_text:
                     continue
 
-                # Check if this lesson already exists — if so, increment COUNT
-                if lesson_text in existing_corrections:
-                    import re as re_mod
-                    # Find the entry containing this lesson and increment its COUNT
-                    pattern = re_mod.compile(
-                        r'(LESSON:\s*' + re_mod.escape(lesson_text) + r'\s*\nCOUNT:\s*)(\d+)',
-                        re_mod.MULTILINE
-                    )
-                    match = pattern.search(existing_corrections)
-                    if match:
-                        old_count = int(match.group(2))
-                        new_count = old_count + 1
-                        existing_corrections = existing_corrections[:match.start(2)] + str(new_count) + existing_corrections[match.end(2):]
-                        corrections_path.write_text(existing_corrections, encoding="utf-8")
+                # Parse "category: lesson" format, default to "general"
+                if ":" in lesson_text and len(lesson_text.split(":", 1)[0].strip()) < 30:
+                    key = lesson_text.split(":", 1)[0].strip().lower().replace(" ", "_")
+                    detail = lesson_text.split(":", 1)[1].strip()
                 else:
-                    # New lesson — append
-                    with open(corrections_path, "a", encoding="utf-8") as f:
-                        f.write(
-                            f"\n---\n"
-                            f"DATE: {timestamp}\n"
-                            f"CONTEXT: [存档] during development session\n"
-                            f"LESSON: {lesson_text}\n"
-                            f"COUNT: 1\n"
-                        )
-                    # Re-read for subsequent duplicate checks
-                    existing_corrections = corrections_path.read_text(encoding="utf-8")
+                    key = "general"
+                    detail = lesson_text
 
-            if "corrections.md" not in changed_files:
-                changed_files.append("corrections.md")
+                # Append to corrections/{key}.md
+                key_file = corrections_dir / f"{key}.md"
+                if key_file.exists():
+                    existing = key_file.read_text(encoding="utf-8")
+                    if detail not in existing:
+                        with open(key_file, "a", encoding="utf-8") as f:
+                            f.write(f"\n- {detail}")
+                else:
+                    key_file.write_text(f"# {key} 经验\n\n- {detail}\n", encoding="utf-8")
 
-            # ── Corrections → Conventions: manual only ─────────────
-            # Upgrade from corrections to conventions is now a manual decision
-            # made during [整理] (human-in-the-loop). User chooses:
-            #   → 固化为一阶机制（conventions.md，本项目）
-            #   → 固化为二阶机制（框架 SKILL.md / MCP 代码，所有项目）
-            #   → 暂不固化（保留在 corrections）
-            # Auto-upgrade removed because text matching is unreliable —
-            # same error described differently never reaches COUNT >= 3.
-            pass  # Intentionally empty — upgrade happens in [整理] skill
+                updated_keys.add(key)
+
+            # Register new keys in corrections.md index
+            if corrections_index.exists():
+                index_content = corrections_index.read_text(encoding="utf-8")
+                for key in updated_keys:
+                    if f"- {key}" not in index_content:
+                        # Insert before SESSION_KEY line
+                        if "SESSION_KEY:" in index_content:
+                            index_content = index_content.replace(
+                                "SESSION_KEY:",
+                                f"- {key}\n\nSESSION_KEY:"
+                            )
+                        else:
+                            index_content += f"\n- {key}\n"
+                        corrections_index.write_text(index_content, encoding="utf-8")
+
+                if "corrections.md" not in changed_files:
+                    changed_files.append("corrections.md")
+
+            merge_report.append(
+                f"  Lessons: {len(lessons_lines)} entries → corrections/{', '.join(updated_keys)}"
+            )
 
         # Write compaction summary
         if staged_compaction:
