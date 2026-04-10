@@ -102,6 +102,20 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
 
         _audit("aio__force_architect_save", "CALLED")
 
+        # ── Cognitive Gate check: must have read corrections before saving ──
+        # Only enforced when corrections.md has a SESSION_KEY (framework is fully set up)
+        session_flag = Path(".ai-operation/.session_confirmed")
+        corrections_path_check = PROJECT_MAP_DIR / "corrections.md"
+        if corrections_path_check.exists():
+            corr_check = corrections_path_check.read_text(encoding="utf-8")
+            if "SESSION_KEY:" in corr_check and not session_flag.exists():
+                _audit("aio__force_architect_save", "REJECTED", "session not confirmed")
+                return (
+                    "REJECTED: You have not confirmed reading project context.\n"
+                    "Read corrections.md, then call aio__confirm_read(session_key=...) first.\n"
+                    "This ensures your save reflects awareness of project-specific experience."
+                )
+
         # ── Loop detection ──────────────────────────────────────────
         _loop_warning = ""
         loop_msg = _loop_guard("aio__force_architect_save", activeContext_update[:100])
@@ -236,6 +250,29 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                 "Bad:  '完成了编导功能优化'\n"
                 "Good: 'src/engine/pipeline_engine.py: Node 2 轨道B 调用 formula_director 三阶编导'"
             )
+
+        # ── Git diff cross-validation ────────────────────────────
+        # Compare what AI claims to have changed (activeContext) with
+        # what git actually shows as changed. Warn on mismatch.
+        try:
+            import subprocess as sp_diff
+            diff_result = sp_diff.run(
+                ["git", "diff", "--name-only"],
+                capture_output=True, text=True, timeout=10,
+                stdin=sp_diff.DEVNULL
+            )
+            if diff_result.returncode == 0 and diff_result.stdout.strip():
+                changed_in_git = [f.strip() for f in diff_result.stdout.strip().split("\n") if f.strip()]
+                # Filter out framework files — only check project code
+                project_changes = [f for f in changed_in_git if not f.startswith(".ai-operation/")]
+                if project_changes:
+                    mentioned = sum(1 for f in project_changes if any(part in ac for part in f.split("/")))
+                    if mentioned == 0 and len(project_changes) <= 10:
+                        _audit("aio__force_architect_save", "WARNING",
+                               f"git shows {len(project_changes)} changed files not mentioned in activeContext")
+                        # Will be shown in audit questions
+        except Exception:
+            pass  # git diff is best-effort, don't block save
 
         # ── Completion verification gate ──────────────────────────
         # If activeContext claims completion, must include terminal evidence
@@ -454,6 +491,17 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                     f"project_map should be pointer-style: module name + file path + one-line description. "
                     f"Move detailed descriptions to the source files themselves."
                 )
+
+        # Q9: Git diff cross-validation
+        try:
+            if project_changes and mentioned == 0:
+                audit_questions.append(
+                    f"⚠️ git diff shows {len(project_changes)} changed project files "
+                    f"({', '.join(project_changes[:5])}) but NONE are mentioned in your "
+                    f"activeContext. Are you saving a complete picture of what happened?"
+                )
+        except NameError:
+            pass  # project_changes not defined if git diff failed
 
         for i, q in enumerate(audit_questions, 1):
             report.append(f"{i}. {q}")
