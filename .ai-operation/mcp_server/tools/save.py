@@ -492,7 +492,19 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                     f"Move detailed descriptions to the source files themselves."
                 )
 
-        # Q9: Git diff cross-validation
+        # Q9: TaskSpec progress check
+        taskspec_path = TASKSPEC_FILE
+        if taskspec_path.exists():
+            taskspec_content = taskspec_path.read_text(encoding="utf-8")
+            if len(taskspec_content) > 50:
+                audit_questions.append(
+                    f"⚠️ Active taskSpec found. Review your approved plan:\n"
+                    f"{taskspec_content[:500]}{'...' if len(taskspec_content) > 500 else ''}\n\n"
+                    f"Check: which items are done? Which are not? "
+                    f"Does your progress_update accurately reflect this?"
+                )
+
+        # Q10: Git diff cross-validation
         try:
             if project_changes and mentioned == 0:
                 audit_questions.append(
