@@ -20,8 +20,8 @@
 |---|---|
 | ★ `.ai-operation/docs/project_map/activeContext.md` | 当前焦点、下一步 |
 | ★ `.ai-operation/docs/project_map/systemPatterns.md` | 项目架构、模块关系 |
-| ★ `.ai-operation/docs/project_map/conventions.md` | 固化的约定（命名/API/代码风格）|
-| ★ `.ai-operation/docs/project_map/corrections.md` | 未固化的经验（犯过的错，避免重犯）|
+| ★ `.ai-operation/docs/project_map/conventions.md` | 通用约定（框架自带，所有项目适用）|
+| ★ `.ai-operation/docs/project_map/corrections.md` | 项目经验（本项目踩过的坑，必须遵守）|
 | `.ai-operation/docs/project_map/projectbrief.md` | 核心愿景 |
 | `.ai-operation/docs/project_map/techContext.md` | 技术栈、已知坑点 |
 | `.ai-operation/docs/project_map/progress.md` | 进度、里程碑 |
