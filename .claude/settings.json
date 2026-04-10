@@ -11,6 +11,89 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|Bash|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/governance-capture.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(bash .ai-operation/scripts/sync-rules.sh)",
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git commit --no-verify -m ':*)",
+      "Bash(git push:*)",
+      "Read(//c/Users/Administrator/Desktop/火火兔业务流程AI化/**)",
+      "Bash(grep -l \"火火兔\" .ai-operation/docs/project_map/*.md)",
+      "Read(//c/Users/Administrator/deer-flow/**)",
+      "Bash(xargs ls:*)",
+      "Bash(cp -r /c/Users/Administrator/AI-Operation/.ai-operation/mcp_server \"/c/Users/Administrator/Desktop/火火兔业务流程AI化/.ai-operation/\")",
+      "Bash(cp -r /c/Users/Administrator/AI-Operation/.ai-operation/scripts \"/c/Users/Administrator/Desktop/火火兔业务流程AI化/.ai-operation/\")",
+      "Bash(cp -r /c/Users/Administrator/AI-Operation/.ai-operation/skills \"/c/Users/Administrator/Desktop/火火兔业务流程AI化/.ai-operation/\")",
+      "Bash(cp -r /c/Users/Administrator/AI-Operation/.ai-operation/hooks \"/c/Users/Administrator/Desktop/火火兔业务流程AI化/.ai-operation/\")",
+      "Bash(cp -r /c/Users/Administrator/AI-Operation/.ai-operation/cli \"/c/Users/Administrator/Desktop/火火兔业务流程AI化/.ai-operation/\")",
+      "Read(//c/Users/Administrator/Desktop/**)",
+      "Bash(powershell -Command \"Test-Path 'C:\\\\Users\\\\Administrator\\\\Desktop\\\\火火兔业务流程AI化\\\\.git\\\\index.lock'\")",
+      "Bash(powershell -Command \"cd 'C:\\\\Users\\\\Administrator\\\\Desktop\\\\火火兔业务流程AI化'; & '.ai-operation\\\\venv\\\\Scripts\\\\python.exe' -c \\\\\"import sys; sys.path.insert\\(0, '.ai-operation/mcp_server'\\); from tools.architect import register_architect_tools; from mcp.server.fastmcp import FastMCP; mcp = FastMCP\\('test'\\); register_architect_tools\\(mcp\\); print\\('OK'\\)\\\\\"\")",
+      "Bash(powershell -Command \"cd 'C:\\\\Users\\\\Administrator\\\\Desktop\\\\火火兔业务流程AI化'; git status --porcelain | Select-Object -First 10\")",
+      "Bash(powershell -Command \"cd 'C:\\\\Users\\\\Administrator\\\\Desktop\\\\火火兔业务流程AI化'; git status --porcelain | Measure-Object -Line\")",
+      "Bash(powershell -Command \"cd 'C:\\\\Users\\\\Administrator\\\\Desktop\\\\火火兔业务流程AI化'; Test-Path '.ai-operation/.save_staging.json'\")",
+      "Bash(powershell -Command 'cd '\\\\''C:\\\\Users\\\\Administrator\\\\Desktop\\\\火火兔业务流程AI化'\\\\''; Get-ChildItem -Recurse -Filter '\\\\''.save_staging.json'\\\\'' -Force 2>$null | Select-Object FullName')",
+      "Bash(powershell -Command \"cd 'C:\\\\Users\\\\Administrator\\\\Desktop\\\\火火兔业务流程AI化'; Get-Content '.mcp.json' | ConvertFrom-Json | Select-Object -ExpandProperty mcpServers | Select-Object -ExpandProperty project_architect\")",
+      "Bash(powershell -Command \"cd 'C:\\\\Users\\\\Administrator\\\\Desktop\\\\火火兔业务流程AI化'; & '.ai-operation\\\\venv\\\\Scripts\\\\python.exe' '.ai-operation/mcp_server/server.py' 2>&1 | Select-Object -First 5\")",
+      "Bash(powershell -Command \"cd 'C:\\\\Users\\\\Administrator\\\\Desktop\\\\火火兔业务流程AI化'; git diff --cached --name-only 2>&1 | Measure-Object -Line\")",
+      "Bash(powershell -Command \"cd 'C:\\\\Users\\\\Administrator\\\\Desktop\\\\火火兔业务流程AI化'; git diff --cached --name-only\")",
+      "Bash(powershell -Command \"cd 'C:\\\\Users\\\\Administrator\\\\Desktop\\\\火火兔业务流程AI化'; grep 'CRITICAL' '.ai-operation/mcp_server/tools/architect.py' | Select-Object -First 3\")",
+      "Bash(powershell -Command \"cd 'C:\\\\Users\\\\Administrator\\\\Desktop\\\\火火兔业务流程AI化'; Select-String '-- \\\\] \\\\+ files_to_add' '.ai-operation/mcp_server/tools/architect.py'\")",
+      "Bash(powershell -Command \"cd 'C:\\\\Users\\\\Administrator\\\\Desktop\\\\火火兔业务流程AI化'; Select-String 'files_to_add' '.ai-operation/mcp_server/tools/architect.py'\")",
+      "Bash(powershell.exe -Command \"cd 'C:\\\\Users\\\\Administrator\\\\Desktop\\\\火火兔业务流程AI化'; git commit --no-verify --no-status --dry-run -m 'test' -- .ai-operation/docs/project_map/activeContext.md 2>&1\")",
+      "Bash(powershell.exe -Command \"cd 'C:\\\\Users\\\\Administrator\\\\Desktop\\\\火火兔业务流程AI化'; Select-String 'loop_check_fn' '.ai-operation/mcp_server/server.py'\")",
+      "Bash(powershell.exe -Command \"cd 'C:\\\\Users\\\\Administrator\\\\Desktop\\\\火火兔业务流程AI化'; Select-String '_check_loop' '.ai-operation/mcp_server/server.py'\")",
+      "Bash(powershell.exe -Command \"cd 'C:\\\\Users\\\\Administrator\\\\Desktop\\\\火火兔业务流程AI化'; Test-Path '.ai-operation/.save_staging.json'\")",
+      "Bash(powershell.exe -Command \"cd 'C:\\\\Users\\\\Administrator\\\\Desktop\\\\火火兔业务流程AI化'; & '.ai-operation\\\\venv\\\\Scripts\\\\python.exe' -c \\\\\"import os; print\\(os.getcwd\\(\\)\\)\\\\\"\")",
+      "Bash(powershell.exe -NoProfile -Command 'cd \"C:\\\\Users\\\\Administrator\\\\Desktop\\\\火火兔业务流程AI化\"; $sw = New-Object System.Diagnostics.Stopwatch; $sw.Start\\(\\); git add .ai-operation/docs/project_map/activeContext.md 2>&1 | Out-Null; $sw.Stop\\(\\); Write-Host \"git add took: $\\($sw.ElapsedMilliseconds\\)ms\"')",
+      "Bash(powershell.exe -NoProfile -Command 'cd \"C:\\\\Users\\\\Administrator\\\\Desktop\\\\火火兔业务流程AI化\"; & .ai-operation\\\\venv\\\\Scripts\\\\python.exe -c \":*)",
+      "Bash(powershell.exe -NoProfile -Command '& \"C:\\\\Users\\\\Administrator\\\\Desktop\\\\火火兔业务流程AI化\\\\.ai-operation\\\\venv\\\\Scripts\\\\python.exe\" \"C:\\\\Users\\\\Administrator\\\\AI-Operation\\\\test_git_popen.py\"')",
+      "Bash(powershell.exe -NoProfile -Command '& \"C:\\\\Users\\\\Administrator\\\\Desktop\\\\火火兔业务流程AI化\\\\.ai-operation\\\\venv\\\\Scripts\\\\python.exe\" -c \"import os; print\\(os.getcwd\\(\\)\\)\"')",
+      "Read(//c/Users/Administrator/OpenHarness/**)",
+      "Read(//c/Users/Administrator/OpenHarness//**)",
+      "Read(//c/Users/Administrator/oh-my-mermaid/**)",
+      "Bash(npm install:*)",
+      "Bash(omm --version)",
+      "Bash(omm setup:*)",
+      "Bash(omm config:*)",
+      "Bash(omm write:*)",
+      "Bash(omm view:*)",
+      "Read(//c/Users/Administrator/.cursor//**)",
+      "Read(//c/Users/Administrator/AppData/Roaming/Cursor//**)",
+      "Read(//c/Users/Administrator/.claude//**)",
+      "Bash(ls -lt /c/Users/Administrator/.claude/projects/c--Users-Administrator-AI-Operation/*.jsonl)",
+      "Bash(ls -lt \"/c/Users/Administrator/.claude/projects/c--Users-Administrator-Desktop--------AI-/\"*.jsonl)",
+      "Bash(python -c \"import os; [print\\(d\\) for d in os.listdir\\(os.path.expanduser\\('~/.claude/projects'\\)\\)]\")",
+      "Bash(ls -la .ai-operation/mcp_server/tools/*.py)",
+      "Bash(wc -l .ai-operation/mcp_server/tools/*.py)",
+      "Bash(ping github.com -n 1)",
+      "Bash(curl -s https://github.com -o /dev/null -w \"%{http_code}\")",
+      "Bash(wc -l .ai-operation/cli/*.py)",
+      "Bash(git rm:*)",
+      "Bash(chmod +x /c/Users/Administrator/AI-Operation/.claude/hooks/require-context.sh)",
+      "Read(//c/Users/Administrator/everything-claude-code/**)",
+      "Bash(xargs wc:*)",
+      "Bash(chmod +x .claude/hooks/governance-capture.sh)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Administrator\\oh-my-mermaid\\skills\\omm-scan",
+      "C:\\Users\\Administrator\\AI-Operation\\.claude"
     ]
   }
 }
