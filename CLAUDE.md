@@ -13,7 +13,6 @@
 
 每次新对话，先读 ★ 标记的文件。其余按需查阅。
 
-3+ 个 project_map 文件有 [待填写] → 执行 [初始化项目]
 
 ### 项目记忆（★ 开机必读）
 
@@ -21,12 +20,12 @@
 |---|---|
 | ★ `.ai-operation/docs/project_map/activeContext.md` | 当前焦点、下一步 |
 | ★ `.ai-operation/docs/project_map/systemPatterns.md` | 项目架构、模块关系 |
-| ★ `.ai-operation/docs/project_map/conventions.md` | 命名/API/代码风格约定 |
+| ★ `.ai-operation/docs/project_map/conventions.md` | 固化的约定（命名/API/代码风格）|
+| ★ `.ai-operation/docs/project_map/corrections.md` | 未固化的经验（犯过的错，避免重犯）|
 | `.ai-operation/docs/project_map/projectbrief.md` | 核心愿景 |
 | `.ai-operation/docs/project_map/techContext.md` | 技术栈、已知坑点 |
 | `.ai-operation/docs/project_map/progress.md` | 进度、里程碑 |
 | `.ai-operation/docs/project_map/inventory.md` | 资产清单 |
-| `.ai-operation/docs/project_map/corrections.md` | 经验库 |
 | `.ai-operation/docs/sessions/last_conversation.jsonl` | 上一轮完整对话（按需检索） |
 
 ### 规范与协议（按需查阅）
