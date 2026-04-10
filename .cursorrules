@@ -24,7 +24,6 @@
 | `.ai-operation/docs/project_map/techContext.md` | 技术栈、已知坑点 |
 | `.ai-operation/docs/project_map/progress.md` | 进度、里程碑 |
 | `.ai-operation/docs/project_map/inventory.md` | 资产清单 |
-| `.ai-operation/docs/sessions/last_conversation.jsonl` | 上一轮完整对话（按需检索） |
 
 ### 规范与协议（按需查阅）
 
