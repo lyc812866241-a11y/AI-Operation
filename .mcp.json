@@ -21,6 +21,12 @@
         "aio__detail_read",
         "aio__detail_list"
       ]
+    },
+    "markitdown": {
+      "command": "markitdown-mcp",
+      "alwaysAllow": [
+        "convert_to_markdown"
+      ]
     }
   }
 }

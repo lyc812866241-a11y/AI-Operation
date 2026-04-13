@@ -26,6 +26,24 @@ from .constants import *
 
 
 SESSION_CONFIRMED_FLAG = Path(".ai-operation/.session_confirmed")
+SAVE_PENDING_FLAG = Path(".ai-operation/.save_pending")
+
+
+def is_save_pending() -> bool:
+    """Check if a save is already pending confirmation."""
+    return SAVE_PENDING_FLAG.exists()
+
+
+def set_save_pending():
+    """Mark that a save is pending confirmation."""
+    SAVE_PENDING_FLAG.parent.mkdir(parents=True, exist_ok=True)
+    SAVE_PENDING_FLAG.write_text("pending", encoding="utf-8")
+
+
+def clear_save_pending():
+    """Clear the save-pending flag."""
+    if SAVE_PENDING_FLAG.exists():
+        SAVE_PENDING_FLAG.unlink()
 
 
 def register_cognitive_gate_tools(mcp: FastMCP, _audit, _loop_guard):
@@ -92,15 +110,27 @@ def register_cognitive_gate_tools(mcp: FastMCP, _audit, _loop_guard):
         SESSION_CONFIRMED_FLAG.write_text("0", encoding="utf-8")
 
         # Read available keys from corrections.md to show AI what's available
+        import time as _time
+        corrections_dir = PROJECT_MAP_DIR.parent / "corrections"
         keys = []
+        keys_display = []
         for line in content.split("\n"):
             line = line.strip()
             if line.startswith("- ") and not line.startswith("- ["):
-                keys.append(line[2:].strip())
+                key_name = line[2:].split("SINCE:")[0].strip()
+                keys.append(key_name)
+                # Show freshness per key
+                key_file = corrections_dir / f"{key_name}.md"
+                if key_file.exists():
+                    age_days = int((_time.time() - key_file.stat().st_mtime) / 86400)
+                    stale_mark = " ⚠STALE" if age_days > 30 else ""
+                    keys_display.append(f"  - {key_name} ({age_days}d ago{stale_mark})")
+                else:
+                    keys_display.append(f"  - {key_name} (no file)")
 
         _audit("aio__confirm_read", "SUCCESS", f"key={actual_key},experience_keys={','.join(keys)}")
 
-        keys_list = "\n".join(f"  - {k}" for k in keys) if keys else "  (none)"
+        keys_list = "\n".join(keys_display) if keys_display else "  (none)"
         return (
             "SUCCESS: Context confirmed. You may now use Edit/Write/Bash tools.\n"
             "After 30 file operations, you will need to re-read and re-confirm.\n\n"
@@ -139,5 +169,19 @@ def register_cognitive_gate_tools(mcp: FastMCP, _audit, _loop_guard):
             )
 
         content = experience_file.read_text(encoding="utf-8")
-        _audit("aio__load_experience", "SUCCESS", f"key={key}, size={len(content)}")
-        return content
+
+        # Freshness tracking: warn if experience file is stale
+        import time
+        mtime = experience_file.stat().st_mtime
+        age_days = int((time.time() - mtime) / 86400)
+        freshness = ""
+        if age_days > 30:
+            freshness = (
+                f"\n\n⚠ STALE ({age_days} days since last update). "
+                f"Verify these lessons still apply before relying on them."
+            )
+        elif age_days > 7:
+            freshness = f"\n\n(Last updated {age_days} days ago)"
+
+        _audit("aio__load_experience", "SUCCESS", f"key={key}, size={len(content)}, age={age_days}d")
+        return _budget_truncate(content + freshness)

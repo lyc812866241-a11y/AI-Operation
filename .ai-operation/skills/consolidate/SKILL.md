@@ -1,6 +1,9 @@
 ---
 name: consolidate
-description: 整理 project_map 文件 — 与用户对齐后清理、压缩、分级。触发词："整理"、"清理文档"、"project_map 太大了"。
+description: 整理 project_map 文件 — 与用户对齐后清理、压缩、分级。
+when: ["整理", "清理", "consolidate", "cleanup", "project_map 太大"]
+paths: []
+tools: ["Read", "Write", "Edit"]
 ---
 
 # [整理] — Project Map 整理与校准

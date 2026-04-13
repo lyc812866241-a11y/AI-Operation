@@ -1,3 +1,11 @@
+---
+name: project-bootstrap
+description: 5 阶段项目初始化协议。框架植入新代码库后，AI 自主扫描并填写 project_map。
+when: ["初始化", "接管", "bootstrap", "新项目", "init"]
+paths: []
+tools: ["Bash", "Read", "Grep", "Write"]
+---
+
 # 项目接管与初始化规范 (Project Bootstrap)
 
 > **触发条件**：当用户说"初始化项目"、"接管这个项目"、"帮我填写 project_map"，或者 AI 在开机自检时发现 `.ai-operation/docs/project_map/` 下的文件仍然包含 `[TODO]` 占位符时，必须执行本规范。

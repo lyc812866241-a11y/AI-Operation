@@ -1,6 +1,9 @@
 ---
 name: omm-scan
-description: Scan codebase architecture and generate/update .omm/ documentation. Use when the user says "omm scan", "scan architecture", "update architecture", "refresh diagrams".
+description: 架构扫描协议。扫描代码库生成/更新 .omm/ 架构文档和 Mermaid 图。
+when: ["架构扫描", "omm scan", "scan architecture", "update architecture", "refresh diagrams"]
+paths: ["src/**", "*.py", "*.ts", "*.js"]
+tools: ["Bash", "Read", "Grep", "Write"]
 ---
 
 # omm-scan — Perspective-Based Architecture Scanner

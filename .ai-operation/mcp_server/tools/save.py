@@ -7,6 +7,8 @@ import subprocess
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 from .constants import *
+from .cognitive_gate import is_save_pending, set_save_pending, clear_save_pending
+from .bypass import has_bypass
 
 
 def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
@@ -102,6 +104,14 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
 
         _audit("aio__force_architect_save", "CALLED")
 
+        # ── Re-entrancy guard: only one save at a time ──
+        if is_save_pending():
+            _audit("aio__force_architect_save", "REJECTED", "save already pending")
+            return (
+                "REJECTED: A save is already pending confirmation.\n"
+                "Call aio__force_architect_save_confirm to complete the current save first,\n"
+                "or wait for it to finish before starting a new one."
+            )
         # ── Cognitive Gate check: must have read corrections before saving ──
         # Only enforced when corrections.md has a SESSION_KEY (framework is fully set up)
         session_flag = Path(".ai-operation/.session_confirmed")
@@ -180,11 +190,56 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             return "REJECTED: activeContext_update cannot be NO_CHANGE. You must always update the current focus."
         if "NO_CHANGE" in progress_update.strip().upper() and "BECAUSE" not in progress_update.upper():
             return "REJECTED: progress_update cannot be NO_CHANGE. You must always record what was done this session."
+        # ── Auto-reflection: scan audit.log for session violations ──
+        # If AI was rejected/blocked/bypassed this session, it cannot claim "NONE" learned.
+        session_violations = []
+        audit_path = Path(".ai-operation/audit.log")
+        if audit_path.exists():
+            import json as _json
+            try:
+                log_lines = audit_path.read_text(encoding="utf-8").strip().split("\n")
+                # Read session_confirmed timestamp to filter current session only
+                session_flag = Path(".ai-operation/.session_confirmed")
+                # Scan last 100 lines (current session is recent)
+                for line in log_lines[-100:]:
+                    try:
+                        entry = _json.loads(line)
+                        status = entry.get("status", "")
+                        if status in ("REJECTED", "BLOCKED", "BYPASSABLE", "BYPASSED",
+                                      "BYPASS_GRANTED", "MONITOR", "LOOP_BLOCKED",
+                                      "DANGEROUS_BLOCKED"):
+                            tool = entry.get("tool", "")
+                            details = entry.get("details", "")[:100]
+                            session_violations.append(f"{tool}: {status} — {details}")
+                    except _json.JSONDecodeError:
+                        continue
+            except Exception:
+                pass  # audit reading is best-effort
+
         if not lessons_learned or not lessons_learned.strip():
+            if session_violations:
+                violation_list = "\n".join(f"  - {v}" for v in session_violations[-10:])
+                return (
+                    f"REJECTED: lessons_learned cannot be empty.\n"
+                    f"You were blocked/rejected {len(session_violations)} time(s) this session:\n"
+                    f"{violation_list}\n\n"
+                    f"Reflect on these violations. What caused them? How to avoid next time?\n"
+                    f"Write lessons in 'category: lesson' format (e.g., 'fileops: always check encoding')."
+                )
             return (
                 "REJECTED: lessons_learned cannot be empty.\n"
                 "Reflect on this session: any bugs hit, user corrections, gotchas discovered, "
                 "or preferences expressed? Use 'NONE' only if truly nothing was learned."
+            )
+
+        # If AI wrote "NONE" but had violations, force reflection
+        if lessons_learned.strip().upper() == "NONE" and session_violations:
+            violation_list = "\n".join(f"  - {v}" for v in session_violations[-10:])
+            return (
+                f"REJECTED: You wrote 'NONE' but were blocked/rejected {len(session_violations)} time(s):\n"
+                f"{violation_list}\n\n"
+                f"You MUST reflect on these violations. 'NONE' is only valid when\n"
+                f"you had zero rejections/blocks in this session."
             )
 
         # ── Information density validation ────────────────────────
@@ -308,6 +363,49 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                     # Don't reject — but add a loud warning that will show in diff preview
                     _audit("aio__force_architect_save", "WARNING", "inventory still all placeholders")
 
+        # ── Ingest propagation check ──────────────────────────────
+        # If AI created new files this session but inventory_update is NO_CHANGE,
+        # warn that new assets should be reflected in inventory.
+        # (Karpathy LLM Wiki pattern: one change should propagate to all related pages)
+        audit_path = Path(".ai-operation/audit.log")
+        if audit_path.exists():
+            import json as _jcheck
+            new_files_created = []
+            try:
+                log_lines = audit_path.read_text(encoding="utf-8").strip().split("\n")
+                for line in log_lines[-100:]:
+                    try:
+                        entry = _jcheck.loads(line)
+                        if entry.get("tool") == "Write" and entry.get("status") == "EXECUTED":
+                            detail = entry.get("details", "")
+                            # Only flag non-framework files
+                            if detail and not detail.startswith(".ai-operation/"):
+                                new_files_created.append(detail[:80])
+                    except _jcheck.JSONDecodeError:
+                        continue
+            except Exception:
+                pass
+
+            inv_is_skip = (
+                not inventory_update
+                or not inventory_update.strip()
+                or inventory_update.strip().upper().startswith("NO_CHANGE")
+                or inventory_update.strip().upper() == "SKIP"
+            )
+            if new_files_created and inv_is_skip and not has_bypass("save.ingest_propagation"):
+                file_list = "\n".join(f"  - {f}" for f in new_files_created[:10])
+                _audit("aio__force_architect_save", "WARNING",
+                       f"ingest_propagation: {len(new_files_created)} new files but inventory NO_CHANGE")
+                return (
+                    f"BYPASSABLE: You created {len(new_files_created)} new file(s) this session "
+                    f"but inventory_update is NO_CHANGE:\n{file_list}\n\n"
+                    f"Rule: save.ingest_propagation\n\n"
+                    f"New files/modules/APIs should be reflected in inventory_update.\n"
+                    f"Option 1: Add them to inventory_update and resubmit.\n"
+                    f"Option 2: If these are temporary/test files, bypass via aio__bypass_violation(\n"
+                    f"  rule_code=\"save.ingest_propagation\", user_said=\"<reason>\")"
+                )
+
         # ══════════════════════════════════════════════════════════
         # PHASE 1: PREPARE — generate diff preview, stage to file
         # Do NOT write to project_map yet. Let AI review first.
@@ -384,6 +482,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         }
         SAVE_STAGING_FILE.parent.mkdir(parents=True, exist_ok=True)
         SAVE_STAGING_FILE.write_text(json.dumps(staging_data, ensure_ascii=False, indent=2), encoding="utf-8")
+        set_save_pending()  # Lock: prevent concurrent saves until confirm/reject
 
         # Build the review report
         report = ["PENDING_REVIEW: Save prepared but NOT yet written.\n"]
@@ -559,6 +658,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
 
         # Read staging file
         if not SAVE_STAGING_FILE.exists():
+            clear_save_pending()
             return (
                 "REJECTED: No staged save found.\n"
                 "You must call aio__force_architect_save first to prepare the save."
@@ -753,8 +853,9 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         if session_flag.exists():
             session_flag.unlink()
 
-        # Clean up staging file
+        # Clean up staging file and save-pending lock
         SAVE_STAGING_FILE.unlink()
+        clear_save_pending()
 
         # ── Universal size limit enforcement (last safety net) ────
         # Catches ANY file that exceeded MAX_FILE_CHARS after all writes,

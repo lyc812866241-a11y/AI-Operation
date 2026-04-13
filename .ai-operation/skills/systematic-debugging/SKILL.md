@@ -1,3 +1,11 @@
+---
+name: systematic-debugging
+description: 根因调查协议。遇到 Bug、测试失败、非预期行为时，必须先执行本规范再提修复。
+when: ["bug", "测试失败", "报错", "异常", "error", "fail", "unexpected", "崩溃"]
+paths: ["tests/**", "src/**", "*.py", "*.ts", "*.js"]
+tools: ["Bash", "Read", "Grep"]
+---
+
 # 系统性调试规范 (Systematic Debugging)
 
 > **触发条件**：遇到任何 Bug、测试失败或非预期行为时，在提出修复方案之前，必须先执行本规范。

@@ -26,6 +26,8 @@ from .workflow import register_workflow_tools
 from .inventory import register_inventory_tools
 from .cleanup import register_cleanup_tools
 from .cognitive_gate import register_cognitive_gate_tools
+from .skillify import register_skillify_tools
+from .bypass import register_bypass_tools
 
 
 def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
@@ -49,3 +51,5 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
     register_inventory_tools(mcp, _audit, _loop_guard)
     register_cleanup_tools(mcp, _audit, _loop_guard)
     register_cognitive_gate_tools(mcp, _audit, _loop_guard)
+    register_skillify_tools(mcp, _audit, _loop_guard)
+    register_bypass_tools(mcp, _audit, _loop_guard)

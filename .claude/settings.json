@@ -64,11 +64,66 @@
       "Read(//c/Users/Administrator/everything-claude-code/**)",
       "Bash(xargs wc:*)",
       "Bash(chmod +x .claude/hooks/governance-capture.sh)",
-      "Bash(git commit --no-verify -m 'chore: remove principles.md — no physical enforcement, no value:*)"
+      "Bash(git commit --no-verify -m 'chore: remove principles.md — no physical enforcement, no value:*)",
+      "Read(//c/Users/Administrator/superpowers/**)",
+      "Read(//c/Users/Administrator/AI-Operation/**)",
+      "Read(//c/Users/Administrator/claude-howto/**)",
+      "Read(//c/Users/Administrator/oh-my-claudecode/**)",
+      "Bash(git commit --no-verify -m 'feat: add 二阶思维 convention — root cause before fix:*)",
+      "Read(//tmp/claude-code-review/**)",
+      "Read(//c/tmp/claude-code-review/**)",
+      "Bash(ls -la /tmp/claude-code-review/src/hooks/*.ts)",
+      "Bash(ls /tmp/claude-code-review/src/hooks/*.ts)",
+      "Bash(cat /tmp/claude-code-review/src/buddy/*.ts)",
+      "Bash(grep -r \"gate\\\\|governance\\\\|policy\\\\|approval\" /tmp/claude-code-review/src/hooks/*.ts)",
+      "Bash(grep -l \"fetchSystemPromptParts\" /tmp/claude-code-review/src/utils/*.ts)",
+      "Bash(grep -l \"getSystemPrompt\\\\|CLAUDE.md\" /tmp/claude-code-review/src/constants/*.ts)",
+      "Bash(grep -l \"hook\\\\|Handler\" /tmp/claude-code-review/src/hooks/*.ts)",
+      "Bash(xargs -I {} basename {})",
+      "Bash(grep -l \"readClaude\\\\|loadClaude\\\\|claudeMd\\\\|CLAUDE_MD\" /tmp/claude-code-review/src/*.ts)",
+      "Bash(grep -r \"useAutoMode\\\\|AutoMode\\\\|autoApprove\" /tmp/claude-code-review/src/hooks/*.ts)",
+      "Bash(grep -l \"autoCompact\\\\|compact\" /tmp/claude-code-review/src/services/compact/*.ts)",
+      "Bash(grep -l \"loadMemoryPrompt\\\\|memdir\" /tmp/claude-code-review/src/*.ts)",
+      "Bash(python -c \"from tools.architect import register_architect_tools; print\\('OK: all modules imported successfully'\\)\")",
+      "Bash(python -m pytest tests/ -v --timeout=30)",
+      "Bash(wc -l /tmp/gstack-review/scripts/resolvers/*.ts)",
+      "Bash(grep -E \"\\\\.\\(ts|js|sh\\)$\")",
+      "Bash(grep -E \"\\\\.\\(ts|js\\)$\")",
+      "Bash(chmod +x c:/Users/Administrator/AI-Operation/.claude/hooks/check-dangerous.sh)",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Bash(python -c \"import json; d=json.load\\(open\\('c:/Users/Administrator/AI-Operation/.claude/settings.json'\\)\\); print\\('Hook:', d['hooks']['PreToolUse'][0]['hooks'][0]['command']\\); print\\('JSON valid'\\)\")",
+      "Bash(bash .claude/hooks/check-dangerous.sh)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(bash -c ':*)",
+      "Bash(python c:/Users/Administrator/AI-Operation/test_hook.py)",
+      "Bash(grep -qE \"^\\(node_modules|dist|build|__pycache__|\\\\.pytest_cache\\)$\")",
+      "Bash(xargs grep:*)",
+      "Bash(python -c ':*)",
+      "WebFetch(domain:gist.github.com)",
+      "Bash(pip show:*)",
+      "Bash(pip install:*)",
+      "Bash(where markitdown-mcp:*)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Administrator\\oh-my-mermaid\\skills\\omm-scan",
-      "C:\\Users\\Administrator\\AI-Operation\\.claude"
+      "C:\\Users\\Administrator\\AI-Operation\\.claude",
+      "\\tmp"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/check-dangerous.sh",
+            "timeout": 10,
+            "statusMessage": "Checking for dangerous commands..."
+          }
+        ]
+      }
     ]
   }
 }

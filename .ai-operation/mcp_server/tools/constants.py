@@ -9,10 +9,10 @@ __all__ = [
     # Paths
     "PROJECT_MAP_DIR", "DETAILS_DIR", "MCP_COMMIT_FLAG",
     "TASKSPEC_DIR", "TASKSPEC_FILE", "TASKSPEC_APPROVED_FLAG",
-    "FAST_TRACK_FLAG", "SAVE_STAGING_FILE",
+    "FAST_TRACK_FLAG", "SAVE_STAGING_FILE", "BYPASS_DIR",
     # Size limits
     "MAX_FILE_CHARS", "MAX_TOTAL_CHARS", "SECTION_SIZE_THRESHOLD",
-    "CORRECTIONS_MAX_BYTES",
+    "CORRECTIONS_MAX_BYTES", "MAX_TOOL_RESULT_BYTES",
     # Required files
     "REQUIRED_FILES",
     # Utility functions
@@ -20,6 +20,8 @@ __all__ = [
     "_generate_toc", "_auto_split_oversized_sections",
     "_enforce_file_size_limit", "_compact_corrections",
     "_compact_dynamic_file", "git_commit_nonblocking",
+    "_budget_truncate",
+    "_parse_skill_frontmatter", "_discover_skills",
 ]
 
 # Project map directory - relative to project root
@@ -33,12 +35,14 @@ TASKSPEC_FILE = TASKSPEC_DIR / "taskSpec.md"
 TASKSPEC_APPROVED_FLAG = Path(".ai-operation/.taskspec_approved")
 FAST_TRACK_FLAG = Path(".ai-operation/.fast_track")
 SAVE_STAGING_FILE = Path(".ai-operation/.save_staging.json")
+BYPASS_DIR = Path(".ai-operation/.bypasses")  # Per-rule bypass flags
 
 # Size limits
 MAX_FILE_CHARS = 16_000      # 16KB per file
 MAX_TOTAL_CHARS = 50_000     # 50KB total (~12K tokens)
 SECTION_SIZE_THRESHOLD = 8_000  # 8KB — split section to subfile
 CORRECTIONS_MAX_BYTES = 10_000  # 10KB — archive old lessons
+MAX_TOOL_RESULT_BYTES = 12_000  # 12KB — truncate any MCP tool return exceeding this
 
 # Required project_map files
 REQUIRED_FILES = {
@@ -330,6 +334,95 @@ def _compact_dynamic_file(content: str, filename: str) -> str:
 
     result_parts = [header, compact_notice, latest]
     return "\n---\n".join(result_parts)
+
+
+def _parse_skill_frontmatter(skill_path: Path) -> dict:
+    """Parse YAML frontmatter from a SKILL.md file.
+
+    Returns dict with keys: name, description, when, paths, tools.
+    Returns empty dict if no frontmatter found.
+    """
+    if not skill_path.exists():
+        return {}
+
+    content = skill_path.read_text(encoding="utf-8")
+    if not content.startswith("---"):
+        return {}
+
+    # Find closing ---
+    end = content.find("---", 3)
+    if end == -1:
+        return {}
+
+    frontmatter_text = content[3:end].strip()
+    result = {}
+
+    for line in frontmatter_text.split("\n"):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" not in line:
+            continue
+        key, val = line.split(":", 1)
+        key = key.strip()
+        val = val.strip()
+
+        # Parse list values: ["a", "b", "c"]
+        if val.startswith("[") and val.endswith("]"):
+            items = val[1:-1]
+            result[key] = [
+                item.strip().strip('"').strip("'")
+                for item in items.split(",")
+                if item.strip()
+            ]
+        else:
+            result[key] = val.strip('"').strip("'")
+
+    return result
+
+
+def _discover_skills(skills_dir: Path = None) -> list:
+    """Discover all skills with parsed frontmatter.
+
+    Returns list of dicts: {name, description, when, paths, tools, skill_dir}.
+    """
+    if skills_dir is None:
+        skills_dir = Path(".ai-operation/skills")
+
+    if not skills_dir.exists():
+        return []
+
+    skills = []
+    for skill_md in sorted(skills_dir.glob("*/SKILL.md")):
+        meta = _parse_skill_frontmatter(skill_md)
+        if meta:
+            meta["skill_dir"] = str(skill_md.parent)
+            skills.append(meta)
+        else:
+            # Skill without frontmatter — include with basic info
+            skills.append({
+                "name": skill_md.parent.name,
+                "description": "(no frontmatter)",
+                "when": [],
+                "paths": [],
+                "tools": [],
+                "skill_dir": str(skill_md.parent),
+            })
+
+    return skills
+
+
+def _budget_truncate(result: str, max_bytes: int = MAX_TOOL_RESULT_BYTES) -> str:
+    """Truncate tool result to budget. Prevents context window overflow."""
+    encoded = result.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return result
+    truncated = encoded[:max_bytes].decode("utf-8", errors="ignore")
+    return (
+        f"{truncated}\n\n"
+        f"[TRUNCATED: showing {max_bytes:,} of {len(encoded):,} bytes. "
+        f"Use aio__detail_read for full content.]"
+    )
 
 
 def git_commit_nonblocking(files_to_add: list, commit_msg: str, _audit_fn=None) -> tuple:

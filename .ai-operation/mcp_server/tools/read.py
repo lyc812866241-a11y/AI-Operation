@@ -186,8 +186,115 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
             for w in quality_warnings:
                 report.append(f"  {w}")
 
-        _audit("aio__force_architect_read", "SUCCESS", f"budget={budget_pct}%,size={total_map_size},quality_warnings={len(quality_warnings)}")
-        return "\n".join(report)
+        # ── Cleanup Reminder ────────────────────────────────────
+        # Auto-detect stale project_map and remind user to run [整理]
+        import time as _time
+        cleanup_reasons = []
+
+        # Check 1: activeContext.md mtime > 7 days
+        ac_path = PROJECT_MAP_DIR / "activeContext.md"
+        if ac_path.exists():
+            ac_age_days = int((_time.time() - ac_path.stat().st_mtime) / 86400)
+            if ac_age_days > 7:
+                cleanup_reasons.append(f"activeContext.md last updated {ac_age_days} days ago")
+
+        # Check 2: corrections key count > 10
+        corrections_dir = PROJECT_MAP_DIR.parent / "corrections"
+        if corrections_dir.exists():
+            key_count = len(list(corrections_dir.glob("*.md")))
+            if key_count > 10:
+                cleanup_reasons.append(f"{key_count} experience keys (consider consolidating)")
+
+        # Check 3: audit.log > 500 lines
+        audit_path = Path(".ai-operation/audit.log")
+        if audit_path.exists():
+            audit_lines = audit_path.read_text(encoding="utf-8").count("\n")
+            if audit_lines > 500:
+                cleanup_reasons.append(f"audit.log has {audit_lines} lines")
+
+        if cleanup_reasons:
+            report.append("\n## 🧹 Cleanup Reminder\n")
+            report.append("  project_map may need cleanup. Reasons:")
+            for r in cleanup_reasons:
+                report.append(f"    - {r}")
+            report.append("  Consider running [整理] to consolidate and trim.")
+
+        # ── Orphan Reference Check (Lint) ──────────────────────
+        # Verify that file paths mentioned in systemPatterns.md actually exist.
+        # Inspired by Karpathy's LLM Wiki "lint" workflow.
+        sp_path = PROJECT_MAP_DIR / "systemPatterns.md"
+        if sp_path.exists():
+            import re as _re
+            sp_content = sp_path.read_text(encoding="utf-8")
+            # Extract file paths from systemPatterns (patterns like path/to/file.ext)
+            referenced_paths = _re.findall(
+                r'[`|]?\s*([\w./\-]+\.(?:py|ts|js|go|rs|sh|ps1|yml|yaml|json|md))\s*[`|]?',
+                sp_content
+            )
+            orphans = []
+            for ref_path in set(referenced_paths):
+                # Skip obvious non-file references and framework internals
+                if ref_path.startswith("http") or ref_path.startswith("#"):
+                    continue
+                full_path = Path(ref_path)
+                if not full_path.exists():
+                    # Also check relative to .ai-operation/
+                    alt_path = Path(".ai-operation") / ref_path
+                    if not alt_path.exists():
+                        orphans.append(ref_path)
+
+            if orphans:
+                report.append(f"\n## 👻 Orphan References ({len(orphans)} found)\n")
+                report.append("  systemPatterns.md references files that don't exist:")
+                for o in orphans[:10]:
+                    report.append(f"    - `{o}` — missing or renamed")
+                report.append("  Update systemPatterns.md during next [存档] or [整理].")
+
+        # ── Skill Registry (frontmatter-driven) ────────────────
+        # Show available skills with their trigger conditions.
+        # Skills with `paths` are only shown if current git status touches matching files.
+        skills = _discover_skills()
+        if skills:
+            # Get current git-modified files for conditional activation
+            import subprocess as _sp
+            try:
+                git_result = _sp.run(
+                    ["git", "diff", "--name-only", "HEAD"],
+                    capture_output=True, text=True, timeout=10
+                )
+                changed_files_git = set(git_result.stdout.strip().split("\n")) if git_result.stdout.strip() else set()
+                # Also add staged files
+                git_staged = _sp.run(
+                    ["git", "diff", "--name-only", "--cached"],
+                    capture_output=True, text=True, timeout=10
+                )
+                if git_staged.stdout.strip():
+                    changed_files_git.update(git_staged.stdout.strip().split("\n"))
+            except Exception:
+                changed_files_git = set()
+
+            import fnmatch
+            report.append("\n## 📋 Available Skills\n")
+            for skill in skills:
+                skill_paths = skill.get("paths", [])
+                # If skill has paths filter, only show if any changed file matches
+                if skill_paths:
+                    matched = any(
+                        fnmatch.fnmatch(cf, pat)
+                        for cf in changed_files_git
+                        for pat in skill_paths
+                    )
+                    if not matched and changed_files_git:
+                        continue  # Skip: no matching files in current changes
+
+                when_str = ", ".join(skill.get("when", [])) if skill.get("when") else "manual"
+                report.append(
+                    f"  - **{skill['name']}**: {skill.get('description', '')} "
+                    f"[triggers: {when_str}]"
+                )
+
+        _audit("aio__force_architect_read", "SUCCESS", f"budget={budget_pct}%,size={total_map_size},quality_warnings={len(quality_warnings)},cleanup_reasons={len(cleanup_reasons)},skills={len(skills)}")
+        return _budget_truncate("\n".join(report))
 
     @mcp.tool()
     @mcp.tool()

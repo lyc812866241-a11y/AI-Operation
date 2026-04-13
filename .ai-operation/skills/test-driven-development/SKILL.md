@@ -1,3 +1,11 @@
+---
+name: test-driven-development
+description: TDD 强制协议。实现新功能或修复 Bug 前，必须先写失败测试。
+when: ["新功能", "feature", "实现", "implement", "修复", "fix"]
+paths: ["tests/**", "src/**", "*.py", "*.ts"]
+tools: ["Bash", "Read", "Write", "Edit"]
+---
+
 # 测试驱动开发规范 (Test-Driven Development)
 
 > **触发条件**：实现任何新功能或修复任何 Bug 时，在编写实现代码之前，必须先执行本规范。
