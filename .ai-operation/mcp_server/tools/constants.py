@@ -413,14 +413,26 @@ def _discover_skills(skills_dir: Path = None) -> list:
 
 
 def _budget_truncate(result: str, max_bytes: int = MAX_TOOL_RESULT_BYTES) -> str:
-    """Truncate tool result to budget. Prevents context window overflow."""
+    """Truncate tool result to budget. Prevents context window overflow.
+
+    Uses character-level truncation to avoid cutting multi-byte UTF-8
+    characters (Chinese chars = 3 bytes, emoji = 4 bytes).
+    """
     encoded = result.encode("utf-8")
     if len(encoded) <= max_bytes:
         return result
-    truncated = encoded[:max_bytes].decode("utf-8", errors="ignore")
+    # Walk back from max_bytes to find a safe character boundary
+    truncated = encoded[:max_bytes]
+    # Remove trailing incomplete UTF-8 sequence (1-3 bytes max)
+    while truncated and truncated[-1] & 0xC0 == 0x80:
+        truncated = truncated[:-1]
+    if truncated and truncated[-1] & 0x80:
+        # Last byte is a lead byte without continuation — remove it too
+        truncated = truncated[:-1]
+    safe_str = truncated.decode("utf-8")
     return (
-        f"{truncated}\n\n"
-        f"[TRUNCATED: showing {max_bytes:,} of {len(encoded):,} bytes. "
+        f"{safe_str}\n\n"
+        f"[TRUNCATED: showing {len(truncated):,} of {len(encoded):,} bytes. "
         f"Use aio__detail_read for full content.]"
     )
 

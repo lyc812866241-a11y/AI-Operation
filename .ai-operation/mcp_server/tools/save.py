@@ -309,6 +309,8 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         # ── Git diff cross-validation ────────────────────────────
         # Compare what AI claims to have changed (activeContext) with
         # what git actually shows as changed. Warn on mismatch.
+        project_changes = []
+        mentioned = 0
         try:
             import subprocess as sp_diff
             diff_result = sp_diff.run(
@@ -604,15 +606,12 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                 )
 
         # Q10: Git diff cross-validation
-        try:
-            if project_changes and mentioned == 0:
-                audit_questions.append(
-                    f"⚠️ git diff shows {len(project_changes)} changed project files "
-                    f"({', '.join(project_changes[:5])}) but NONE are mentioned in your "
-                    f"activeContext. Are you saving a complete picture of what happened?"
-                )
-        except NameError:
-            pass  # project_changes not defined if git diff failed
+        if project_changes and mentioned == 0:
+            audit_questions.append(
+                f"⚠️ git diff shows {len(project_changes)} changed project files "
+                f"({', '.join(project_changes[:5])}) but NONE are mentioned in your "
+                f"activeContext. Are you saving a complete picture of what happened?"
+            )
 
         for i, q in enumerate(audit_questions, 1):
             report.append(f"{i}. {q}")

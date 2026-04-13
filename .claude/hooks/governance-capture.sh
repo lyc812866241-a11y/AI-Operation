@@ -13,7 +13,7 @@ AUDIT_LOG=".ai-operation/audit.log"
 
 # Read hook input
 INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
+TOOL_NAME=$(echo "$INPUT" | python -c "import sys,json; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null)
 
 # Only capture file-modifying operations
 case "$TOOL_NAME" in
@@ -26,7 +26,7 @@ esac
 
 # Extract relevant details
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.command // empty' 2>/dev/null)
+FILE_PATH=$(echo "$INPUT" | python -c "import sys,json; d=json.load(sys.stdin).get('tool_input',{}); print(d.get('file_path','') or d.get('command',''))" 2>/dev/null)
 
 # Truncate long commands
 if [ ${#FILE_PATH} -gt 200 ]; then

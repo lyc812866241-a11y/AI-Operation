@@ -134,9 +134,25 @@ def register_bypass_tools(mcp: FastMCP, _audit, _loop_guard):
                 f"The user must explicitly say one of: {', '.join(bypass_signals)}"
             )
 
+        # Rate limit: same rule can only be bypassed once per 24 hours
+        flag = BYPASS_DIR / f"{rule_code.strip()}.bypass"
+        if flag.exists():
+            try:
+                existing = json.loads(flag.read_text(encoding="utf-8"))
+                last_ts = datetime.datetime.strptime(existing["ts"], "%Y-%m-%d %H:%M:%S")
+                age_hours = (datetime.datetime.now() - last_ts).total_seconds() / 3600
+                if age_hours < 24:
+                    _audit("aio__bypass_violation", "REJECTED", f"rate_limit: {rule_code} bypassed {age_hours:.1f}h ago")
+                    return (
+                        f"REJECTED: Rule '{rule_code}' was already bypassed {age_hours:.1f} hours ago.\n"
+                        f"Each rule can only be bypassed once per 24 hours.\n"
+                        f"Wait {24 - age_hours:.1f} more hours, or fix the underlying issue."
+                    )
+            except (json.JSONDecodeError, KeyError, ValueError):
+                pass  # Corrupted flag — allow re-bypass
+
         # Write per-rule bypass flag
         BYPASS_DIR.mkdir(parents=True, exist_ok=True)
-        flag = BYPASS_DIR / f"{rule_code.strip()}.bypass"
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         flag.write_text(
             json.dumps({

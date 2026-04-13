@@ -13,7 +13,7 @@ MAX_OPS=30
 
 # Read hook input
 INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
+TOOL_NAME=$(echo "$INPUT" | python -c "import sys,json; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null)
 
 # Always allow read-only tools (AI needs these to read corrections.md)
 case "$TOOL_NAME" in

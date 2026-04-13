@@ -72,7 +72,15 @@ _call_history: list[tuple[str, str, float]] = []  # (tool_name, args_hash, times
 def _check_loop(tool_name: str, args_str: str) -> str | None:
     """Check if this tool call is part of a loop. Returns warning/error message or None."""
     now = time.time()
-    args_hash = hashlib.md5(args_str.encode("utf-8")).hexdigest()[:8]
+    # Normalize args: collapse whitespace, lowercase, sort JSON keys if possible
+    normalized = " ".join(args_str.lower().split())
+    try:
+        import json as _json
+        data = _json.loads(normalized)
+        normalized = _json.dumps(data, sort_keys=True, ensure_ascii=False)
+    except (ValueError, TypeError):
+        pass
+    args_hash = hashlib.md5(normalized.encode("utf-8")).hexdigest()[:8]
 
     # Prune old entries outside window
     cutoff = now - LOOP_WINDOW_SECONDS

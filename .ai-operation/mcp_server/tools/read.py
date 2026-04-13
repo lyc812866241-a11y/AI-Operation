@@ -297,7 +297,6 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
         return _budget_truncate("\n".join(report))
 
     @mcp.tool()
-    @mcp.tool()
     def aio__detail_read(
         detail_file: str,
     ) -> str:

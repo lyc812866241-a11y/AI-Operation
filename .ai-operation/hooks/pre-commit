@@ -62,6 +62,7 @@ fi
 
 CODE_FILES=$(git diff --cached --name-only \
     | grep -v "^\.ai-operation/" \
+    | grep -v "^\.claude/" \
     | grep -v "^\.clinerules$" \
     | grep -v "^CLAUDE\.md$" \
     | grep -v "^\.\(cursorrules\|windsurfrules\)$" \

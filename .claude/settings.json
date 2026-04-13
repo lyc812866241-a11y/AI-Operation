@@ -123,6 +123,30 @@
             "statusMessage": "Checking for dangerous commands..."
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|Bash|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/require-context.sh",
+            "timeout": 5,
+            "statusMessage": "Checking cognitive gate..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|Bash|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/governance-capture.sh",
+            "timeout": 5,
+            "statusMessage": "Recording operation..."
+          }
+        ]
       }
     ]
   }

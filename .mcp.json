@@ -19,7 +19,12 @@
         "aio__inventory_consolidate",
         "aio__force_architect_save_confirm",
         "aio__detail_read",
-        "aio__detail_list"
+        "aio__detail_list",
+        "aio__confirm_read",
+        "aio__load_experience",
+        "aio__bypass_violation",
+        "aio__rule_monitor",
+        "aio__extract_skill"
       ]
     },
     "markitdown": {
