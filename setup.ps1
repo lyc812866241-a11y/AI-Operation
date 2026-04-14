@@ -166,6 +166,20 @@ if ($Update) {
         if (Test-Path $TMP_DIR) { Remove-Item $TMP_DIR -Recurse -Force }
     }
 
+    # Update Claude Code hooks (always overwrite — framework code)
+    $CLAUDE_HOOKS_SRC = Join-Path $INSTALL_DIR ".ai-operation\docs\templates\claude"
+    $CLAUDE_DIR = Join-Path $INSTALL_DIR ".claude"
+    if (Test-Path $CLAUDE_HOOKS_SRC) {
+        $hooksDir = Join-Path $CLAUDE_DIR "hooks"
+        New-Item -ItemType Directory -Path $hooksDir -Force | Out-Null
+        foreach ($hookFile in @("check-dangerous.sh", "require-context.sh", "governance-capture.sh")) {
+            $src = Join-Path $CLAUDE_HOOKS_SRC "hooks\$hookFile"
+            $dst = Join-Path $hooksDir $hookFile
+            if (Test-Path $src) { Copy-Item $src $dst -Force }
+        }
+        Write-Ok "Updated Claude Code hooks"
+    }
+
     # Rebuild venv if missing
     $VENV_DIR = Join-Path $INSTALL_DIR ".ai-operation\venv"
     if (-not (Test-Path $VENV_DIR)) {
@@ -398,8 +412,48 @@ if ($verifyResult -match "OK") {
     Write-Info "  Try: $VENV_PYTHON .ai-operation\mcp_server\server.py"
 }
 
-# -- Step 7: Summary --
-Write-Step "Step 7/7: IDE rule files check"
+# -- Step 7: Install Claude Code hooks --
+Write-Step "Step 7/8: Installing Claude Code hooks"
+
+$CLAUDE_HOOKS_SRC = Join-Path $INSTALL_DIR ".ai-operation\docs\templates\claude"
+$CLAUDE_DIR = Join-Path $INSTALL_DIR ".claude"
+
+if (Test-Path $CLAUDE_HOOKS_SRC) {
+    # Create .claude/hooks/ if it doesn't exist
+    $hooksDir = Join-Path $CLAUDE_DIR "hooks"
+    New-Item -ItemType Directory -Path $hooksDir -Force | Out-Null
+
+    # Copy hook scripts (always overwrite — framework code)
+    foreach ($hookFile in @("check-dangerous.sh", "require-context.sh", "governance-capture.sh")) {
+        $src = Join-Path $CLAUDE_HOOKS_SRC "hooks\$hookFile"
+        $dst = Join-Path $hooksDir $hookFile
+        if (Test-Path $src) {
+            Copy-Item $src $dst -Force
+        }
+    }
+    Write-Ok "Claude Code hooks installed (cognitive gate + dangerous guard + audit)"
+
+    # Copy settings.json only if it doesn't exist (preserve user customizations)
+    $settingsPath = Join-Path $CLAUDE_DIR "settings.json"
+    if (-not (Test-Path $settingsPath)) {
+        Copy-Item (Join-Path $CLAUDE_HOOKS_SRC "settings.json") $settingsPath -Force
+        Write-Ok "Claude Code settings.json created with hook configuration"
+    } else {
+        Write-Ok "Claude Code settings.json already exists — preserved"
+    }
+
+    # Create initial .session_confirmed so AI can run [初始化项目] on first use
+    $sessionFlag = Join-Path $INSTALL_DIR ".ai-operation\.session_confirmed"
+    if (-not (Test-Path $sessionFlag)) {
+        Set-Content $sessionFlag "0" -NoNewline
+        Write-Ok "Initial session confirmed (allows first [初始化项目])"
+    }
+} else {
+    Write-Warn "Claude hooks template not found — skipping"
+}
+
+# -- Step 8: Summary --
+Write-Step "Step 8/8: IDE rule files check"
 
 $ruleFiles = @(".clinerules", "CLAUDE.md", ".cursorrules", ".windsurfrules")
 foreach ($rf in $ruleFiles) {

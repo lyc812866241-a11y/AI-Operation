@@ -153,6 +153,20 @@ if [ "$UPDATE_MODE" = true ]; then
     [ -f "$TMP_DIR/setup.ps1" ] && cp "$TMP_DIR/setup.ps1" "$SCRIPT_DIR/setup.ps1"
     print_ok "Updated setup scripts"
 
+    # Update Claude Code hooks (always overwrite — framework code)
+    CLAUDE_HOOKS_SRC="$SCRIPT_DIR/.ai-operation/docs/templates/claude"
+    CLAUDE_DIR="$SCRIPT_DIR/.claude"
+    if [ -d "$CLAUDE_HOOKS_SRC" ]; then
+        mkdir -p "$CLAUDE_DIR/hooks"
+        for hook_file in check-dangerous.sh require-context.sh governance-capture.sh; do
+            if [ -f "$CLAUDE_HOOKS_SRC/hooks/$hook_file" ]; then
+                cp "$CLAUDE_HOOKS_SRC/hooks/$hook_file" "$CLAUDE_DIR/hooks/$hook_file"
+                chmod +x "$CLAUDE_DIR/hooks/$hook_file"
+            fi
+        done
+        print_ok "Updated Claude Code hooks"
+    fi
+
     # Rebuild venv if missing
     VENV_DIR="$SCRIPT_DIR/.ai-operation/venv"
     if [ ! -d "$VENV_DIR" ]; then
@@ -355,8 +369,45 @@ else
     print_warn "MCP server import check failed — try: $VENV_PYTHON .ai-operation/mcp_server/server.py"
 fi
 
-# ── Step 7: Install git hooks ────────────────────────────────────────────────
-print_step "Step 7/8: Installing git hooks"
+# ── Step 7: Install Claude Code hooks (.claude/) ────────────────────────────
+print_step "Step 7/9: Installing Claude Code hooks"
+
+CLAUDE_HOOKS_SRC="$SCRIPT_DIR/.ai-operation/docs/templates/claude"
+CLAUDE_DIR="$SCRIPT_DIR/.claude"
+
+if [ -d "$CLAUDE_HOOKS_SRC" ]; then
+    # Create .claude/hooks/ if it doesn't exist
+    mkdir -p "$CLAUDE_DIR/hooks"
+
+    # Copy hook scripts (always overwrite — these are framework code)
+    for hook_file in check-dangerous.sh require-context.sh governance-capture.sh; do
+        if [ -f "$CLAUDE_HOOKS_SRC/hooks/$hook_file" ]; then
+            cp "$CLAUDE_HOOKS_SRC/hooks/$hook_file" "$CLAUDE_DIR/hooks/$hook_file"
+            chmod +x "$CLAUDE_DIR/hooks/$hook_file"
+        fi
+    done
+    print_ok "Claude Code hooks installed (cognitive gate + dangerous guard + audit)"
+
+    # Copy settings.json only if it doesn't exist (don't overwrite user customizations)
+    if [ ! -f "$CLAUDE_DIR/settings.json" ]; then
+        cp "$CLAUDE_HOOKS_SRC/settings.json" "$CLAUDE_DIR/settings.json"
+        print_ok "Claude Code settings.json created with hook configuration"
+    else
+        print_ok "Claude Code settings.json already exists — preserved"
+    fi
+
+    # Create initial .session_confirmed so AI can run [初始化项目] on first use
+    SESSION_FLAG="$SCRIPT_DIR/.ai-operation/.session_confirmed"
+    if [ ! -f "$SESSION_FLAG" ]; then
+        echo "0" > "$SESSION_FLAG"
+        print_ok "Initial session confirmed (allows first [初始化项目])"
+    fi
+else
+    print_warn "Claude hooks template not found — skipping"
+fi
+
+# ── Step 8: Install git hooks ────────────────────────────────────────────────
+print_step "Step 8/9: Installing git hooks"
 
 INSTALL_HOOKS="$SCRIPT_DIR/.ai-operation/scripts/install-hooks.sh"
 if [ -f "$INSTALL_HOOKS" ] && [ -d "$SCRIPT_DIR/.git" ]; then
@@ -366,8 +417,8 @@ else
     print_warn "Git hooks not installed (not a git repo or install script missing)"
 fi
 
-# ── Step 8: Verify IDE rule files ────────────────────────────────────────────
-print_step "Step 8/8: Checking IDE rule files"
+# ── Step 9: Verify IDE rule files ────────────────────────────────────────────
+print_step "Step 9/9: Checking IDE rule files"
 
 RULE_FILES=(".clinerules" "CLAUDE.md" ".cursorrules" ".windsurfrules")
 for rf in "${RULE_FILES[@]}"; do
