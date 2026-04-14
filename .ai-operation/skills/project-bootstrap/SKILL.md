@@ -245,6 +245,40 @@ COUNT: [同类错误出现次数，首次填 1]
 
 ---
 
+### Phase 3.5：可编程审计（Evidence Audit）
+
+**目标：用代码验证 Phase 3 草稿中的可检查声明，堵住 AI 自我验证的漏洞。**
+
+> **为什么需要这一步**：Phase 3 的"校准"依赖 AI 自我声明（"现有内容准确"），但 AI 既是 claim 的生产者又是验证者——这违反审计原则。本步骤用可编程检查替代自我声明。
+
+**调用方式：**
+
+```
+调用 MCP 工具: aio__audit_project_map
+参数:
+  project_root = [目标项目根目录的绝对路径]
+```
+
+**5 项自动检查：**
+
+| 检查 | 验证内容 | 判定 |
+|---|---|---|
+| 1. 文件存在性 | systemPatterns/inventory 中的路径 → `os.path.exists` | 缺失 >10% = FAIL |
+| 2. 装饰器计数 | 代码中实际 `@enterprise_tool` 数量 vs inventory 声称数量 | 差 >2 = FAIL |
+| 3. 依赖真实性 | 声称使用的库 → `grep import` 验证 | 声称但无 import = FAIL |
+| 4. 命名一致性 | conventions.md 规则 → 抽样检查实际代码 | <70% 合规 = FAIL |
+| 5. 配置解析 | .env 变量 / docker-compose 端口 vs techContext | 有冲突 = WARN |
+
+**处理审计结果：**
+
+- **全 PASS**：进入 Phase 4
+- **有 WARN**：向用户汇报，确认是否需要修正草稿
+- **有 FAIL**：必须修正草稿中对应的错误声明，重新审计通过后才能进入 Phase 4
+
+**Phase 3.5 完成标准**：审计结果无 FAIL 项。
+
+---
+
 ### Phase 4：调用 MCP 工具写入文件（MCP-Enforced Write）
 
 **目标：调用 `aio__force_project_bootstrap_write` MCP 工具，将用户确认后的内容一次性写入全部 5 个文件。**

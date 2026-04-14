@@ -16,6 +16,7 @@ This file is the thin entry point. Tool implementations are split across:
                  aio__force_fast_track, aio__force_architect_report, aio__force_test_runner
   - inventory.py: aio__inventory_append, aio__inventory_consolidate
   - cleanup.py: aio__force_garbage_collection
+  - audit.py: aio__audit_project_map
 """
 
 from mcp.server.fastmcp import FastMCP
@@ -28,6 +29,7 @@ from .cleanup import register_cleanup_tools
 from .cognitive_gate import register_cognitive_gate_tools
 from .skillify import register_skillify_tools
 from .bypass import register_bypass_tools
+from .audit import register_audit_tools
 
 
 def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
@@ -53,3 +55,4 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
     register_cognitive_gate_tools(mcp, _audit, _loop_guard)
     register_skillify_tools(mcp, _audit, _loop_guard)
     register_bypass_tools(mcp, _audit, _loop_guard)
+    register_audit_tools(mcp, _audit, _loop_guard)
