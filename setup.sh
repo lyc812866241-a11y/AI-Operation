@@ -22,8 +22,12 @@ set -e
 
 # ── Parse arguments ─────────────────────────────────────────────────────────
 UPDATE_MODE=false
+MIGRATE_MODE=false
 if [ "$1" = "--update" ] || [ "$1" = "-u" ]; then
     UPDATE_MODE=true
+elif [ "$1" = "--migrate" ] || [ "$1" = "-m" ]; then
+    MIGRATE_MODE=true
+    UPDATE_MODE=true  # migrate implies update
 fi
 
 # Framework code directories — overwritten on update
@@ -244,6 +248,213 @@ print('OK')
             "$VENV_DIR/Scripts/pip.exe" install --quiet "mcp[cli]" fastmcp
         fi
         print_ok "venv rebuilt and dependencies installed"
+    fi
+
+    # ── MIGRATE MODE (runs after update) ──────────────────────────────────────
+    if [ "$MIGRATE_MODE" = true ]; then
+        print_step "Migrate: Project data migration"
+
+        BACKUP_DIR="$SCRIPT_DIR/.ai-operation/migrate_backup"
+        mkdir -p "$BACKUP_DIR"
+        MIGRATED_ITEMS=()
+
+        # ── Step M1: Migrate old docs/project_map/ → .ai-operation/docs/project_map/ ──
+        OLD_PM="$SCRIPT_DIR/docs/project_map"
+        NEW_PM="$SCRIPT_DIR/.ai-operation/docs/project_map"
+
+        if [ -d "$OLD_PM" ]; then
+            print_info "Found old project_map at docs/project_map/"
+            # Backup old path
+            cp -r "$OLD_PM" "$BACKUP_DIR/old_project_map"
+
+            for old_file in "$OLD_PM"/*.md; do
+                [ -f "$old_file" ] || continue
+                fname=$(basename "$old_file")
+                new_file="$NEW_PM/$fname"
+
+                if [ ! -f "$new_file" ]; then
+                    # New file doesn't exist — copy
+                    cp "$old_file" "$new_file"
+                    print_ok "Migrated $fname (new)"
+                    MIGRATED_ITEMS+=("$fname")
+                elif grep -qc '待填写' "$new_file" 2>/dev/null && [ "$(grep -c '待填写' "$new_file")" -ge 3 ]; then
+                    # New file is a template (3+ placeholders) — overwrite with old data
+                    cp "$old_file" "$new_file"
+                    print_ok "Migrated $fname (replaced template)"
+                    MIGRATED_ITEMS+=("$fname")
+                else
+                    print_info "Skipped $fname (new path already has content)"
+                fi
+            done
+
+            # Migrate details/ subdir
+            if [ -d "$OLD_PM/details" ]; then
+                mkdir -p "$NEW_PM/details"
+                cp -n "$OLD_PM/details/"*.md "$NEW_PM/details/" 2>/dev/null && \
+                    print_ok "Migrated details/ subfiles" || true
+            fi
+
+            # Migrate corrections/ subdir (key-value experience files)
+            if [ -d "$OLD_PM/../corrections" ] || [ -d "$SCRIPT_DIR/docs/corrections" ]; then
+                CORR_SRC="${OLD_PM}/../corrections"
+                [ -d "$CORR_SRC" ] || CORR_SRC="$SCRIPT_DIR/docs/corrections"
+                if [ -d "$CORR_SRC" ]; then
+                    mkdir -p "$NEW_PM/../corrections"
+                    cp -n "$CORR_SRC/"*.md "$NEW_PM/../corrections/" 2>/dev/null && \
+                        print_ok "Migrated corrections/ experience files" || true
+                fi
+            fi
+
+            # Leave pointer in old location
+            echo "# Migrated" > "$OLD_PM/README.md"
+            echo "Project map data has been migrated to .ai-operation/docs/project_map/" >> "$OLD_PM/README.md"
+            echo "This directory can be safely deleted." >> "$OLD_PM/README.md"
+            print_ok "Left migration pointer in old docs/project_map/"
+        else
+            print_info "No old docs/project_map/ found — skipping path migration"
+        fi
+
+        # ── Step M2: Extract custom rules from old CLAUDE.md / .clinerules ──────
+        OLD_CLAUDE="$SCRIPT_DIR/CLAUDE.md"
+        OLD_CLINERULES="$SCRIPT_DIR/.clinerules"
+        RULES_D="$SCRIPT_DIR/.ai-operation/rules.d"
+        CUSTOM_RULES="$RULES_D/project_custom.md"
+
+        # Check if there's a pre-update backup of CLAUDE.md in git
+        # or if the current CLAUDE.md still has old-format content
+        EXTRACT_RULES=false
+
+        # Strategy: if backup exists from before this update, use it
+        if [ -f "$BACKUP_DIR/CLAUDE.md.bak" ]; then
+            EXTRACT_RULES=true
+            EXTRACT_FROM="$BACKUP_DIR/CLAUDE.md.bak"
+        fi
+
+        # If no backup but current CLAUDE.md has content beyond framework template,
+        # try to extract from git history
+        if [ "$EXTRACT_RULES" = false ] && command -v git &>/dev/null; then
+            # Check if CLAUDE.md was different in previous commit
+            OLD_CONTENT=$(git show HEAD~1:CLAUDE.md 2>/dev/null || echo "")
+            if [ -n "$OLD_CONTENT" ]; then
+                OLD_LINES=$(echo "$OLD_CONTENT" | wc -l)
+                if [ "$OLD_LINES" -gt 70 ]; then
+                    # Old CLAUDE.md was significantly larger — likely has custom rules
+                    echo "$OLD_CONTENT" > "$BACKUP_DIR/CLAUDE.md.bak"
+                    EXTRACT_RULES=true
+                    EXTRACT_FROM="$BACKUP_DIR/CLAUDE.md.bak"
+                    print_info "Recovered old CLAUDE.md from git history ($OLD_LINES lines)"
+                fi
+            fi
+        fi
+
+        if [ "$EXTRACT_RULES" = true ] && [ -f "$EXTRACT_FROM" ]; then
+            # Use Python to extract custom sections
+            "$PYTHON_CMD" -c "
+import sys
+
+# Read old CLAUDE.md
+with open('$EXTRACT_FROM', encoding='utf-8', errors='ignore') as f:
+    old_content = f.read()
+
+# Read new .clinerules (the framework template)
+try:
+    with open('$OLD_CLINERULES', encoding='utf-8', errors='ignore') as f:
+        new_content = f.read()
+except FileNotFoundError:
+    new_content = ''
+
+# Known framework section headers (these exist in both old and new)
+framework_headers = [
+    '开机自检', '源文件索引', '项目记忆', '规范与协议',
+    '指令路由', 'AI-Operation', 'auto-generated',
+    'Do NOT edit', '.clinerules', 'MCP tools',
+]
+
+# Extract sections from old that are NOT framework sections
+lines = old_content.split('\n')
+custom_sections = []
+current_section = []
+current_header = ''
+in_custom = False
+
+for line in lines:
+    if line.startswith('## ') or line.startswith('# '):
+        # Save previous section if it was custom
+        if in_custom and current_section:
+            custom_sections.append('\n'.join(current_section))
+
+        # Check if this header is a framework header
+        header_text = line.lstrip('#').strip()
+        is_framework = any(fh in header_text or fh in line for fh in framework_headers)
+
+        if is_framework:
+            in_custom = False
+            current_section = []
+        else:
+            in_custom = True
+            current_section = [line]
+        current_header = header_text
+    elif in_custom:
+        current_section.append(line)
+
+# Don't forget last section
+if in_custom and current_section:
+    custom_sections.append('\n'.join(current_section))
+
+if custom_sections:
+    result = '# 项目自定义规则\\n\\n'
+    result += '> 从旧 CLAUDE.md 迁移。由 setup.sh --migrate 自动提取。\\n'
+    result += '> 此文件由 [读档] 自动加载到 AI 上下文中。\\n\\n'
+    result += '\\n\\n---\\n\\n'.join(custom_sections)
+    result += '\\n'
+
+    with open('$CUSTOM_RULES', 'w', encoding='utf-8') as f:
+        f.write(result)
+    print(f'EXTRACTED:{len(custom_sections)} sections')
+else:
+    print('NO_CUSTOM_CONTENT')
+" 2>/dev/null
+            EXTRACT_RESULT=$?
+            if [ -f "$CUSTOM_RULES" ]; then
+                SECTION_COUNT=$(head -1 "$CUSTOM_RULES" | wc -c)  # rough check
+                print_ok "Extracted custom rules → .ai-operation/rules.d/project_custom.md"
+                MIGRATED_ITEMS+=("custom_rules")
+            else
+                print_info "No custom rules found in old CLAUDE.md"
+            fi
+        else
+            print_info "No old CLAUDE.md to extract rules from"
+        fi
+
+        # ── Migration Summary ──────────────────────────────────────────────────
+        echo ""
+        if [ ${#MIGRATED_ITEMS[@]} -gt 0 ]; then
+            echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════════════╗${NC}"
+            echo -e "${GREEN}${BOLD}║   ✅  Migration complete!                         ║${NC}"
+            echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════════╝${NC}"
+            echo ""
+            echo -e "  ${YELLOW}Migrated:${NC}"
+            for item in "${MIGRATED_ITEMS[@]}"; do
+                echo -e "    - $item"
+            done
+            echo ""
+            echo -e "  ${YELLOW}Backup:${NC}  .ai-operation/migrate_backup/"
+            echo ""
+            echo -e "  ${BOLD}Review checklist:${NC}"
+            echo -e "    1. Check .ai-operation/docs/project_map/ — data migrated correctly?"
+            [ -f "$CUSTOM_RULES" ] && \
+            echo -e "    2. Check .ai-operation/rules.d/project_custom.md — custom rules complete?"
+            echo -e "    3. Run [初始化项目] with Phase 3.5 audit to verify"
+            echo -e "    4. Old docs/project_map/ can be deleted after verification"
+        else
+            echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════════════╗${NC}"
+            echo -e "${GREEN}${BOLD}║   ✅  Update complete! (nothing to migrate)       ║${NC}"
+            echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════════╝${NC}"
+        fi
+        echo ""
+        echo -e "  Restart your IDE to reload MCP servers."
+        echo ""
+        exit 0
     fi
 
     echo ""

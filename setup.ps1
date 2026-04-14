@@ -21,8 +21,12 @@
 # =============================================================================
 
 param(
-    [switch]$Update  # Update mode: only overwrite framework code, preserve local products
+    [switch]$Update,   # Update mode: only overwrite framework code, preserve local products
+    [switch]$Migrate   # Migrate mode: update + migrate old project data (paths, rules, corrections)
 )
+
+# Migrate implies Update
+if ($Migrate) { $Update = $true }
 
 $ErrorActionPreference = "Stop"
 
@@ -269,6 +273,176 @@ print('OK')
         Write-Ok "MCP server verified"
     } else {
         Write-Warn "MCP server verification failed — check manually"
+    }
+
+    # ── MIGRATE MODE ─────────────────────────────────────────────────────────
+    if ($Migrate) {
+        Write-Step "Migrate: Project data migration"
+
+        $BACKUP_DIR = Join-Path $INSTALL_DIR ".ai-operation\migrate_backup"
+        New-Item -ItemType Directory -Path $BACKUP_DIR -Force | Out-Null
+        $migratedItems = @()
+
+        # ── Step M1: Migrate old docs/project_map/ → .ai-operation/docs/project_map/
+        $OLD_PM = Join-Path $INSTALL_DIR "docs\project_map"
+        $NEW_PM = Join-Path $INSTALL_DIR ".ai-operation\docs\project_map"
+
+        if (Test-Path $OLD_PM -PathType Container) {
+            Write-Info "Found old project_map at docs\project_map\"
+            Copy-Item $OLD_PM "$BACKUP_DIR\old_project_map" -Recurse -Force
+
+            Get-ChildItem "$OLD_PM\*.md" | ForEach-Object {
+                $fname = $_.Name
+                $newFile = Join-Path $NEW_PM $fname
+
+                if (-not (Test-Path $newFile)) {
+                    Copy-Item $_.FullName $newFile -Force
+                    Write-Ok "Migrated $fname (new)"
+                    $migratedItems += $fname
+                } elseif ((Get-Content $newFile -Raw -Encoding UTF8) -match '\[待填写') {
+                    $placeholders = ([regex]::Matches((Get-Content $newFile -Raw -Encoding UTF8), '待填写')).Count
+                    if ($placeholders -ge 3) {
+                        Copy-Item $_.FullName $newFile -Force
+                        Write-Ok "Migrated $fname (replaced template)"
+                        $migratedItems += $fname
+                    } else {
+                        Write-Info "Skipped $fname (new path already has content)"
+                    }
+                } else {
+                    Write-Info "Skipped $fname (new path already has content)"
+                }
+            }
+
+            # Migrate details/
+            $oldDetails = Join-Path $OLD_PM "details"
+            if (Test-Path $oldDetails) {
+                $newDetails = Join-Path $NEW_PM "details"
+                New-Item -ItemType Directory -Path $newDetails -Force | Out-Null
+                Get-ChildItem "$oldDetails\*.md" | ForEach-Object {
+                    $target = Join-Path $newDetails $_.Name
+                    if (-not (Test-Path $target)) {
+                        Copy-Item $_.FullName $target -Force
+                    }
+                }
+                Write-Ok "Migrated details/ subfiles"
+            }
+
+            # Leave pointer
+            Set-Content (Join-Path $OLD_PM "README.md") @"
+# Migrated
+Project map data has been migrated to .ai-operation/docs/project_map/
+This directory can be safely deleted.
+"@
+            Write-Ok "Left migration pointer in old docs\project_map\"
+        } else {
+            Write-Info "No old docs\project_map\ found — skipping path migration"
+        }
+
+        # ── Step M2: Extract custom rules from old CLAUDE.md ───────────────────
+        $RULES_D = Join-Path $INSTALL_DIR ".ai-operation\rules.d"
+        $CUSTOM_RULES = Join-Path $RULES_D "project_custom.md"
+
+        # Try to recover old CLAUDE.md from git history
+        $oldClaudeMd = ""
+        if (Get-Command git -ErrorAction SilentlyContinue) {
+            try {
+                $oldClaudeMd = git show HEAD~1:CLAUDE.md 2>$null
+            } catch {}
+        }
+        if ($oldClaudeMd -and ($oldClaudeMd.Split("`n").Count -gt 70)) {
+            $oldClaudeBak = Join-Path $BACKUP_DIR "CLAUDE.md.bak"
+            Set-Content $oldClaudeBak $oldClaudeMd -Encoding UTF8
+            Write-Info "Recovered old CLAUDE.md from git history ($($oldClaudeMd.Split("`n").Count) lines)"
+
+            # Extract custom sections using Python
+            $extractResult = & $VENV_PYTHON -c @"
+import sys, re
+
+with open(r'$oldClaudeBak', encoding='utf-8', errors='ignore') as f:
+    old_content = f.read()
+
+framework_headers = [
+    '开机自检', '源文件索引', '项目记忆', '规范与协议',
+    '指令路由', 'AI-Operation', 'auto-generated',
+    'Do NOT edit', '.clinerules', 'MCP tools',
+]
+
+lines = old_content.split('\n')
+custom_sections = []
+current_section = []
+in_custom = False
+
+for line in lines:
+    if line.startswith('## ') or line.startswith('# '):
+        if in_custom and current_section:
+            custom_sections.append('\n'.join(current_section))
+        header_text = line.lstrip('#').strip()
+        is_framework = any(fh in header_text or fh in line for fh in framework_headers)
+        if is_framework:
+            in_custom = False
+            current_section = []
+        else:
+            in_custom = True
+            current_section = [line]
+    elif in_custom:
+        current_section.append(line)
+
+if in_custom and current_section:
+    custom_sections.append('\n'.join(current_section))
+
+if custom_sections:
+    result = '# 项目自定义规则\n\n'
+    result += '> 从旧 CLAUDE.md 迁移。由 setup.ps1 -Migrate 自动提取。\n'
+    result += '> 此文件由 [读档] 自动加载到 AI 上下文中。\n\n'
+    result += '\n\n---\n\n'.join(custom_sections)
+    result += '\n'
+    with open(r'$CUSTOM_RULES', 'w', encoding='utf-8') as f:
+        f.write(result)
+    print(f'EXTRACTED:{len(custom_sections)}')
+else:
+    print('NO_CUSTOM')
+"@ 2>&1
+
+            if (Test-Path $CUSTOM_RULES) {
+                Write-Ok "Extracted custom rules -> .ai-operation\rules.d\project_custom.md"
+                $migratedItems += "custom_rules"
+            } else {
+                Write-Info "No custom rules found in old CLAUDE.md"
+            }
+        } else {
+            Write-Info "No old CLAUDE.md to extract rules from"
+        }
+
+        # ── Migration Summary ──────────────────────────────────────────────────
+        Write-Host ""
+        if ($migratedItems.Count -gt 0) {
+            Write-Host "+==================================================+" -ForegroundColor Green
+            Write-Host "|   Migration complete!                             |" -ForegroundColor Green
+            Write-Host "+==================================================+" -ForegroundColor Green
+            Write-Host ""
+            Write-Host "Migrated:" -ForegroundColor Yellow
+            foreach ($item in $migratedItems) {
+                Write-Host "    - $item"
+            }
+            Write-Host ""
+            Write-Host "Backup:  .ai-operation\migrate_backup\" -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "Review checklist:" -ForegroundColor White
+            Write-Host "  1. Check .ai-operation\docs\project_map\ — data migrated correctly?"
+            if (Test-Path $CUSTOM_RULES) {
+                Write-Host "  2. Check .ai-operation\rules.d\project_custom.md — custom rules complete?"
+            }
+            Write-Host "  3. Run [初始化项目] with Phase 3.5 audit to verify"
+            Write-Host "  4. Old docs\project_map\ can be deleted after verification"
+        } else {
+            Write-Host "+==================================================+" -ForegroundColor Green
+            Write-Host "|   Update complete! (nothing to migrate)           |" -ForegroundColor Green
+            Write-Host "+==================================================+" -ForegroundColor Green
+        }
+        Write-Host ""
+        Write-Host "Restart your IDE to reload MCP servers." -ForegroundColor White
+        Write-Host ""
+        exit 0
     }
 
     Write-Host ""
