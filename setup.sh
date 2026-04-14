@@ -140,13 +140,41 @@ if [ "$UPDATE_MODE" = true ]; then
         fi
     done
 
-    # Update rule files
-    for rf in .clinerules CLAUDE.md .cursorrules .windsurfrules; do
+    # Update rule files (NOT .mcp.json — handled separately below)
+    for rf in .clinerules CLAUDE.md .cursorrules .windsurfrules .gitignore; do
         if [ -f "$TMP_DIR/$rf" ]; then
             cp "$TMP_DIR/$rf" "$SCRIPT_DIR/$rf"
             print_ok "Updated $rf"
         fi
     done
+
+    # Smart-merge .mcp.json: keep user's Python path, update alwaysAllow from upstream
+    if [ -f "$TMP_DIR/.mcp.json" ] && [ -f "$SCRIPT_DIR/.mcp.json" ]; then
+        "$PYTHON_CMD" -c "
+import json, sys
+# Read both files
+with open('$SCRIPT_DIR/.mcp.json', encoding='utf-8') as f:
+    local = json.load(f)
+with open('$TMP_DIR/.mcp.json', encoding='utf-8') as f:
+    upstream = json.load(f)
+# Preserve user's Python path
+local_cmd = local.get('mcpServers',{}).get('project_architect',{}).get('command','')
+if local_cmd and local_cmd != 'REPLACE_WITH_YOUR_VENV_PYTHON_PATH':
+    upstream['mcpServers']['project_architect']['command'] = local_cmd
+else:
+    # Try to auto-detect venv Python
+    import os
+    for p in ['$SCRIPT_DIR/.ai-operation/venv/Scripts/python.exe',
+              '$SCRIPT_DIR/.ai-operation/venv/bin/python3']:
+        if os.path.exists(p):
+            upstream['mcpServers']['project_architect']['command'] = p
+            break
+with open('$SCRIPT_DIR/.mcp.json', 'w', encoding='utf-8') as f:
+    json.dump(upstream, f, indent=2, ensure_ascii=False)
+print('OK')
+" && print_ok "Smart-merged .mcp.json (kept Python path, updated alwaysAllow)" \
+        || { cp "$TMP_DIR/.mcp.json" "$SCRIPT_DIR/.mcp.json"; print_warn ".mcp.json replaced (smart merge failed)"; }
+    fi
 
     # Update setup scripts
     cp "$TMP_DIR/setup.sh" "$SCRIPT_DIR/setup.sh"
@@ -165,6 +193,42 @@ if [ "$UPDATE_MODE" = true ]; then
             fi
         done
         print_ok "Updated Claude Code hooks"
+        # Create settings.json if missing (don't overwrite user customizations)
+        if [ ! -f "$CLAUDE_DIR/settings.json" ]; then
+            cp "$CLAUDE_HOOKS_SRC/settings.json" "$CLAUDE_DIR/settings.json"
+            print_ok "Created Claude Code settings.json"
+        fi
+    fi
+
+    # Create .session_confirmed so cognitive gate doesn't lock out the user
+    SESSION_FLAG="$SCRIPT_DIR/.ai-operation/.session_confirmed"
+    if [ ! -f "$SESSION_FLAG" ]; then
+        echo "0" > "$SESSION_FLAG"
+        print_ok "Created session flag (cognitive gate unblocked)"
+    fi
+
+    # Add SESSION_KEY to corrections.md if missing (required by new cognitive gate)
+    CORRECTIONS="$SCRIPT_DIR/.ai-operation/docs/project_map/corrections.md"
+    if [ -f "$CORRECTIONS" ]; then
+        if ! grep -q "SESSION_KEY:" "$CORRECTIONS"; then
+            echo "" >> "$CORRECTIONS"
+            echo "SESSION_KEY: init000" >> "$CORRECTIONS"
+            print_ok "Added SESSION_KEY to corrections.md"
+        fi
+    fi
+
+    # Migrate: add new template files to project_map if missing
+    TEMPLATES_DIR="$SCRIPT_DIR/.ai-operation/docs/templates/project_map"
+    PROJECT_MAP_DIR="$SCRIPT_DIR/.ai-operation/docs/project_map"
+    if [ -d "$TEMPLATES_DIR" ] && [ -d "$PROJECT_MAP_DIR" ]; then
+        for tmpl in "$TEMPLATES_DIR"/*.md; do
+            fname=$(basename "$tmpl")
+            target="$PROJECT_MAP_DIR/$fname"
+            if [ ! -f "$target" ]; then
+                cp "$tmpl" "$target"
+                print_ok "Migrated new template: $fname"
+            fi
+        done
     fi
 
     # Rebuild venv if missing

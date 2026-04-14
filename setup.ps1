@@ -146,14 +146,40 @@ if ($Update) {
             }
         }
 
-        # Update rule files
-        $ruleFiles = @(".clinerules", "CLAUDE.md", ".cursorrules", ".windsurfrules")
+        # Update rule files (NOT .mcp.json — handled separately below)
+        $ruleFiles = @(".clinerules", "CLAUDE.md", ".cursorrules", ".windsurfrules", ".gitignore")
         foreach ($rf in $ruleFiles) {
             $src = Join-Path $TMP_DIR $rf
             $dst = Join-Path $INSTALL_DIR $rf
             if (Test-Path $src) {
                 Copy-Item $src $dst -Force
                 Write-Ok "Updated $rf"
+            }
+        }
+
+        # Smart-merge .mcp.json: keep user's Python path, update alwaysAllow from upstream
+        $mcpSrc = Join-Path $TMP_DIR ".mcp.json"
+        $mcpDst = Join-Path $INSTALL_DIR ".mcp.json"
+        if ((Test-Path $mcpSrc) -and (Test-Path $mcpDst)) {
+            try {
+                $localMcp = Get-Content $mcpDst -Raw -Encoding UTF8 | ConvertFrom-Json
+                $upstreamMcp = Get-Content $mcpSrc -Raw -Encoding UTF8 | ConvertFrom-Json
+                # Preserve user's Python path
+                $localCmd = $localMcp.mcpServers.project_architect.command
+                if ($localCmd -and $localCmd -ne "REPLACE_WITH_YOUR_VENV_PYTHON_PATH") {
+                    $upstreamMcp.mcpServers.project_architect.command = $localCmd
+                } else {
+                    # Auto-detect venv Python
+                    $venvPy = Join-Path $INSTALL_DIR ".ai-operation\venv\Scripts\python.exe"
+                    if (Test-Path $venvPy) {
+                        $upstreamMcp.mcpServers.project_architect.command = $venvPy.Replace("\", "/")
+                    }
+                }
+                $upstreamMcp | ConvertTo-Json -Depth 10 | Set-Content $mcpDst -Encoding UTF8 -NoNewline
+                Write-Ok "Smart-merged .mcp.json (kept Python path, updated alwaysAllow)"
+            } catch {
+                Copy-Item $mcpSrc $mcpDst -Force
+                Write-Warn ".mcp.json replaced (smart merge failed)"
             }
         }
 
@@ -178,6 +204,42 @@ if ($Update) {
             if (Test-Path $src) { Copy-Item $src $dst -Force }
         }
         Write-Ok "Updated Claude Code hooks"
+        # Create settings.json if missing
+        $settingsPath = Join-Path $CLAUDE_DIR "settings.json"
+        if (-not (Test-Path $settingsPath)) {
+            Copy-Item (Join-Path $CLAUDE_HOOKS_SRC "settings.json") $settingsPath -Force
+            Write-Ok "Created Claude Code settings.json"
+        }
+    }
+
+    # Create .session_confirmed so cognitive gate doesn't lock out the user
+    $sessionFlag = Join-Path $INSTALL_DIR ".ai-operation\.session_confirmed"
+    if (-not (Test-Path $sessionFlag)) {
+        Set-Content $sessionFlag "0" -NoNewline
+        Write-Ok "Created session flag (cognitive gate unblocked)"
+    }
+
+    # Add SESSION_KEY to corrections.md if missing (required by cognitive gate)
+    $corrections = Join-Path $INSTALL_DIR ".ai-operation\docs\project_map\corrections.md"
+    if (Test-Path $corrections) {
+        $corrContent = Get-Content $corrections -Raw -Encoding UTF8
+        if ($corrContent -notmatch "SESSION_KEY:") {
+            Add-Content $corrections "`n`nSESSION_KEY: init000" -Encoding UTF8
+            Write-Ok "Added SESSION_KEY to corrections.md"
+        }
+    }
+
+    # Migrate: add new template files to project_map if missing
+    $TEMPLATES_DIR = Join-Path $INSTALL_DIR ".ai-operation\docs\templates\project_map"
+    $PROJECT_MAP_DIR = Join-Path $INSTALL_DIR ".ai-operation\docs\project_map"
+    if ((Test-Path $TEMPLATES_DIR) -and (Test-Path $PROJECT_MAP_DIR)) {
+        Get-ChildItem "$TEMPLATES_DIR\*.md" | ForEach-Object {
+            $target = Join-Path $PROJECT_MAP_DIR $_.Name
+            if (-not (Test-Path $target)) {
+                Copy-Item $_.FullName $target -Force
+                Write-Ok "Migrated new template: $($_.Name)"
+            }
+        }
     }
 
     # Rebuild venv if missing

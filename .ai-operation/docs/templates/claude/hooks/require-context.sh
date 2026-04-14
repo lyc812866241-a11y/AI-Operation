@@ -27,10 +27,20 @@ if echo "$TOOL_NAME" | grep -q "^mcp__\|^aio__"; then
     exit 0
 fi
 
-# Check if session has been confirmed
-if [ ! -f "$FLAG_FILE" ]; then
-    echo "BLOCKED: Context not loaded. Read corrections.md and call aio__confirm_read(session_key=...) first." >&2
-    exit 2
+# Bootstrap exception: if corrections.md has no SESSION_KEY, the cognitive gate
+# hasn't been initialized yet (fresh install or manual upgrade). Allow operations
+# so [初始化项目] or [存档] can run and set up the key. Once SESSION_KEY exists,
+# the gate is fully enforced.
+CORRECTIONS=".ai-operation/docs/project_map/corrections.md"
+if [ -f "$CORRECTIONS" ] && grep -q "SESSION_KEY:" "$CORRECTIONS"; then
+    # Gate is initialized — enforce it
+    if [ ! -f "$FLAG_FILE" ]; then
+        echo "BLOCKED: Context not loaded. Read corrections.md and call aio__confirm_read(session_key=...) first." >&2
+        exit 2
+    fi
+else
+    # Gate not initialized — allow operations (bootstrap mode)
+    exit 0
 fi
 
 # Check operation counter
