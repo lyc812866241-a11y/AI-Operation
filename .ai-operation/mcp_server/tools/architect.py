@@ -17,6 +17,7 @@ This file is the thin entry point. Tool implementations are split across:
   - inventory.py: aio__inventory_append, aio__inventory_consolidate
   - cleanup.py: aio__force_garbage_collection
   - audit.py: aio__audit_project_map
+  - scan.py: aio__scan_codebase
 """
 
 from mcp.server.fastmcp import FastMCP
@@ -30,6 +31,7 @@ from .cognitive_gate import register_cognitive_gate_tools
 from .skillify import register_skillify_tools
 from .bypass import register_bypass_tools
 from .audit import register_audit_tools
+from .scan import register_scan_tools
 
 
 def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
@@ -56,3 +58,4 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
     register_skillify_tools(mcp, _audit, _loop_guard)
     register_bypass_tools(mcp, _audit, _loop_guard)
     register_audit_tools(mcp, _audit, _loop_guard)
+    register_scan_tools(mcp, _audit, _loop_guard)

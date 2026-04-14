@@ -53,82 +53,46 @@ tools: ["Bash", "Read", "Grep", "Write"]
 
 **每个阶段必须完成后才能进入下一阶段。在每个阶段结束时向用户汇报发现，等待确认后再继续。**
 
-### Phase 0：定焦（Scope）
+### Phase 1：代码库扫描（Scan）
 
-**目标：确定扫描范围，避免大项目撑爆上下文。**
+**目标：用一次 MCP 工具调用获取完整代码库结构。**
 
-向用户提问：
-
-```
-项目根目录下有哪些子目录？核心源代码在哪个目录下？
-（例如：src/、agent_core/、app/、lib/）
-如果整个根目录就是源代码，回答"根目录"即可。
-```
-
-根据回答设定 `SCAN_ROOT`（后续所有扫描命令都限定在此范围内）。
+**Step 1 — 定焦**：先看顶层目录，确定核心代码的子目录：
 
 ```bash
-# 先看顶层结构（仅 1 层），帮助用户定焦
 ls -d */ 2>/dev/null | head -20
 ```
 
-**Phase 0 完成标准**：确定 `SCAN_ROOT` 路径（如 `6_核心代码库_AgentEngine/agent_core`）。
+问用户："核心代码在哪个子目录下？"（如 `src/`、`agent_core/`）。如果根目录就是代码，scope 留空。
 
----
+**Step 2 — 调用扫描工具**：
 
-### Phase 1：代码库地形侦察（Reconnaissance）
-
-**目标：在不做任何判断的情况下，摸清 SCAN_ROOT 内的物理结构。**
-
-> **⚠️ 所有扫描命令必须限定在 SCAN_ROOT 内，并加 `| head` 防止输出爆炸。**
-
-按顺序执行以下扫描命令，并将结果保存在工作记忆中：
-
-```bash
-# 1. 目录结构（限 SCAN_ROOT，最多 3 层，限 100 行）
-find $SCAN_ROOT -maxdepth 3 -not -path '*/.git/*' -not -path '*/node_modules/*' \
-  -not -path '*/__pycache__/*' -not -path '*/.venv/*' | sort | head -100
-
-# 2. 依赖文件（项目根 + SCAN_ROOT）
-ls requirements.txt pyproject.toml package.json Cargo.toml go.mod pom.xml 2>/dev/null
-ls $SCAN_ROOT/requirements.txt $SCAN_ROOT/pyproject.toml 2>/dev/null
-
-# 3. 配置文件
-ls .env .env.example docker-compose.yml Dockerfile 2>/dev/null
-ls $SCAN_ROOT/.env $SCAN_ROOT/docker-compose.yml 2>/dev/null
-
-# 4. 入口文件
-find $SCAN_ROOT -maxdepth 2 \( -name "main.py" -o -name "app.py" -o -name "index.js" \
-  -o -name "server.js" -o -name "manage.py" -o -name "cli.py" \) 2>/dev/null
-
-# 5. Git 近期提交
-git log --oneline -15 2>/dev/null || echo "非 Git 仓库"
-
-# 6. 文档（限 15 个）
-find $SCAN_ROOT -name "*.md" -not -path '*/.git/*' | head -15
-
-# 7. 代码文件统计（不读内容，只计数 — 判断项目规模）
-echo "=== 代码文件统计 ==="
-find $SCAN_ROOT -name "*.py" -not -path '*/__pycache__/*' | wc -l | xargs echo "Python:"
-find $SCAN_ROOT \( -name "*.js" -o -name "*.ts" \) -not -path '*/node_modules/*' | wc -l | xargs echo "JS/TS:"
-
-# 8. 代码压缩地图（限定 SCAN_ROOT，大项目必须依赖此输出）
-npx repomix --compress --include "$SCAN_ROOT/**" --output repomix-map.xml 2>/dev/null \
-  && echo "--- repomix 地图已生成 ---" \
-  || echo "--- 未安装 npx，跳过 ---"
+```
+调用 MCP 工具: aio__scan_codebase
+参数:
+  project_root = [项目根目录的绝对路径]
+  scope = [用户指定的子目录，或留空扫描全部]
 ```
 
-**Phase 1 完成标准**：能回答"SCAN_ROOT 下有多少文件、什么技术栈、入口在哪"。
+该工具自动完成：遍历文件树 → 读每个文件前 60 行 → 提取 class/def/import 签名 → 分类（entry/module/config/test）→ 返回结构化摘要（< 12KB）。**无需 repomix/npx 等外部依赖。**
 
-> **⚠️ 规模判断**：如果代码文件 > 100 个，Phase 2 **必须依赖 repomix 输出**而非逐一读取文件。没有 repomix 时用 `grep -r` 提取签名，禁止逐文件 `cat`。
+**Step 3 — 补充上下文**（可选）：
+
+```bash
+git log --oneline -15 2>/dev/null                  # 近期提交
+ls requirements.txt pyproject.toml package.json 2>/dev/null  # 依赖文件
+ls .env docker-compose.yml Dockerfile 2>/dev/null   # 配置文件
+```
+
+**Phase 1 完成标准**：aio__scan_codebase 返回成功，得到文件清单 + 签名摘要。
 
 ---
 
-### Phase 2：并行深度扫描（Parallel Deep Scan）
+### Phase 2：深度分析（Deep Analysis）
 
-**目标：用 5 个并行子任务同时扫描代码库的不同维度，获得完整的系统认知。初始化是一次性操作，允许消耗更多 token，不得偷懒跳过任何子任务。**
+**目标：基于 Phase 1 的扫描摘要，针对性地深读关键文件，完成系统认知。**
 
-> **⚠️ 执行方式**：以下 5 个子任务必须**全部完成**，不得跳过。每个子任务完成后在工作记忆中记录结论，最后统一汇总。
+> **注意**：Phase 1 的 aio__scan_codebase 已经完成了文件清单 + 签名提取（旧 T1 + T3）。Phase 2 只需要做 aio__scan_codebase 无法自动完成的分析：入口追踪、数据结构提取、约束挖掘。
 
 ---
 
@@ -144,47 +108,24 @@ npx repomix --compress --include "$SCAN_ROOT/**" --output repomix-map.xml 2>/dev
 
 ---
 
-**T1 — 结构扫描（Structure Map）**
+**T1 — 入口追踪（Entry Trace）**
 
-**首选**：读取 `repomix-map.xml`（Phase 1 已生成）— 它是压缩后的全局签名，比逐文件读取高效 10 倍。
-**次选**：如果没有 repomix，读 README.md + 顶层目录结构 + `grep -r "^def \|^class " $SCAN_ROOT --include="*.py" | head -80`。
-**禁止**：逐一 `cat` 每个文件。
-
-目标：建立模块清单和物理位置映射。
+从 Phase 1 扫描结果中的 **Entry Points** 出发，读入口文件全文（通常 1-3 个），追踪 `import` 链找到核心模块的调用关系。
+目标：弄清数据从哪进、经过哪些单元、从哪出。
 
 ---
 
-**T2 — 入口追踪（Entry Trace）**
+**T2 — 数据结构提取（Schema Extraction）**
 
-从 Phase 1 找到的入口文件出发，**读入口文件本身**（通常 1-3 个），追踪 `import` 语句找到核心模块。
-目标：弄清数据从哪进、经过哪些单元、从哪出。**只读入口文件和它直接 import 的模块**，不递归展开。
-
----
-
-**T3 — 单元深读（Unit Deep Read）**
-
-> **预算限制**：最多读 **30 个文件**。超过此数的项目必须依赖 repomix 签名 + 抽样读取。
-
-对 T1 识别的每个核心模块，**只读文件头部**（前 50 行足够提取签名）。记录：
-- 函数/类签名（`def xxx` / `class Xxx`）
-- 外部依赖（`import`、API 调用）
-- 完成状态（`pass` / `raise NotImplementedError` = 未完成）
-
-**优先级**：先读 T2 发现的直接依赖，再补充剩余模块。
-
----
-
-**T4 — 数据结构提取（Schema Extraction）**
-
-在 SCAN_ROOT 内搜索（不是整个代码库）：
+搜索扫描范围内的核心数据结构：
 ```bash
-grep -r "@dataclass\|TypedDict\|BaseModel\|class.*Schema" $SCAN_ROOT --include="*.py" -l 2>/dev/null | head -15
+grep -r "@dataclass\|TypedDict\|BaseModel\|class.*Schema" --include="*.py" -l 2>/dev/null | head -15
 ```
 只读 grep 命中的文件，提取跨模块传递的数据结构字段定义。
 
 ---
 
-**T5 — 约束挖掘（Constraint Mining）**
+**T3 — 约束挖掘（Constraint Mining）**
 
 在 SCAN_ROOT 内搜索硬性约束和已知坑点：
 ```bash
@@ -196,7 +137,7 @@ grep -r "TODO\|FIXME\|HACK\|assert\|raise.*Error" $SCAN_ROOT --include="*.py" -n
 
 **综合定性（强制步骤，不可跳过）**
 
-5 个子任务完成后，**必须先输出以下定性声明，再进入 Phase 3**：
+Phase 1 扫描 + Phase 2 分析完成后，**必须先输出以下定性声明，再进入 Phase 3**：
 
 ```
 【系统定性】
@@ -215,9 +156,9 @@ grep -r "TODO\|FIXME\|HACK\|assert\|raise.*Error" $SCAN_ROOT --include="*.py" -n
 [第3句：最终输出是什么]
 ```
 
-**如果以上任何一项需要填写 [待确认]，说明对应子任务阅读不充分，必须回去补读再输出。**
+**如果以上任何一项需要填写 [待确认]，说明分析不充分，必须回去补读相关文件再输出。**
 
-**Phase 2 完成标准**：能输出完整的【系统定性】声明，且【已完成单元清单】中无遗漏（与 T3 扫描结果一致）。
+**Phase 2 完成标准**：能输出完整的【系统定性】声明，且【已完成单元清单】与 Phase 1 扫描结果一致。
 
 ---
 
