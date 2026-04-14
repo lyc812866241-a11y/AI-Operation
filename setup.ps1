@@ -22,7 +22,8 @@
 
 param(
     [switch]$Update,   # Update mode: only overwrite framework code, preserve local products
-    [switch]$Migrate   # Migrate mode: update + migrate old project data (paths, rules, corrections)
+    [switch]$Migrate,  # Migrate mode: update + migrate old project data (paths, rules, corrections)
+    [switch]$Check     # Check mode: verify installation health, no modifications
 )
 
 # Migrate implies Update
@@ -39,7 +40,11 @@ function Write-Info($msg)  { Write-Host "  $msg" }
 
 # -- Banner --
 Write-Host ""
-if ($Update) {
+if ($Check) {
+    Write-Host "+==================================================+" -ForegroundColor Cyan
+    Write-Host "|     Vibe Coding Agent Framework - CHECK           |" -ForegroundColor Cyan
+    Write-Host "+==================================================+" -ForegroundColor Cyan
+} elseif ($Update) {
     Write-Host "+==================================================+" -ForegroundColor Cyan
     Write-Host "|     Vibe Coding Agent Framework - UPDATE          |" -ForegroundColor Cyan
     Write-Host "+==================================================+" -ForegroundColor Cyan
@@ -49,6 +54,108 @@ if ($Update) {
     Write-Host "+==================================================+" -ForegroundColor White
 }
 Write-Host ""
+
+# ── CHECK MODE ─────────────────────────────────────────────────────────────
+if ($Check) {
+    $pass = 0; $fail = 0; $warn = 0
+    function Check-Pass($msg) { $script:pass++; Write-Ok $msg }
+    function Check-Fail($msg) { $script:fail++; Write-Err $msg }
+    function Check-Warn($msg) { $script:warn++; Write-Warn $msg }
+
+    # 1. Framework structure
+    Write-Step "1. Framework structure"
+    if (Test-Path ".ai-operation") { Check-Pass ".ai-operation/ exists" } else { Check-Fail ".ai-operation/ missing" }
+    if (Test-Path ".ai-operation\mcp_server") { Check-Pass "MCP server code" } else { Check-Fail "MCP server missing" }
+    if (Test-Path ".ai-operation\skills") { Check-Pass "Skills directory" } else { Check-Fail "Skills missing" }
+
+    # 2. Python & venv
+    Write-Step "2. Python & venv"
+    $venvPy = Join-Path (Get-Location) ".ai-operation\venv\Scripts\python.exe"
+    if (Test-Path $venvPy) {
+        Check-Pass "venv Python found"
+        $depCheck = & $venvPy -c "import mcp; import fastmcp; print('OK')" 2>&1
+        if ($depCheck -match "OK") { Check-Pass "MCP dependencies installed" }
+        else { Check-Fail "MCP dependencies missing" }
+    } else {
+        Check-Fail "venv not found"
+        $venvPy = $null
+    }
+
+    # 3. MCP tools
+    Write-Step "3. MCP tools"
+    if ($venvPy) {
+        $mcpDir = Join-Path (Get-Location) ".ai-operation\mcp_server"
+        $toolCount = & $venvPy -c @"
+import sys
+sys.path.insert(0, r'$mcpDir')
+from tools.architect import register_architect_tools
+from mcp.server.fastmcp import FastMCP
+mcp = FastMCP('test')
+register_architect_tools(mcp)
+print(len(mcp._tools))
+"@ 2>&1
+        if ($toolCount -match '^\d+$' -and [int]$toolCount -gt 0) {
+            Check-Pass "MCP server OK - $toolCount tools registered"
+        } else {
+            Check-Fail "MCP server failed to load"
+        }
+    }
+
+    # 4. IDE configs
+    Write-Step "4. IDE configs"
+    if (Test-Path ".mcp.json") { Check-Pass ".mcp.json" } else { Check-Fail ".mcp.json missing" }
+    if (Test-Path ".clinerules") { Check-Pass ".clinerules" } else { Check-Warn ".clinerules missing" }
+    if (Test-Path "CLAUDE.md") { Check-Pass "CLAUDE.md" } else { Check-Warn "CLAUDE.md missing" }
+    if (Test-Path ".mcp.json") {
+        if ((Get-Content ".mcp.json" -Raw) -match "REPLACE_WITH_YOUR_VENV_PYTHON_PATH") {
+            Check-Fail ".mcp.json has unresolved Python path placeholder"
+        } else {
+            Check-Pass ".mcp.json Python path configured"
+        }
+    }
+
+    # 5. Claude Code hooks
+    Write-Step "5. Claude Code hooks"
+    if (Test-Path ".claude\hooks") { Check-Pass ".claude\hooks\ exists" } else { Check-Warn ".claude\hooks\ missing" }
+    if (Test-Path ".claude\hooks\require-context.sh") { Check-Pass "Cognitive gate hook" } else { Check-Warn "Cognitive gate hook missing" }
+    if (Test-Path ".claude\settings.json") { Check-Pass "Claude settings.json" } else { Check-Warn "Claude settings.json missing" }
+
+    # 6. Project map
+    Write-Step "6. Project map"
+    $pmDir = ".ai-operation\docs\project_map"
+    if (Test-Path $pmDir) { Check-Pass "project_map\ exists" } else { Check-Fail "project_map\ missing" }
+    $pmFiles = 0; $pmFilled = 0
+    foreach ($f in @("projectbrief","systemPatterns","techContext","conventions","activeContext","progress","corrections","inventory")) {
+        $pf = Join-Path $pmDir "$f.md"
+        if (Test-Path $pf) {
+            $pmFiles++
+            $content = Get-Content $pf -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+            $placeholders = ([regex]::Matches($content, '待填写')).Count
+            if ($placeholders -lt 3) { $pmFilled++ }
+        }
+    }
+    if ($pmFiles -eq 8) { Check-Pass "All 8 project_map files present" }
+    else { Check-Fail "Only $pmFiles/8 project_map files found" }
+    if ($pmFilled -ge 5) { Check-Pass "$pmFilled/8 files have content" }
+    else { Check-Warn "Only $pmFilled/8 files filled - run [初始化项目]" }
+
+    # Summary
+    Write-Host ""
+    if ($fail -eq 0) {
+        Write-Host "+==================================================+" -ForegroundColor Green
+        Write-Host "|   All checks passed!  ($pass pass, $warn warn)            |" -ForegroundColor Green
+        Write-Host "+==================================================+" -ForegroundColor Green
+    } else {
+        Write-Host "+==================================================+" -ForegroundColor Red
+        Write-Host "|   Issues found: $fail fail, $warn warn, $pass pass            |" -ForegroundColor Red
+        Write-Host "+==================================================+" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "  Run: .\setup.ps1 -Update    to fix framework issues" -ForegroundColor Yellow
+        Write-Host "  Run: .\setup.ps1 -Migrate   if upgrading from older version" -ForegroundColor Yellow
+    }
+    Write-Host ""
+    exit $fail
+}
 
 $REPO_URL = "https://github.com/lyc812866241-a11y/AI-Operation.git"
 $INSTALL_DIR = Get-Location
@@ -355,7 +462,7 @@ This directory can be safely deleted.
             Write-Info "Recovered old CLAUDE.md from git history ($($oldClaudeMd.Split("`n").Count) lines)"
 
             # Extract custom sections using Python
-            $extractResult = & $VENV_PYTHON -c @"
+            & $VENV_PYTHON -c @"
 import sys, re
 
 with open(r'$oldClaudeBak', encoding='utf-8', errors='ignore') as f:

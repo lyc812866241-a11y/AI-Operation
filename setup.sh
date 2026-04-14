@@ -23,11 +23,14 @@ set -e
 # ── Parse arguments ─────────────────────────────────────────────────────────
 UPDATE_MODE=false
 MIGRATE_MODE=false
+CHECK_MODE=false
 if [ "$1" = "--update" ] || [ "$1" = "-u" ]; then
     UPDATE_MODE=true
 elif [ "$1" = "--migrate" ] || [ "$1" = "-m" ]; then
     MIGRATE_MODE=true
     UPDATE_MODE=true  # migrate implies update
+elif [ "$1" = "--check" ] || [ "$1" = "-c" ]; then
+    CHECK_MODE=true
 fi
 
 # Framework code directories — overwritten on update
@@ -49,7 +52,11 @@ print_info()  { echo -e "  ${NC}$1${NC}"; }
 
 # ── Banner ────────────────────────────────────────────────────────────────────
 echo ""
-if [ "$UPDATE_MODE" = true ]; then
+if [ "$CHECK_MODE" = true ]; then
+    echo -e "${BLUE}${BOLD}╔══════════════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}${BOLD}║     Vibe Coding Agent Framework — CHECK          ║${NC}"
+    echo -e "${BLUE}${BOLD}╚══════════════════════════════════════════════════╝${NC}"
+elif [ "$UPDATE_MODE" = true ]; then
     echo -e "${BLUE}${BOLD}╔══════════════════════════════════════════════════╗${NC}"
     echo -e "${BLUE}${BOLD}║     Vibe Coding Agent Framework — UPDATE         ║${NC}"
     echo -e "${BLUE}${BOLD}╚══════════════════════════════════════════════════╝${NC}"
@@ -59,6 +66,124 @@ else
     echo -e "${BOLD}╚══════════════════════════════════════════════════╝${NC}"
 fi
 echo ""
+
+# ── CHECK MODE ──────────────────────────────────────────────────────────────
+if [ "$CHECK_MODE" = true ]; then
+    PASS=0
+    FAIL=0
+    WARN=0
+
+    check_pass() { PASS=$((PASS + 1)); print_ok "$1"; }
+    check_fail() { FAIL=$((FAIL + 1)); print_error "$1"; }
+    check_warn() { WARN=$((WARN + 1)); print_warn "$1"; }
+
+    # 1. Framework directory
+    print_step "1. Framework structure"
+    [ -d ".ai-operation" ] && check_pass ".ai-operation/ exists" || check_fail ".ai-operation/ missing"
+    [ -d ".ai-operation/mcp_server" ] && check_pass "MCP server code" || check_fail "MCP server missing"
+    [ -d ".ai-operation/skills" ] && check_pass "Skills directory" || check_fail "Skills missing"
+    [ -d ".ai-operation/hooks" ] && check_pass "Git hooks" || check_fail "Hooks missing"
+
+    # 2. Python & venv
+    print_step "2. Python & venv"
+    if [ -f ".ai-operation/venv/Scripts/python.exe" ]; then
+        VENV_PY=".ai-operation/venv/Scripts/python.exe"
+        check_pass "venv Python: $VENV_PY"
+    elif [ -f ".ai-operation/venv/bin/python3" ]; then
+        VENV_PY=".ai-operation/venv/bin/python3"
+        check_pass "venv Python: $VENV_PY"
+    else
+        VENV_PY=""
+        check_fail "venv not found"
+    fi
+
+    if [ -n "$VENV_PY" ]; then
+        "$VENV_PY" -c "import mcp; import fastmcp" 2>/dev/null \
+            && check_pass "MCP dependencies installed" \
+            || check_fail "MCP dependencies missing (run: pip install 'mcp[cli]' fastmcp)"
+    fi
+
+    # 3. MCP server & tools
+    print_step "3. MCP tools"
+    if [ -n "$VENV_PY" ]; then
+        TOOL_COUNT=$("$VENV_PY" -c "
+import sys; sys.path.insert(0, '.ai-operation/mcp_server')
+from tools.architect import register_architect_tools
+from mcp.server.fastmcp import FastMCP
+mcp = FastMCP('test'); register_architect_tools(mcp)
+print(len(mcp._tools))
+" 2>&1 || echo "ERR")
+        if echo "$TOOL_COUNT" | grep -q '^[0-9]\+$' && [ "$TOOL_COUNT" -gt 0 ]; then
+            check_pass "MCP server OK — $TOOL_COUNT tools registered"
+        else
+            check_fail "MCP server failed to load"
+        fi
+    fi
+
+    # 4. IDE configs
+    print_step "4. IDE configs"
+    [ -f ".mcp.json" ] && check_pass ".mcp.json" || check_fail ".mcp.json missing"
+    [ -f ".clinerules" ] && check_pass ".clinerules" || check_warn ".clinerules missing"
+    [ -f "CLAUDE.md" ] && check_pass "CLAUDE.md" || check_warn "CLAUDE.md missing"
+
+    if [ -f ".mcp.json" ]; then
+        if grep -q "REPLACE_WITH_YOUR_VENV_PYTHON_PATH" .mcp.json; then
+            check_fail ".mcp.json has unresolved Python path placeholder"
+        else
+            check_pass ".mcp.json Python path configured"
+        fi
+    fi
+
+    # 5. Claude Code hooks
+    print_step "5. Claude Code hooks"
+    [ -d ".claude/hooks" ] && check_pass ".claude/hooks/ exists" || check_warn ".claude/hooks/ missing"
+    [ -f ".claude/hooks/require-context.sh" ] && check_pass "Cognitive gate hook" || check_warn "Cognitive gate hook missing"
+    [ -f ".claude/settings.json" ] && check_pass "Claude settings.json" || check_warn "Claude settings.json missing"
+
+    # 6. Project map
+    print_step "6. Project map"
+    PM_DIR=".ai-operation/docs/project_map"
+    [ -d "$PM_DIR" ] && check_pass "project_map/ exists" || check_fail "project_map/ missing"
+    PM_FILES=0
+    PM_FILLED=0
+    for f in projectbrief systemPatterns techContext conventions activeContext progress corrections inventory; do
+        pf="$PM_DIR/${f}.md"
+        if [ -f "$pf" ]; then
+            PM_FILES=$((PM_FILES + 1))
+            if ! grep -q '待填写' "$pf" 2>/dev/null || [ "$(grep -c '待填写' "$pf" 2>/dev/null)" -lt 3 ]; then
+                PM_FILLED=$((PM_FILLED + 1))
+            fi
+        fi
+    done
+    if [ "$PM_FILES" -eq 8 ]; then
+        check_pass "All 8 project_map files present"
+    else
+        check_fail "Only $PM_FILES/8 project_map files found"
+    fi
+    if [ "$PM_FILLED" -ge 5 ]; then
+        check_pass "$PM_FILLED/8 files have content (not template)"
+    else
+        check_warn "Only $PM_FILLED/8 files filled — run [初始化项目] to populate"
+    fi
+
+    # Summary
+    echo ""
+    TOTAL=$((PASS + FAIL + WARN))
+    if [ "$FAIL" -eq 0 ]; then
+        echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════════════╗${NC}"
+        echo -e "${GREEN}${BOLD}║   ✅  All checks passed!  ($PASS pass, $WARN warn)        ║${NC}"
+        echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════════╝${NC}"
+    else
+        echo -e "${RED}${BOLD}╔══════════════════════════════════════════════════╗${NC}"
+        echo -e "${RED}${BOLD}║   ❌  Issues found: $FAIL fail, $WARN warn, $PASS pass       ║${NC}"
+        echo -e "${RED}${BOLD}╚══════════════════════════════════════════════════╝${NC}"
+        echo ""
+        echo -e "  Run ${YELLOW}setup.sh --update${NC} to fix framework issues."
+        echo -e "  Run ${YELLOW}setup.sh --migrate${NC} if upgrading from an older version."
+    fi
+    echo ""
+    exit $FAIL
+fi
 
 # ── Determine install target directory ───────────────────────────────────────
 if [ -n "${BASH_SOURCE[0]}" ] && [ "${BASH_SOURCE[0]}" != "/dev/stdin" ] && [ -f "${BASH_SOURCE[0]}" ]; then
