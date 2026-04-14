@@ -43,9 +43,8 @@ CONFIG_NAMES = {
     "pyproject.toml", "package.json", "Cargo.toml", "go.mod",
 }
 
-# Max lines to read per file for signature extraction
-HEADER_LINES = 60
 # No file cap — every code file must appear in output. Completeness is guaranteed.
+# Signatures are extracted from the ENTIRE file (not just header).
 
 
 def _classify_file(path: Path, content_head: str) -> str:
@@ -164,20 +163,12 @@ def _scan_tree(root: Path, scope: str) -> list:
             continue
 
         try:
-            # Read header only
-            with open(p, "r", encoding="utf-8", errors="ignore") as f:
-                lines = []
-                for i, line in enumerate(f):
-                    if i >= HEADER_LINES:
-                        break
-                    lines.append(line)
-                head = "".join(lines)
-
-            total_lines = sum(1 for _ in open(p, "r", encoding="utf-8", errors="ignore"))
+            content = p.read_text(encoding="utf-8", errors="ignore")
+            total_lines = content.count("\n") + 1
             rel_path = str(p.relative_to(root)).replace("\\", "/")
 
-            role = _classify_file(p, head)
-            sigs = _extract_signatures(head, p.suffix)
+            role = _classify_file(p, content)
+            sigs = _extract_signatures(content, p.suffix)
             lang = LANG_MAP.get(p.suffix, p.suffix)
 
             files.append({
