@@ -44,3 +44,17 @@
 | [架构扫描] | `.ai-operation/skills/omm-scan/SKILL.md` |
 | [整理] | `.ai-operation/skills/consolidate/SKILL.md` |
 | 功能开发 | `aio__force_taskspec_submit` → `_approve` → 执行 → [存档] |
+
+## 自定义指南
+
+| 我想… | 去哪改 | 说明 |
+|---|---|---|
+| 加项目开发规则（命名/API/风格） | `.ai-operation/docs/project_map/conventions.md` | AI 写代码前会读这个文件 |
+| 加新的 `[指令]` | `.ai-operation/rules.d/commands.md` | 创建文件，格式见 `rules.d/README.md` |
+| 加模块/目录专属规则 | `.ai-operation/rules.d/{模块名}.md` | 如 `rules.d/api.md`、`rules.d/database.md` |
+| 记录踩坑经验 | 通过 [存档] 自动写入 `corrections.md` | 或手动加到 `.ai-operation/docs/corrections/` |
+| 改框架行为（指令路由/开机自检） | `.clinerules` → 运行 `sync-rules.sh` | 改完需同步到 CLAUDE.md |
+| 加自动化 Skill | `.ai-operation/skills/{名称}/SKILL.md` | 参考已有 skill 的 frontmatter 格式 |
+
+> **不要直接编辑** `CLAUDE.md` / `.cursorrules` / `.windsurfrules` — 它们由 `.clinerules` 自动生成。
+> **rules.d/ 文件会被 [读档] 自动加载**，无需修改任何框架文件。
