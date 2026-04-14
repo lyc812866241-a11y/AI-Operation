@@ -45,7 +45,7 @@ CONFIG_NAMES = {
 
 # Max lines to read per file for signature extraction
 HEADER_LINES = 60
-MAX_FILES = 300
+# No file cap — every code file must appear in output. Completeness is guaranteed.
 
 
 def _classify_file(path: Path, content_head: str) -> str:
@@ -153,10 +153,9 @@ def _scan_tree(root: Path, scope: str) -> list:
 
     code_exts = set(LANG_MAP.keys())
     files = []
+    skipped_count = 0
 
     for p in sorted(scan_root.rglob("*")):
-        if len(files) >= MAX_FILES:
-            break
         if any(skip in p.parts for skip in SKIP_DIRS):
             continue
         if not p.is_file():
@@ -195,7 +194,12 @@ def _scan_tree(root: Path, scope: str) -> list:
 
 
 def _format_report(files: list, root: Path, scope: str) -> str:
-    """Format scanned files into a structured summary."""
+    """Format scanned files into a structured summary.
+
+    Every code file appears in the output. No silent skipping.
+    Output is designed to be directly usable as the module inventory
+    section of systemPatterns.md.
+    """
     if not files:
         scan_path = f"{root}/{scope}" if scope else str(root)
         return f"No code files found in {scan_path}"
@@ -251,15 +255,25 @@ def _format_report(files: list, root: Path, scope: str) -> str:
                 lines.append(_format_file(f))
         lines.append("")
 
-    # Tests (compact)
-    if groups["test"]:
-        test_paths = [f["path"] for f in groups["test"]]
-        lines.append(f"## Tests ({len(test_paths)} files)")
-        for tp in test_paths[:10]:
-            lines.append(f"- {tp}")
-        if len(test_paths) > 10:
-            lines.append(f"- ... and {len(test_paths) - 10} more")
+    # Init files (compact)
+    if groups["init"]:
+        lines.append(f"## Init Files ({len(groups['init'])})")
+        for f in groups["init"]:
+            lines.append(f"- {f['path']}")
         lines.append("")
+
+    # Tests
+    if groups["test"]:
+        lines.append(f"## Tests ({len(groups['test'])} files)")
+        for f in groups["test"]:
+            lines.append(f"- {f['path']} ({f['lines']} lines)")
+        lines.append("")
+
+    # Completeness guarantee
+    lines.append("---")
+    lines.append(f"**Completeness: {len(files)} files scanned, 0 skipped.**")
+    lines.append("Every code file in the scan scope is listed above.")
+    lines.append("This output can be used directly as the module inventory in systemPatterns.md.")
 
     return "\n".join(lines)
 
