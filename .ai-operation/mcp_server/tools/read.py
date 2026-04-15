@@ -181,8 +181,32 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
                     "Fill in project conventions during next [存档] to improve code consistency."
                 )
 
+        # Check 4: systemPatterns missing scan_codebase output (no file tree)
+        if sp_path.exists():
+            sp_text = sp_path.read_text(encoding="utf-8")
+            has_scan = ("## Entry Points" in sp_text or "## Modules" in sp_text
+                        or "Codebase Scan" in sp_text)
+            if not has_scan:
+                quality_warnings.append(
+                    "⚠️ systemPatterns.md has no file tree. Run:\n"
+                    "  aio__scan_codebase(project_root, scope) → update systemPatterns module inventory.\n"
+                    "  This ensures 100% file coverage (no omissions)."
+                )
+
+        # Check 5: conventions.md may contain first-order lessons (misclassified)
+        if conv_path.exists():
+            conv_text = conv_path.read_text(encoding="utf-8")
+            first_order_signals = ["禁止", "不能", "不要", "必须先", "之前出过", "踩过坑"]
+            signal_count = sum(1 for s in first_order_signals if s in conv_text)
+            if signal_count >= 2:
+                quality_warnings.append(
+                    "⚠️ conventions.md may contain first-order lessons (found operational "
+                    "language like '禁止/不能/踩过坑'). conventions.md is for second-order "
+                    "contracts (naming/API/style). Specific lessons belong in corrections/{key}.md."
+                )
+
         if quality_warnings:
-            report.append("\n## 🔍 Data Quality Warnings\n")
+            report.append("\n## Data Quality Warnings\n")
             for w in quality_warnings:
                 report.append(f"  {w}")
 
