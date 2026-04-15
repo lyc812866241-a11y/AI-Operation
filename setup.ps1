@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # Vibe Coding Agent Framework - One-Command Installer (Windows PowerShell)
 # =============================================================================
 #
@@ -130,7 +130,7 @@ print(len(mcp._tools))
         if (Test-Path $pf) {
             $pmFiles++
             $content = Get-Content $pf -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
-            $placeholders = ([regex]::Matches($content, '待填写')).Count
+            $placeholders = ([regex]::Matches($content, 'TODO')).Count
             if ($placeholders -lt 3) { $pmFilled++ }
         }
     }
@@ -268,14 +268,14 @@ if ($Update) {
             }
         }
 
-        # Smart-merge .mcp.json: keep user's Python path, update alwaysAllow from upstream
+        # Smart-merge .mcp.json: keep user Python path, update alwaysAllow from upstream
         $mcpSrc = Join-Path $TMP_DIR ".mcp.json"
         $mcpDst = Join-Path $INSTALL_DIR ".mcp.json"
         if ((Test-Path $mcpSrc) -and (Test-Path $mcpDst)) {
             try {
                 $localMcp = Get-Content $mcpDst -Raw -Encoding UTF8 | ConvertFrom-Json
                 $upstreamMcp = Get-Content $mcpSrc -Raw -Encoding UTF8 | ConvertFrom-Json
-                # Preserve user's Python path
+                # Preserve user Python path
                 $localCmd = $localMcp.mcpServers.project_architect.command
                 if ($localCmd -and $localCmd -ne "REPLACE_WITH_YOUR_VENV_PYTHON_PATH") {
                     $upstreamMcp.mcpServers.project_architect.command = $localCmd
@@ -406,8 +406,8 @@ print('OK')
                     Copy-Item $_.FullName $newFile -Force
                     Write-Ok "Migrated $fname (new)"
                     $migratedItems += $fname
-                } elseif ((Get-Content $newFile -Raw -Encoding UTF8) -match '\[待填写') {
-                    $placeholders = ([regex]::Matches((Get-Content $newFile -Raw -Encoding UTF8), '待填写')).Count
+                } elseif ((Get-Content $newFile -Raw -Encoding UTF8) -match '\[TODO') {
+                    $placeholders = ([regex]::Matches((Get-Content $newFile -Raw -Encoding UTF8), 'TODO')).Count
                     if ($placeholders -ge 3) {
                         Copy-Item $_.FullName $newFile -Force
                         Write-Ok "Migrated $fname (replaced template)"
@@ -617,7 +617,7 @@ if (-not (Test-Path $PROJECT_MAP_DIR)) {
     New-Item -ItemType Directory -Path (Join-Path $PROJECT_MAP_DIR "details") -Force | Out-Null
     if (Test-Path $TEMPLATES_DIR) {
         Copy-Item "$TEMPLATES_DIR\*" $PROJECT_MAP_DIR -Force
-        Write-Ok "project_map initialized with templates (all [待填写])"
+        Write-Ok "project_map initialized with templates (all [TODO])"
     } else {
         Write-Warn "Templates not found at $TEMPLATES_DIR"
     }
