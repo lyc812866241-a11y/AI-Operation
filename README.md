@@ -1,6 +1,6 @@
 # AI-Operation
 
-**AI Agent 行为治理框架 — 不是提示词模板，是物理强制层。**
+**AI Agent Governance Framework — not prompt templates, physical enforcement.**
 
 Most AI coding frameworks tell the AI what to do. AI-Operation makes it **physically impossible** to skip the process.
 
@@ -14,26 +14,30 @@ AI coding agents follow text rules ~85% of the time. The other 15%:
 - **Lose context** — forget everything when the session resets
 - **Repeat mistakes** — hit the same bug three times because nothing was recorded
 - **Claim completion** — say "done" without verification
+- **Fabricate claims** — say "all 42 tools present" when the actual count is 38
 
 Every existing framework addresses this with markdown instructions: "you MUST read all files", "you SHOULD write tests first". The AI reads these instructions... and sometimes ignores them.
 
-**AI-Operation's approach: if the AI didn't read the context, the tools don't work.**
+**AI-Operation's approach: if the AI didn't read the context, the tools don't work. If the AI claims something about the codebase, code verifies it.**
 
 ---
 
-## How It Works: Three Enforcement Layers
+## Architecture: Four Enforcement Layers
 
 ```
-┌─────────────────────────────────────────────┐
-│  Layer 1: Cognitive Gate (PreToolUse Hook)   │  ← AI must prove it read context
-│  SESSION_KEY token + 30-op counter           │     before Edit/Write/Bash work
-├─────────────────────────────────────────────┤
-│  Layer 2: MCP Tool Enforcement (19 tools)   │  ← Hard-coded validation in Python
-│  save, read, taskSpec, bypass, skillify     │     rejects empty/vague/invalid input
-├─────────────────────────────────────────────┤
-│  Layer 3: Git Pre-Commit Hook (3 gates)     │  ← Physical block at commit time
-│  rule sync / map protection / taskSpec gate  │     cannot commit without approval
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│  Layer 1: Cognitive Gate (PreToolUse Hook)       │  ← AI must prove it read context
+│  SESSION_KEY token + 30-op counter               │     before Edit/Write/Bash work
+├─────────────────────────────────────────────────┤
+│  Layer 2: MCP Tool Enforcement (21 tools)       │  ← Hard-coded validation in Python
+│  save, read, scan, audit, taskSpec, bypass      │     rejects empty/vague/invalid input
+├─────────────────────────────────────────────────┤
+│  Layer 3: Programmatic Verification             │  ← Code verifies AI claims
+│  scan_codebase + audit_project_map              │     AI cannot self-validate
+├─────────────────────────────────────────────────┤
+│  Layer 4: Git Pre-Commit Hook (3 gates)         │  ← Physical block at commit time
+│  rule sync / map protection / taskSpec gate      │     cannot commit without approval
+└─────────────────────────────────────────────────┘
 ```
 
 ### Layer 1: Cognitive Gate — "Read before you write"
@@ -48,133 +52,129 @@ Without this, **every file operation is rejected**. Not by a prompt — by a she
 
 After 30 operations, the counter expires and the AI must re-read. This prevents context drift in long sessions.
 
-> No other open-source framework enforces context loading at the tool level. Cline Memory Bank says "MUST read ALL files" — but it's a text instruction the AI can skip. AI-Operation makes skipping impossible.
+**Bootstrap exception**: If `corrections.md` has no `SESSION_KEY` yet (fresh install or upgrade), the gate allows operations so initialization can proceed. Once the first save writes a SESSION_KEY, the gate is fully enforced.
 
 ### Layer 2: MCP Tools — "The AI creates its own shackles"
 
-19 MCP tools with hard-coded Python validation. The AI **must** call these tools to complete operations — and the tools reject invalid input.
+21 MCP tools with hard-coded Python validation. The AI **must** call these tools to complete operations — and the tools reject invalid input.
 
 | Command | Tool | What It Enforces |
 |---|---|---|
-| `[存档]` | `aio__force_architect_save` → `_confirm` | **Two-phase save**: validate all 6 file params + lessons → generate diff preview + self-audit checklist → AI reviews → then commits. Empty lessons rejected. Vague updates rejected. |
-| `[读档]` | `aio__force_architect_read` | 50KB budget management, TOC fallback, orphan reference lint, skill registry, cleanup reminders |
-| Feature dev | `aio__force_taskspec_submit` → `_approve` | 6-field plan required before coding. `dry_run` mode shows PASS/FAIL/BYPASSABLE per rule. User must approve. |
-| Trivial fix | `aio__force_fast_track` | Dynamic threshold based on trust score (LOW: <3 lines, NORMAL: <5, HIGH: <10) |
-| `[初始化项目]` | `aio__force_project_bootstrap_write` | 5-phase codebase scan → draft → user confirm → write. 3 gates (confirmed / no TODOs / dir exists) |
-| Bypass | `aio__bypass_violation` | Single-use bypass with audit trail. 24h rate limit per rule. User must say "bypass/绕过". |
-| Monitor | `aio__rule_monitor` | Toggle rules between observe (log-only) and enforce mode. Safe rule rollout. |
-| Skill extraction | `aio__extract_skill` | Analyze audit.log → auto-generate SKILL.md from workflow patterns |
+| `[save]` | `aio__force_architect_save` | Two-phase save: validate → diff preview → self-audit → confirm. |
+| `[read]` | `aio__force_architect_read` | 50KB budget management, TOC fallback, orphan reference lint. |
+| Feature dev | `aio__force_taskspec_submit` | 6-field plan required before coding. User must approve. |
+| Trivial fix | `aio__force_fast_track` | Dynamic threshold based on trust score. |
+| `[init]` | `aio__force_project_bootstrap_write` | 3 gates: confirmed / no TODOs / dir exists. |
+| Scan | `aio__scan_codebase` | Walk file tree, extract all signatures, classify roles. |
+| Audit | `aio__audit_project_map` | 5 programmatic checks against actual code. |
+| Bypass | `aio__bypass_violation` | Single-use bypass with 24h rate limit + audit trail. |
+| Monitor | `aio__rule_monitor` | Toggle rules between observe and enforce mode. |
+| Skill extraction | `aio__extract_skill` | Auto-generate SKILL.md from audit.log workflow patterns. |
 
-**Supporting mechanisms:**
-- **Audit log**: Every MCP call recorded as JSON to `audit.log`
-- **Loop detection**: Same tool + same args 3x in 5 min → warning. 5x → blocked. Args normalized before hashing.
-- **Auto-reflection**: If AI was blocked/rejected during the session, it cannot write "NONE" for lessons — must reflect on what happened
-- **Re-entrancy guard**: Only one save at a time. 30-min TTL auto-clears if process crashes.
+### Layer 3: Programmatic Verification — "Code says, not AI"
 
-### Layer 3: Git Pre-Commit Hook — "No commit without approval"
+This layer solves the fundamental audit problem: **AI both produces and validates its own claims**.
 
-Three gates, checked on every `git commit`:
+**`aio__scan_codebase`** — Replaces manual code scanning with a single tool call:
+
+```
+Input:  project_root + scope (e.g. "src/", "agent_core/")
+Process:
+  - Walk entire file tree (skip .git/node_modules/venv/__pycache__)
+  - Read every code file, extract class/def/import/decorator signatures
+  - Classify each file: entry point / module / config / test
+  - Group by directory, sort by importance
+Output: Structured summary with 100% file coverage, 0 skipped
+```
+
+The output goes directly into `systemPatterns.md` as the module inventory. AI adds system qualification and data flow on top, but **cannot hand-write the file list** (hand-writing causes omissions).
+
+Supports Python, JavaScript, TypeScript, Go, Rust, Java. No external dependencies (no repomix/npx needed).
+
+**`aio__audit_project_map`** — 5 automated checks that verify AI claims against actual code:
+
+| Check | What it verifies | FAIL threshold |
+|---|---|---|
+| File Existence | Paths in systemPatterns/inventory → `os.path.exists` | >10% missing |
+| Decorator Count | Actual `@decorator` count in code vs inventory claim | Difference > 2 |
+| Dependency Truth | Claimed libraries → `grep` actual imports | Claimed but no import |
+| Naming Consistency | conventions.md rules → sample-check code | <70% compliance |
+| Config Parsing | .env vars / docker-compose ports vs techContext | Conflicts found |
+
+Integrated into bootstrap as **Phase 3.5**: must pass audit before writing to project_map.
+
+### Layer 4: Git Pre-Commit Hook — "No commit without approval"
 
 | Gate | Trigger | Effect |
 |---|---|---|
 | Rule Sync | `.clinerules` modified | Auto-syncs to `CLAUDE.md`, `.cursorrules`, `.windsurfrules` |
-| Map Protection | `project_map/` files edited directly | **Blocked**. Must use MCP tools (`aio__force_architect_save`) |
-| TaskSpec Gate | Code files modified without approval | **Blocked**. Must submit taskSpec → get user approval → then commit |
+| Map Protection | `project_map/` files edited directly | **Blocked**. Must use MCP tools. |
+| TaskSpec Gate | Code files modified without approval | **Blocked**. Must submit taskSpec first. |
 
-Exempt: `.ai-operation/`, `.claude/`, tests, docs, config files. Emergency bypass: `git commit --no-verify`.
+### Bonus: Dangerous Command Guard
 
-### Bonus Layer: Dangerous Command Guard
+A separate `PreToolUse` hook blocks destructive Bash commands:
 
-A separate `PreToolUse` hook blocks destructive Bash commands before execution:
-
-- `rm -rf` (except known build artifacts: `node_modules`, `dist`, `__pycache__`, etc.)
+- `rm -rf` (except known build artifacts)
 - `git push --force`, `git reset --hard`, `git clean -f`
 - `DROP TABLE`, `TRUNCATE`, unfiltered `DELETE FROM`
-- `kill -9 -1`, `killall`, `mkfs`, `fdisk`
-
-All blocks logged to `audit.log`. AI cannot bypass — it's a shell-level gate.
 
 ---
 
-## 8-File Project Memory (Project Map)
+## 8-File Project Memory
 
-AI reads these files at session start to restore full project context:
+AI reads these at session start to restore full project context:
 
-| File | Content | Type | Special Behavior |
-|---|---|---|---|
-| `activeContext.md` | Current focus, what just happened, next step | Dynamic | Must include file paths. Min 200 chars. |
-| `progress.md` | Completed tasks with files touched | Dynamic | Min 150 chars per save. |
-| `corrections.md` | Experience index (keys only) | Dynamic | Keys → lazy-load values via `aio__load_experience` |
-| `conventions.md` | Naming, API, code style contracts | Static | Always loaded in full. Proactive prevention. |
-| `systemPatterns.md` | Architecture, modules, data flow | Static | Orphan reference lint on read. Section-aware merge on save. |
-| `techContext.md` | Tech stack, known pitfalls | Static | — |
-| `projectbrief.md` | Core vision, business objectives | Static | — |
-| `inventory.md` | Asset registry (modules, APIs, skills) | Static | Full overwrite on save. Real-time append via `aio__inventory_append`. |
+| File | Content | Type |
+|---|---|---|
+| `activeContext.md` | Current focus + what just happened + next step | Dynamic |
+| `progress.md` | Completed tasks with files touched | Dynamic |
+| `corrections.md` | Experience index (keys only) | Dynamic |
+| `conventions.md` | Naming, API, code style contracts | Static |
+| `systemPatterns.md` | Architecture, modules, data flow | Static |
+| `techContext.md` | Tech stack, known pitfalls | Static |
+| `projectbrief.md` | Core vision, business objectives | Static |
+| `inventory.md` | Asset registry (modules, APIs, skills) | Static |
 
-**Key-value experience system**: `corrections.md` stores only category keys (e.g., `fileops`, `git`, `save`). Actual lessons live in `corrections/fileops.md`, `corrections/git.md`, etc. AI calls `aio__load_experience("fileops")` to load relevant experience on demand — minimizing context consumption while ensuring lessons are available when needed.
+**Key-value experience system**: `corrections.md` stores only category keys (e.g., `fileops`, `git`, `save`). Actual lessons live in `corrections/fileops.md`. AI calls `aio__load_experience("fileops")` on demand — minimizing context consumption.
 
-**Freshness tracking**: Experience files older than 30 days are marked `⚠ STALE`. Cleanup reminders trigger when `activeContext.md` hasn't been updated in 7+ days.
-
-**Budget management**: Total read budget is 50KB (~12K tokens). Dynamic files always loaded in full. Static files fall back to TOC mode when budget is tight. `aio__detail_read` loads full content on demand.
+**Budget management**: Total read budget is 50KB (~12K tokens). Static files fall back to TOC mode when budget is tight.
 
 ---
 
 ## Two-Phase Save Protocol
 
-The save is the most important operation in the framework. It's deliberately split into two phases to force AI self-review:
-
 ```
 Phase 1: aio__force_architect_save
-  ├── Validate all 6 file parameters (reject if vague/empty)
-  ├── Check NO_CHANGE_BECAUSE justification for skipped files
-  ├── Cross-validate against git diff (warn if claimed changes ≠ actual changes)
-  ├── Scan audit.log for session violations (force reflection if blocked)
-  ├── Generate diff preview
-  ├── Generate self-audit checklist (10 questions)
+  ├── Validate all 6 file parameters
+  ├── Cross-validate against git diff
+  ├── Scan audit.log for session violations
+  ├── Generate diff preview + 10-question self-audit
   └── Return PENDING_REVIEW (nothing written yet)
 
 Phase 2: aio__force_architect_save_confirm
-  ├── Read staging file
-  ├── Apply updates (section-aware merge for static files, append for dynamic)
-  ├── Write lessons to corrections key-value system
+  ├── Section-aware merge (static) / append (dynamic)
   ├── Auto-split oversized sections to details/
-  ├── Regenerate SESSION_KEY (forces next session to re-read)
-  ├── Git commit (non-blocking, Windows-safe)
-  └── Return SUCCESS
+  ├── Write lessons to key-value system
+  ├── Regenerate SESSION_KEY
+  └── Git commit
 ```
 
-The AI must answer the self-audit checklist between Phase 1 and Phase 2. If any answer is "no", it must call Phase 1 again with corrections.
-
 ---
 
-## Bypass Framework
+## Bootstrap: From Zero to Full Context
 
-Not all rules should be hard blocks. The framework supports four enforcement states:
+```
+Phase 1:  aio__scan_codebase     → structured file inventory (one tool call)
+Phase 2:  Entry trace + schema    → data flow + data structures
+Phase 2+: System qualification    → type / purpose / version
+Phase 3:  Draft + user calibrate  → confirm with user
+Phase 3.5: aio__audit_project_map → 5 programmatic checks (PASS required)
+Phase 4:  MCP write               → gates: confirmed / no TODOs / dir exists
+Phase 5:  Verify                  → [read] output + user acceptance
+```
 
-| State | Behavior | Example |
-|---|---|---|
-| `REJECTED` | Hard block. Must fix. | Empty `activeContext_update` |
-| `BYPASSABLE` | Block with escape hatch. User can authorize bypass. | Vague file paths in taskSpec |
-| `MONITOR` | Log violation but don't block. Observation mode for new rules. | New rule being tested |
-| `SUCCESS` | Passed all checks. | — |
-
-Bypass flow: tool returns `BYPASSABLE` → user says "bypass" → AI calls `aio__bypass_violation(rule_code, user_said)` → single-use flag created → next submit skips that rule → flag consumed.
-
-**Safeguards**: 24-hour rate limit per rule. Bypass signals validated ("bypass", "绕过", "skip", etc.). All bypasses logged with reason and timestamp.
-
----
-
-## 5 Skills (Structured Protocols)
-
-| Skill | Trigger | What It Does |
-|---|---|---|
-| `project-bootstrap` | `[初始化项目]` | 5-phase codebase scan → fill project_map. No assumptions — every claim traced to actual files. |
-| `systematic-debugging` | Bug / error / test failure | Root cause investigation BEFORE any fix. 4 phases: investigate → analyze → hypothesize → implement. |
-| `test-driven-development` | New feature / fix | RED-GREEN-REFACTOR. No production code without a failing test first. |
-| `omm-scan` | `[架构扫描]` | Generate Mermaid architecture diagrams. 12 perspective catalog. Recursive drill-down. |
-| `consolidate` | `[整理]` | Human-in-the-loop project_map cleanup. Review each file with user. Stratify to details/. |
-
-All skills have YAML frontmatter for auto-discovery by `_discover_skills()`. Skills are shown in `[读档]` output with their trigger conditions.
+**Calibrate-only mode**: If project_map already has data (<15 placeholders), skips Phase 1-2 entirely. Runs Phase 3 calibration + Phase 3.5 audit directly.
 
 ---
 
@@ -194,26 +194,41 @@ cd your-project
 irm https://raw.githubusercontent.com/lyc812866241-a11y/AI-Operation/master/setup.ps1 | iex
 ```
 
-Setup auto-detects Python, downloads the framework, creates venv, installs MCP dependencies, configures 4 IDEs, installs Git hooks, and verifies the MCP server starts.
+Then open your IDE and say: `[init]` or `[初始化项目]`
 
-Then open your IDE and say:
-```
-[初始化项目]
-```
-
-The AI scans your codebase, drafts project documentation, asks you to confirm, and writes the project map. From then on, every session starts with full context and every save captures lessons.
-
-### Update
+### Four Setup Modes
 
 ```bash
-# Linux / macOS
-bash setup.sh --update
-
-# Windows
-.\setup.ps1 -Update
+setup.sh              # Fresh install (download + venv + configure)
+setup.sh --update     # Pull latest framework code, preserve project data
+setup.sh --migrate    # Update + migrate old paths + extract custom rules
+setup.sh --check      # Health check: 6-category verification, 0 modifications
 ```
 
-Updates framework code only. Preserves venv, project_map, audit.log, and all local state.
+`--check` output:
+```
+▶ 1. Framework structure    ✓ .ai-operation/ exists
+▶ 2. Python & venv          ✓ MCP dependencies installed
+▶ 3. MCP tools              ✓ MCP server OK — 21 tools registered
+▶ 4. IDE configs            ✓ .mcp.json Python path configured
+▶ 5. Claude Code hooks      ✓ Cognitive gate hook
+▶ 6. Project map            ✓ 8/8 files have content
+
+   All checks passed! (17 pass, 0 warn)
+```
+
+### Customization
+
+| I want to... | Edit this |
+|---|---|
+| Add project rules (naming/API/style) | `conventions.md` |
+| Add new `[commands]` | `rules.d/commands.md` |
+| Add module-specific rules | `rules.d/{module}.md` |
+| Record lessons learned | Automatic via `[save]`, or `corrections/` |
+| Change framework behavior | `.clinerules` → run `sync-rules.sh` |
+| Add automated skills | `skills/{name}/SKILL.md` |
+
+`rules.d/` files are auto-loaded by `[read]`. No framework files need editing.
 
 ---
 
@@ -237,52 +252,66 @@ your-project/
 ├── .ai-operation/                    # Framework (isolated from your code)
 │   ├── docs/project_map/             # 8-file memory system
 │   ├── docs/corrections/             # Key-value experience files
-│   ├── mcp_server/                   # 19 MCP tools + audit + loop detection
-│   │   ├── server.py                 # Entry point (audit logger, loop detector)
-│   │   └── tools/                    # 9 modules (save, read, workflow, bypass, ...)
-│   ├── skills/                       # 5 skill protocols
+│   ├── mcp_server/                   # 21 MCP tools + audit + loop detection
+│   │   ├── server.py                 # Entry (audit logger, loop detector)
+│   │   └── tools/                    # 11 modules
+│   │       ├── save.py               # Two-phase save protocol
+│   │       ├── read.py               # Budget-managed context loading
+│   │       ├── scan.py               # Codebase scanner (full signature extraction)
+│   │       ├── audit.py              # 5-check programmatic verification
+│   │       ├── workflow.py           # TaskSpec + fast-track + reporting
+│   │       ├── bootstrap.py          # Project initialization (3 gates)
+│   │       ├── cognitive_gate.py     # SESSION_KEY + experience loading
+│   │       ├── bypass.py             # Rule override + monitoring
+│   │       ├── inventory.py          # Asset registry operations
+│   │       ├── cleanup.py            # Garbage collection
+│   │       └── skillify.py           # Workflow → SKILL.md extraction
+│   ├── skills/                       # 6 skill protocols
 │   ├── hooks/                        # Git pre-commit (3 gates)
+│   ├── rules.d/                      # User custom rules (auto-loaded)
 │   ├── scripts/                      # Rule sync, hook install
 │   ├── cli/                          # Terminal tools + Web Dashboard
-│   └── audit.log                     # Tamper-evident operation log
+│   └── audit.log                     # Operation log
 ├── .claude/hooks/                    # Claude Code hooks
-│   ├── check-dangerous.sh            # Blocks rm -rf, git push --force, etc.
-│   ├── require-context.sh            # Cognitive Gate (blocks until context read)
-│   └── governance-capture.sh         # Audit all Edit/Write/Bash operations
+│   ├── check-dangerous.sh            # Blocks rm -rf, git push --force
+│   ├── require-context.sh            # Cognitive Gate
+│   └── governance-capture.sh         # Audit all operations
 ├── .clinerules                       # Rules (canonical source)
 ├── CLAUDE.md / .cursorrules / ...    # Auto-generated per IDE
-└── tests/                            # 21 framework tests
+└── setup.sh / setup.ps1              # Install / Update / Migrate / Check
 ```
-
-Framework files don't invade your project directory. No conflicts with `src/`, `docs/`, or anything else.
 
 ---
 
 ## Competitive Landscape
 
-| Layer | AI-Operation | Cline Memory Bank | everything-claude-code | Microsoft Agent Governance |
-|---|---|---|---|---|
-| **What it is** | Cognitive governance | Project memory | Harness optimizer | Enterprise policy engine |
-| **Enforcement** | Code-enforced (Hook + MCP + Git) | Text instruction only | Hook-based audit | OPA/Rego policies |
-| **Memory** | 8 files + key-value experience | 6 files | CLAUDE.md | N/A |
-| **Cognitive gate** | Yes (SESSION_KEY + counter) | No | No | No |
-| **Two-phase save** | Yes | No | No | No |
-| **Bypass framework** | Yes (4 states + rate limit) | No | No | Yes (different scope) |
-| **Target** | Developer workflow | Developer workflow | Performance tuning | Enterprise compliance |
+| Capability | AI-Operation | Cline Memory Bank | everything-claude-code | Windsurf Rules | Cursor Rules |
+|---|---|---|---|---|---|
+| Enforcement | Code (Hook + MCP + Git) | Text only | Hook-based audit | Text only | Text only |
+| Memory system | 8 files + key-value experience | 6 files | CLAUDE.md | Rules file | Rules file |
+| Cognitive gate | Yes (physical block) | No | No | No | No |
+| Codebase scanning | Built-in (aio__scan_codebase) | No | No | No | No |
+| Claim verification | 5-check audit tool | No | No | No | No |
+| Two-phase save | Yes (forced self-review) | No | No | No | No |
+| Bypass framework | 4 states + rate limit | No | No | No | No |
+| Health check | `--check` (17 items) | No | No | No | No |
+| Migration tooling | `--migrate` (path + rules) | No | No | No | No |
+| Multi-IDE | 4 IDEs from single source | Roo Code only | Claude Code only | Windsurf only | Cursor only |
 
 ### What's unique to AI-Operation
 
-1. **Cognitive Gate** — PreToolUse hook that physically blocks tools until AI proves it read project context via SESSION_KEY token. No other open-source framework does this.
-2. **Two-phase save** — forced self-review with diff preview and 10-question audit checklist before any write.
-3. **Key-value experience with lazy loading** — corrections index + on-demand detail loading. Minimizes context consumption.
-4. **Bypass framework** — structured rule override with 4 states (REJECTED/BYPASSABLE/MONITOR/SUCCESS), single-use flags, 24h rate limit, full audit trail.
-5. **30-operation counter** — forces AI to re-read context during long sessions, preventing drift.
+1. **Cognitive Gate** — physical tool-level block until context is loaded. Not a text instruction.
+2. **Programmatic verification** — `aio__audit_project_map` runs code-level checks on AI claims. AI cannot self-validate.
+3. **Full codebase scan** — `aio__scan_codebase` extracts every file's signatures in one call. Zero external dependencies.
+4. **Two-phase save** — forced self-review with diff preview and 10-question audit.
+5. **30-operation counter** — forces context re-read during long sessions, preventing drift.
+6. **4-mode setup** — install / update / migrate / check. Framework upgrades are a first-class operation.
 
 ### What others do better
 
 - **Letta Code**: Git-versioned memory with merge conflict resolution
-- **claude-mem** (46K stars): Vector-based semantic search over past experience
-- **Claude Code Auto Dream**: Automated memory consolidation (AI-Operation's `[整理]` is manual)
+- **claude-mem**: Vector-based semantic search over past experience
+- **Claude Code Auto Dream**: Automated memory consolidation (AI-Operation's `[consolidate]` is manual)
 - **Microsoft AGT**: Declarative policy language (OPA/Rego) vs. hard-coded Python rules
 
 ---
@@ -293,9 +322,9 @@ Framework files don't invade your project directory. No conflicts with `src/`, `
 python -m pytest tests/ -v
 ```
 
-21 tests covering: save parameter validation, taskSpec workflow lifecycle, trust scoring, bootstrap merge, audit logging.
+21 tests covering: save validation, taskSpec workflow, trust scoring, bootstrap merge, audit logging.
 
-CI matrix: Python 3.9 / 3.11 / 3.12 × Ubuntu / Windows (6 combinations), runs on every push.
+CI: Python 3.9 / 3.11 / 3.12 x Ubuntu / Windows (6 combinations).
 
 ---
 
@@ -303,7 +332,7 @@ CI matrix: Python 3.9 / 3.11 / 3.12 × Ubuntu / Windows (6 combinations), runs o
 
 > "Text rules are suggestions. Physical gates are law."
 
-AI-Operation doesn't try to make AI smarter. It makes the **process** smarter — so that even when AI makes mistakes, the framework catches them before they reach the codebase.
+AI-Operation doesn't make AI smarter. It makes the **process** smarter — so that even when AI makes mistakes, the framework catches them before they reach the codebase.
 
 The AI creates its own shackles and wears them.
 
