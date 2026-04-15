@@ -289,10 +289,10 @@ if ($Update) {
                         $upstreamMcp.mcpServers.project_architect.command = $venvPy.Replace("\", "/")
                     }
                 }
-                # Fix args to absolute path (relative paths break when IDE cwd differs)
+                # Fix args: -u (unbuffered stdout for Windows MCP) + absolute path
                 $serverAbs = Join-Path $INSTALL_DIR ".ai-operation\mcp_server\server.py"
                 if (Test-Path $serverAbs) {
-                    $upstreamMcp.mcpServers.project_architect.args = @($serverAbs.Replace("\", "/"))
+                    $upstreamMcp.mcpServers.project_architect.args = @("-u", $serverAbs.Replace("\", "/"))
                 }
                 $upstreamMcp | ConvertTo-Json -Depth 10 | Set-Content $mcpDst -Encoding UTF8 -NoNewline
                 Write-Ok "Smart-merged .mcp.json (kept Python path, updated alwaysAllow)"

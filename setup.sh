@@ -301,10 +301,10 @@ else:
         if os.path.exists(p):
             upstream['mcpServers']['project_architect']['command'] = p
             break
-# Fix args to absolute path (relative paths break when IDE cwd differs)
+# Fix args: -u (unbuffered stdout for Windows MCP) + absolute path
 server_abs = os.path.abspath(os.path.join('$SCRIPT_DIR', '.ai-operation/mcp_server/server.py'))
 if os.path.exists(server_abs):
-    upstream['mcpServers']['project_architect']['args'] = [server_abs.replace(os.sep, '/')]
+    upstream['mcpServers']['project_architect']['args'] = ['-u', server_abs.replace(os.sep, '/')]
 with open('$SCRIPT_DIR/.mcp.json', 'w', encoding='utf-8') as f:
     json.dump(upstream, f, indent=2, ensure_ascii=False)
 print('OK')

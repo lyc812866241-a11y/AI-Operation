@@ -3,6 +3,7 @@
     "project_architect": {
       "command": "REPLACE_WITH_YOUR_VENV_PYTHON_PATH",
       "args": [
+        "-u",
         ".ai-operation/mcp_server/server.py"
       ],
       "alwaysAllow": [
@@ -24,7 +25,9 @@
         "aio__load_experience",
         "aio__bypass_violation",
         "aio__rule_monitor",
-        "aio__extract_skill"
+        "aio__extract_skill",
+        "aio__scan_codebase",
+        "aio__audit_project_map"
       ]
     },
     "markitdown": {
