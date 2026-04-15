@@ -290,18 +290,21 @@ with open('$SCRIPT_DIR/.mcp.json', encoding='utf-8') as f:
     local = json.load(f)
 with open('$TMP_DIR/.mcp.json', encoding='utf-8') as f:
     upstream = json.load(f)
-# Preserve user's Python path
+# Preserve user's Python path and ensure args use absolute paths
+import os
 local_cmd = local.get('mcpServers',{}).get('project_architect',{}).get('command','')
 if local_cmd and local_cmd != 'REPLACE_WITH_YOUR_VENV_PYTHON_PATH':
     upstream['mcpServers']['project_architect']['command'] = local_cmd
 else:
-    # Try to auto-detect venv Python
-    import os
     for p in ['$SCRIPT_DIR/.ai-operation/venv/Scripts/python.exe',
               '$SCRIPT_DIR/.ai-operation/venv/bin/python3']:
         if os.path.exists(p):
             upstream['mcpServers']['project_architect']['command'] = p
             break
+# Fix args to absolute path (relative paths break when IDE cwd differs)
+server_abs = os.path.abspath(os.path.join('$SCRIPT_DIR', '.ai-operation/mcp_server/server.py'))
+if os.path.exists(server_abs):
+    upstream['mcpServers']['project_architect']['args'] = [server_abs.replace(os.sep, '/')]
 with open('$SCRIPT_DIR/.mcp.json', 'w', encoding='utf-8') as f:
     json.dump(upstream, f, indent=2, ensure_ascii=False)
 print('OK')

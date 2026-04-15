@@ -284,11 +284,15 @@ if ($Update) {
                 if ($localCmd -and $localCmd -ne "REPLACE_WITH_YOUR_VENV_PYTHON_PATH") {
                     $upstreamMcp.mcpServers.project_architect.command = $localCmd
                 } else {
-                    # Auto-detect venv Python
                     $venvPy = Join-Path $INSTALL_DIR ".ai-operation\venv\Scripts\python.exe"
                     if (Test-Path $venvPy) {
                         $upstreamMcp.mcpServers.project_architect.command = $venvPy.Replace("\", "/")
                     }
+                }
+                # Fix args to absolute path (relative paths break when IDE cwd differs)
+                $serverAbs = Join-Path $INSTALL_DIR ".ai-operation\mcp_server\server.py"
+                if (Test-Path $serverAbs) {
+                    $upstreamMcp.mcpServers.project_architect.args = @($serverAbs.Replace("\", "/"))
                 }
                 $upstreamMcp | ConvertTo-Json -Depth 10 | Set-Content $mcpDst -Encoding UTF8 -NoNewline
                 Write-Ok "Smart-merged .mcp.json (kept Python path, updated alwaysAllow)"
