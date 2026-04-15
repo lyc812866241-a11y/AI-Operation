@@ -952,11 +952,12 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
 
         _audit("aio__force_architect_save_confirm", "SUCCESS",
                f"files={','.join(changed_files)},git={git_status},cwd={git_diag.get('cwd','?')}")
+        git_hint = 'Run `git add .ai-operation/docs/project_map/ && git commit -m "save"` if git failed.' if git_status != 'committed' else 'TaskSpec approval cleared.'
         return (
             f"SUCCESS\n"
             f"Files updated: {', '.join(changed_files)}\n"
             f"Merge details:\n" + "\n".join(merge_report) + "\n\n"
             f"Git: {git_status}\n"
-            f"{'Run `git add .ai-operation/docs/project_map/ && git commit -m \"save\"` if git failed.' if git_status != 'committed' else 'TaskSpec approval cleared.'}"
+            f"{git_hint}"
             f"{diag_str}"
         )
