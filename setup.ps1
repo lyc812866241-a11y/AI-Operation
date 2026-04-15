@@ -92,7 +92,7 @@ from tools.architect import register_architect_tools
 from mcp.server.fastmcp import FastMCP
 mcp = FastMCP('test')
 register_architect_tools(mcp)
-print(len(mcp._tools))
+print(len(mcp.list_tools()))
 "@ 2>&1
         if ($toolCount -match '^\d+$' -and [int]$toolCount -gt 0) {
             Check-Pass "MCP server OK - $toolCount tools registered"

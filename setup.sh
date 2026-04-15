@@ -111,7 +111,7 @@ import sys; sys.path.insert(0, '.ai-operation/mcp_server')
 from tools.architect import register_architect_tools
 from mcp.server.fastmcp import FastMCP
 mcp = FastMCP('test'); register_architect_tools(mcp)
-print(len(mcp._tools))
+print(len(mcp.list_tools()))
 " 2>&1 || echo "ERR")
         if echo "$TOOL_COUNT" | grep -q '^[0-9]\+$' && [ "$TOOL_COUNT" -gt 0 ]; then
             check_pass "MCP server OK — $TOOL_COUNT tools registered"
