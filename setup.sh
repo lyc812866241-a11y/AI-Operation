@@ -281,34 +281,44 @@ if [ "$UPDATE_MODE" = true ]; then
         fi
     done
 
-    # Smart-merge .mcp.json: keep user's Python path, update alwaysAllow from upstream
+    # Smart-merge .mcp.json: LOCAL is base, only merge alwaysAllow from upstream
     if [ -f "$TMP_DIR/.mcp.json" ] && [ -f "$SCRIPT_DIR/.mcp.json" ]; then
         "$PYTHON_CMD" -c "
-import json, sys
-# Read both files
+import json, os
+
 with open('$SCRIPT_DIR/.mcp.json', encoding='utf-8') as f:
     local = json.load(f)
 with open('$TMP_DIR/.mcp.json', encoding='utf-8') as f:
     upstream = json.load(f)
-# Preserve user's Python path and ensure args use absolute paths
-import os
-local_cmd = local.get('mcpServers',{}).get('project_architect',{}).get('command','')
-if local_cmd and local_cmd != 'REPLACE_WITH_YOUR_VENV_PYTHON_PATH':
-    upstream['mcpServers']['project_architect']['command'] = local_cmd
-else:
+
+pa = local.setdefault('mcpServers', {}).setdefault('project_architect', {})
+
+# Only fix command if it is still the placeholder
+if not pa.get('command') or pa['command'] == 'REPLACE_WITH_YOUR_VENV_PYTHON_PATH':
     for p in ['$SCRIPT_DIR/.ai-operation/venv/Scripts/python.exe',
               '$SCRIPT_DIR/.ai-operation/venv/bin/python3']:
         if os.path.exists(p):
-            upstream['mcpServers']['project_architect']['command'] = p
+            pa['command'] = p
             break
-# Fix args: -u (unbuffered stdout for Windows MCP) + absolute path
-server_abs = os.path.abspath(os.path.join('$SCRIPT_DIR', '.ai-operation/mcp_server/server.py'))
-if os.path.exists(server_abs):
-    upstream['mcpServers']['project_architect']['args'] = ['-u', server_abs.replace(os.sep, '/')]
+
+# Only fix args if missing or still the template default
+if not pa.get('args') or pa['args'] == ['.ai-operation/mcp_server/server.py']:
+    server_abs = os.path.abspath(os.path.join('$SCRIPT_DIR', '.ai-operation/mcp_server/server.py'))
+    pa['args'] = ['-u', server_abs.replace(os.sep, '/')]
+
+# Merge alwaysAllow: add new tools from upstream, keep existing
+upstream_allow = upstream.get('mcpServers',{}).get('project_architect',{}).get('alwaysAllow',[])
+local_allow = pa.get('alwaysAllow', [])
+for tool in upstream_allow:
+    if tool not in local_allow:
+        local_allow.append(tool)
+pa['alwaysAllow'] = local_allow
+
+# Write LOCAL back (not upstream)
 with open('$SCRIPT_DIR/.mcp.json', 'w', encoding='utf-8') as f:
-    json.dump(upstream, f, indent=2, ensure_ascii=False)
+    json.dump(local, f, indent=2, ensure_ascii=False)
 print('OK')
-" && print_ok "Smart-merged .mcp.json (kept Python path, updated alwaysAllow)" \
+" && print_ok "Smart-merged .mcp.json (local preserved, alwaysAllow updated)" \
         || { cp "$TMP_DIR/.mcp.json" "$SCRIPT_DIR/.mcp.json"; print_warn ".mcp.json replaced (smart merge failed)"; }
     fi
 

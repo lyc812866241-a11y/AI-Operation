@@ -272,30 +272,43 @@ if ($Update) {
             }
         }
 
-        # Smart-merge .mcp.json: keep user Python path, update alwaysAllow from upstream
+        # Smart-merge .mcp.json: LOCAL is base, only merge alwaysAllow from upstream
         $mcpSrc = Join-Path $TMP_DIR ".mcp.json"
         $mcpDst = Join-Path $INSTALL_DIR ".mcp.json"
         if ((Test-Path $mcpSrc) -and (Test-Path $mcpDst)) {
             try {
                 $localMcp = Get-Content $mcpDst -Raw -Encoding UTF8 | ConvertFrom-Json
                 $upstreamMcp = Get-Content $mcpSrc -Raw -Encoding UTF8 | ConvertFrom-Json
-                # Preserve user Python path
-                $localCmd = $localMcp.mcpServers.project_architect.command
-                if ($localCmd -and $localCmd -ne "REPLACE_WITH_YOUR_VENV_PYTHON_PATH") {
-                    $upstreamMcp.mcpServers.project_architect.command = $localCmd
-                } else {
+                $pa = $localMcp.mcpServers.project_architect
+
+                # Only fix command if still placeholder
+                if (-not $pa.command -or $pa.command -eq "REPLACE_WITH_YOUR_VENV_PYTHON_PATH") {
                     $venvPy = Join-Path $INSTALL_DIR ".ai-operation\venv\Scripts\python.exe"
                     if (Test-Path $venvPy) {
-                        $upstreamMcp.mcpServers.project_architect.command = $venvPy.Replace("\", "/")
+                        $pa.command = $venvPy.Replace("\", "/")
                     }
                 }
-                # Fix args: -u (unbuffered stdout for Windows MCP) + absolute path
-                $serverAbs = Join-Path $INSTALL_DIR ".ai-operation\mcp_server\server.py"
-                if (Test-Path $serverAbs) {
-                    $upstreamMcp.mcpServers.project_architect.args = @("-u", $serverAbs.Replace("\", "/"))
+
+                # Only fix args if missing or still template default
+                $templateArgs = @(".ai-operation/mcp_server/server.py")
+                if (-not $pa.args -or ($pa.args.Count -eq 1 -and $pa.args[0] -eq $templateArgs[0])) {
+                    $serverAbs = (Join-Path $INSTALL_DIR ".ai-operation\mcp_server\server.py").Replace("\", "/")
+                    $pa.args = @("-u", $serverAbs)
                 }
-                $upstreamMcp | ConvertTo-Json -Depth 10 | Set-Content $mcpDst -Encoding UTF8 -NoNewline
-                Write-Ok "Smart-merged .mcp.json (kept Python path, updated alwaysAllow)"
+
+                # Merge alwaysAllow: add new tools from upstream, keep existing
+                $upstreamAllow = $upstreamMcp.mcpServers.project_architect.alwaysAllow
+                $localAllow = [System.Collections.ArrayList]@($pa.alwaysAllow)
+                foreach ($tool in $upstreamAllow) {
+                    if ($tool -notin $localAllow) {
+                        $localAllow.Add($tool) | Out-Null
+                    }
+                }
+                $pa.alwaysAllow = @($localAllow)
+
+                # Write LOCAL back (not upstream)
+                $localMcp | ConvertTo-Json -Depth 10 | Set-Content $mcpDst -Encoding UTF8 -NoNewline
+                Write-Ok "Smart-merged .mcp.json (local preserved, alwaysAllow updated)"
             } catch {
                 Copy-Item $mcpSrc $mcpDst -Force
                 Write-Warn ".mcp.json replaced (smart merge failed)"
