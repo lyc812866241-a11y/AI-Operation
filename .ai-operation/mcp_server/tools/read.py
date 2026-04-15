@@ -43,7 +43,7 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
         priority_order = [
             ("activeContext", "activeContext.md", True),    # always full
             ("progress", "progress.md", True),              # always full
-            ("conventions", "conventions.md", True),        # always full — AI needs contracts when coding
+            ("conventions", "conventions.md", True),        # always full — 二阶 contracts (naming/API/style)
             ("projectbrief", "projectbrief.md", False),     # TOC if tight
             ("systemPatterns", "systemPatterns.md", False),  # TOC if tight
             ("techContext", "techContext.md", False),        # TOC if tight

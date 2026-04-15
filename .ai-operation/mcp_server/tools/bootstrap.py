@@ -51,9 +51,10 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
             activeContext_focus: Current focus statement for activeContext.md.
             progress_initial: Initial milestone entry for progress.md.
             user_confirmed: MUST be True.
-            conventions_content: Optional. Project conventions (naming, API format, UI tokens,
-                error handling patterns). Use "SKIP" to leave empty for now. If provided,
-                merges into conventions.md template like other static files.
+            conventions_content: Optional. SECOND-ORDER contracts only (naming, API format,
+                UI tokens, code style) — structural rules that prevent a class of bugs.
+                Specific incident lessons go in corrections/{key}.md, not here.
+                Use "SKIP" to leave empty for now.
 
         Returns:
             Execution report with merge results and git commit status.

@@ -79,10 +79,10 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                 or modified a list of items (skills, modules, APIs, models), provide the COMPLETE LIST
                 here. This is FULL OVERWRITE, not append — if you list 40 skills, the file will have
                 exactly 40 skills. Always read inventory.md first and merge, don't rely on memory alone.
-            conventions_update: Optional. Project-wide conventions (naming, API format, UI tokens, error
-                handling patterns). Section-aware merge like other static files. Use ===SECTION===
-                delimiters. Use "NO_CHANGE_BECAUSE: [reason]" to skip. Conventions are proactive
-                contracts that prevent consistency errors before they happen.
+            conventions_update: Optional. SECOND-ORDER contracts only (naming, API format, UI tokens,
+                code style) — structural rules that prevent a CLASS of bugs. Do NOT put specific
+                incident lessons here (those go in corrections/{key}.md as first-order experience).
+                Section-aware merge. Use ===SECTION=== delimiters. "NO_CHANGE_BECAUSE: [reason]" to skip.
             session_compaction: Optional. Compressed summary of conversation for context overflow recovery.
 
         Returns:
@@ -570,10 +570,12 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         conv_path = PROJECT_MAP_DIR / "conventions.md"
         if conv_path.exists():
             audit_questions.append(
-                "Did this session establish any new naming patterns, API formats, "
-                "UI decisions, or error handling conventions? If so, did you update "
-                "conventions.md? If you corrected the AI on a consistency issue, "
-                "that correction should become a convention."
+                "Knowledge hierarchy check: Did this session produce new lessons?\n"
+                "  - Structural rules (naming/API/style that prevent a CLASS of bugs) "
+                "→ conventions.md (二阶契约)\n"
+                "  - Specific incident lessons (one-time pitfall) "
+                "→ corrections/{key}.md (一阶经验)\n"
+                "  Do NOT put specific operational lessons in conventions.md."
             )
 
         # Q7: Completion verification
