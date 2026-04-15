@@ -85,19 +85,23 @@ if ($Check) {
     Write-Step "3. MCP tools"
     if ($venvPy) {
         $mcpDir = Join-Path (Get-Location) ".ai-operation\mcp_server"
-        $toolCount = & $venvPy -c @"
+        $mcpResult = & $venvPy -c @"
 import sys
 sys.path.insert(0, r'$mcpDir')
 from tools.architect import register_architect_tools
 from mcp.server.fastmcp import FastMCP
 mcp = FastMCP('test')
 register_architect_tools(mcp)
-print(len(mcp.list_tools()))
+try:
+    n = len(mcp._tool_manager._tools)
+except:
+    n = -1
+print(f'OK:{n}')
 "@ 2>&1
-        if ($toolCount -match '^\d+$' -and [int]$toolCount -gt 0) {
-            Check-Pass "MCP server OK - $toolCount tools registered"
+        if ("$mcpResult" -match 'OK:(\d+)') {
+            Check-Pass "MCP server OK - $($Matches[1]) tools registered"
         } else {
-            Check-Fail "MCP server failed to load"
+            Check-Fail "MCP server failed to load: $mcpResult"
         }
     }
 

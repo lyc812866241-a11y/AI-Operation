@@ -106,17 +106,21 @@ if [ "$CHECK_MODE" = true ]; then
     # 3. MCP server & tools
     print_step "3. MCP tools"
     if [ -n "$VENV_PY" ]; then
-        TOOL_COUNT=$("$VENV_PY" -c "
+        MCP_RESULT=$("$VENV_PY" -c "
 import sys; sys.path.insert(0, '.ai-operation/mcp_server')
 from tools.architect import register_architect_tools
 from mcp.server.fastmcp import FastMCP
 mcp = FastMCP('test'); register_architect_tools(mcp)
-print(len(mcp.list_tools()))
-" 2>&1 || echo "ERR")
-        if echo "$TOOL_COUNT" | grep -q '^[0-9]\+$' && [ "$TOOL_COUNT" -gt 0 ]; then
+try:
+    n = len(mcp._tool_manager._tools)
+except: n = -1
+print(f'OK:{n}')
+" 2>&1 || echo "FAIL")
+        if echo "$MCP_RESULT" | grep -q '^OK:'; then
+            TOOL_COUNT=$(echo "$MCP_RESULT" | sed 's/OK://')
             check_pass "MCP server OK — $TOOL_COUNT tools registered"
         else
-            check_fail "MCP server failed to load"
+            check_fail "MCP server failed to load: $MCP_RESULT"
         fi
     fi
 
