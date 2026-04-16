@@ -245,16 +245,48 @@ if [ "$UPDATE_MODE" = true ]; then
         exit 1
     fi
 
-    if ! command -v git &>/dev/null; then
-        print_error "git is required but not found."
-        exit 1
-    fi
-
     TMP_DIR=$(mktemp -d)
     trap "rm -rf $TMP_DIR" EXIT
 
-    print_info "Cloning latest from GitHub..."
-    git clone --depth=1 --quiet "$REPO_URL" "$TMP_DIR"
+    # Try git clone first, fall back to curl+unzip if git fails (VPN/TLS issues)
+    DOWNLOAD_OK=false
+    if command -v git &>/dev/null; then
+        print_info "Trying git clone..."
+        if git clone --depth=1 --quiet "$REPO_URL" "$TMP_DIR" 2>/dev/null; then
+            DOWNLOAD_OK=true
+            print_ok "Downloaded via git"
+        else
+            print_warn "git clone failed (TLS/network issue), trying curl fallback..."
+            rm -rf "$TMP_DIR"; mkdir -p "$TMP_DIR"
+        fi
+    fi
+
+    if [ "$DOWNLOAD_OK" = false ]; then
+        ZIP_URL="https://github.com/lyc812866241-a11y/AI-Operation/archive/refs/heads/master.zip"
+        ZIP_FILE="$TMP_DIR/aio.zip"
+        if curl -fsSL "$ZIP_URL" -o "$ZIP_FILE" 2>/dev/null; then
+            if command -v unzip &>/dev/null; then
+                unzip -q "$ZIP_FILE" -d "$TMP_DIR"
+            elif command -v python3 &>/dev/null; then
+                python3 -c "import zipfile; zipfile.ZipFile('$ZIP_FILE').extractall('$TMP_DIR')"
+            elif command -v python &>/dev/null; then
+                python -c "import zipfile; zipfile.ZipFile('$ZIP_FILE').extractall('$TMP_DIR')"
+            else
+                print_error "No unzip tool available"; exit 1
+            fi
+            # GitHub ZIP extracts to AI-Operation-master/
+            if [ -d "$TMP_DIR/AI-Operation-master" ]; then
+                mv "$TMP_DIR/AI-Operation-master/"* "$TMP_DIR/" 2>/dev/null
+                mv "$TMP_DIR/AI-Operation-master/".[!.]* "$TMP_DIR/" 2>/dev/null
+                rm -rf "$TMP_DIR/AI-Operation-master" "$ZIP_FILE"
+            fi
+            DOWNLOAD_OK=true
+            print_ok "Downloaded via curl (zip fallback)"
+        else
+            print_error "Both git and curl failed. Check network connection."
+            exit 1
+        fi
+    fi
 
     # Overwrite framework code directories only
     for dir in "${FRAMEWORK_DIRS[@]}"; do

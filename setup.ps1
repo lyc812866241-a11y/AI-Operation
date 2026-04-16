@@ -227,15 +227,46 @@ if ($Update) {
         exit 1
     }
 
-    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-        Write-Err "git is required but not found."
-        exit 1
-    }
-
     $TMP_DIR = Join-Path $env:TEMP "ai-operation-update-$(Get-Random)"
     try {
-        Write-Info "Cloning latest from GitHub..."
-        git clone --depth=1 --quiet $REPO_URL $TMP_DIR 2>&1 | Out-Null
+        # Try git clone first, fall back to curl/Invoke-WebRequest if git fails
+        $downloadOk = $false
+        if (Get-Command git -ErrorAction SilentlyContinue) {
+            Write-Info "Trying git clone..."
+            try {
+                git clone --depth=1 --quiet $REPO_URL $TMP_DIR 2>&1 | Out-Null
+                if (Test-Path (Join-Path $TMP_DIR ".ai-operation")) {
+                    $downloadOk = $true
+                    Write-Ok "Downloaded via git"
+                }
+            } catch {}
+            if (-not $downloadOk -and (Test-Path $TMP_DIR)) {
+                Remove-Item $TMP_DIR -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+        if (-not $downloadOk) {
+            Write-Warn "git clone failed, trying web download..."
+            New-Item -ItemType Directory -Path $TMP_DIR -Force | Out-Null
+            $zipUrl = "https://github.com/lyc812866241-a11y/AI-Operation/archive/refs/heads/master.zip"
+            $zipFile = Join-Path $TMP_DIR "aio.zip"
+            try {
+                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                Invoke-WebRequest -Uri $zipUrl -OutFile $zipFile -UseBasicParsing
+                Expand-Archive -Path $zipFile -DestinationPath $TMP_DIR -Force
+                # GitHub ZIP extracts to AI-Operation-master/
+                $extracted = Join-Path $TMP_DIR "AI-Operation-master"
+                if (Test-Path $extracted) {
+                    Get-ChildItem $extracted | Move-Item -Destination $TMP_DIR -Force
+                    Remove-Item $extracted -Recurse -Force
+                }
+                Remove-Item $zipFile -Force
+                $downloadOk = $true
+                Write-Ok "Downloaded via web (zip fallback)"
+            } catch {
+                Write-Err "Both git and web download failed. Check network."
+                exit 1
+            }
+        }
 
         # Overwrite framework code directories only
         foreach ($dir in $FRAMEWORK_DIRS) {
