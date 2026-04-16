@@ -42,7 +42,7 @@ MAX_FILE_CHARS = 16_000      # 16KB per file
 MAX_TOTAL_CHARS = 50_000     # 50KB total (~12K tokens)
 SECTION_SIZE_THRESHOLD = 8_000  # 8KB -- split section to subfile
 CORRECTIONS_MAX_BYTES = 10_000  # 10KB -- archive old lessons
-MAX_TOOL_RESULT_BYTES = 12_000  # 12KB -- truncate any MCP tool return exceeding this
+MAX_TOOL_RESULT_BYTES = 200_000  # 200KB -- no practical truncation (Claude handles large returns)
 
 # Required project_map files
 REQUIRED_FILES = {

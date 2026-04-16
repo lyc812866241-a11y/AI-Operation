@@ -108,101 +108,60 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
                     total_chars += len(content)
                     report.append(f"\n### {rf.name}\n{content}")
 
-        # -- Auto-Save Reminder ------------------------------------
-        # Estimate total project_map size. If growing large, recommend [存档].
-        total_map_size = 0
-        for filename in REQUIRED_FILES.values():
+        # -- Cache file contents already read above to avoid re-reading --
+        _file_cache = {}
+        for label, filename, _ in priority_order:
             fp = PROJECT_MAP_DIR / filename
             if fp.exists():
-                total_map_size += fp.stat().st_size
+                _file_cache[filename] = fp.read_text(encoding="utf-8")
 
-        budget_pct = int(total_chars / MAX_TOTAL_CHARS * 100)
-        report.append(f"\n---\nPrompt budget: {total_chars}/{MAX_TOTAL_CHARS} chars ({budget_pct}% used)")
-        report.append(f"Project map total size: {total_map_size:,} bytes")
-
-        if budget_pct >= 70:
-            report.append(
-                f"\n[!] WARNING: Prompt budget at {budget_pct}%. "
-                f"activeContext.md may be growing too large. "
-                f"Consider running [存档] with session_compaction to compress older entries, "
-                f"or manually trim activeContext.md via [清理]."
-            )
-        if total_map_size > 50_000:
-            report.append(
-                f"\n[!] WARNING: Project map total size ({total_map_size:,} bytes) exceeds 50KB. "
-                f"Some content may be truncated during [读档]. "
-                f"Consider archiving older entries in activeContext.md and progress.md."
-            )
-
-        # -- Data Quality Checks ------------------------------------
+        # -- Data Quality Checks (use cached content, no extra IO) --
         quality_warnings = []
 
         # Check 1: inventory.md still has [待填写] placeholders
-        inv_path = PROJECT_MAP_DIR / "inventory.md"
-        if inv_path.exists():
-            inv_content = inv_path.read_text(encoding="utf-8")
-            placeholder_count = inv_content.count("[待填写")
+        inv_text = _file_cache.get("inventory.md", "")
+        if inv_text:
+            placeholder_count = inv_text.count("[待填写")
             if placeholder_count >= 2:
                 quality_warnings.append(
-                    f"[!] inventory.md has {placeholder_count} unfilled [待填写] sections. "
-                    f"You have NO asset inventory. After scanning the codebase, "
-                    f"use aio__inventory_append to populate skills, APIs, data models."
+                    f"[!] inventory.md has {placeholder_count} unfilled sections. "
+                    f"Use aio__inventory_append to populate."
                 )
 
-        # Check 2: systemPatterns.md vs techContext.md consistency
-        sp_path = PROJECT_MAP_DIR / "systemPatterns.md"
-        tc_path = PROJECT_MAP_DIR / "techContext.md"
-        if sp_path.exists() and tc_path.exists():
-            sp_content = sp_path.read_text(encoding="utf-8").lower()
-            tc_content = tc_path.read_text(encoding="utf-8").lower()
-            # Extract tech keywords from techContext, check if systemPatterns contradicts
+        # Check 2: systemPatterns vs techContext consistency
+        sp_text = _file_cache.get("systemPatterns.md", "").lower()
+        tc_text = _file_cache.get("techContext.md", "").lower()
+        if sp_text and tc_text:
             stale_pairs = [
-                ("langgraph", "自研 react", "systemPatterns still mentions LangGraph but techContext says 自研 ReAct"),
-                ("langchain", "零框架", "systemPatterns still mentions LangChain but techContext says 零框架依赖"),
-                ("gemini", "minimax", "systemPatterns still mentions Gemini but techContext says MiniMax"),
-                ("gpt-4", "minimax", "systemPatterns still mentions GPT-4 but techContext says MiniMax"),
+                ("langgraph", "自研 react", "systemPatterns mentions LangGraph but techContext says 自研 ReAct"),
+                ("langchain", "零框架", "systemPatterns mentions LangChain but techContext says 零框架"),
             ]
             for old_term, new_term, msg in stale_pairs:
-                if old_term in sp_content and new_term in tc_content:
-                    quality_warnings.append(f"[!] STALE DATA: {msg}. Update systemPatterns.md during next [存档].")
+                if old_term in sp_text and new_term in tc_text:
+                    quality_warnings.append(f"[!] STALE: {msg}")
 
         # Check 3: conventions.md missing or all placeholders
-        conv_path = PROJECT_MAP_DIR / "conventions.md"
-        if not conv_path.exists():
+        conv_text = _file_cache.get("conventions.md", "")
+        if not conv_text:
+            quality_warnings.append("[i] conventions.md missing. Create during next [save].")
+        elif conv_text.count("[待填写") >= 3:
+            quality_warnings.append("[!] conventions.md has 3+ unfilled sections.")
+
+        # Check 4: systemPatterns missing file tree (no scan_codebase output)
+        sp_full = _file_cache.get("systemPatterns.md", "")
+        if sp_full and not ("## Entry Points" in sp_full or "## Modules" in sp_full or "Codebase Scan" in sp_full):
             quality_warnings.append(
-                "[i] conventions.md does not exist yet. Create it during next [存档] "
-                "to define naming, API, and code style conventions."
+                "[!] systemPatterns has no file tree. Run aio__scan_codebase to add one."
             )
-        elif conv_path.exists():
-            conv_content = conv_path.read_text(encoding="utf-8")
-            if conv_content.count("[待填写") >= 3:
-                quality_warnings.append(
-                    "[!] conventions.md has 3+ unfilled sections. "
-                    "Fill in project conventions during next [存档] to improve code consistency."
-                )
 
-        # Check 4: systemPatterns missing scan_codebase output (no file tree)
-        if sp_path.exists():
-            sp_text = sp_path.read_text(encoding="utf-8")
-            has_scan = ("## Entry Points" in sp_text or "## Modules" in sp_text
-                        or "Codebase Scan" in sp_text)
-            if not has_scan:
-                quality_warnings.append(
-                    "[!] systemPatterns.md has no file tree. Run:\n"
-                    "  aio__scan_codebase(project_root, scope) -> update systemPatterns module inventory.\n"
-                    "  This ensures 100% file coverage (no omissions)."
-                )
-
-        # Check 5: conventions.md may contain first-order lessons (misclassified)
-        if conv_path.exists():
-            conv_text = conv_path.read_text(encoding="utf-8")
+        # Check 5: conventions.md may contain first-order lessons
+        if conv_text:
             first_order_signals = ["禁止", "不能", "不要", "必须先", "之前出过", "踩过坑"]
             signal_count = sum(1 for s in first_order_signals if s in conv_text)
             if signal_count >= 2:
                 quality_warnings.append(
-                    "[!] conventions.md may contain first-order lessons (found operational "
-                    "language like '禁止/不能/踩过坑'). conventions.md is for second-order "
-                    "contracts (naming/API/style). Specific lessons belong in corrections/{key}.md."
+                    "[!] conventions.md may have first-order lessons (禁止/不能/踩过坑). "
+                    "Move to corrections/{key}.md."
                 )
 
         if quality_warnings:
@@ -210,115 +169,65 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
             for w in quality_warnings:
                 report.append(f"  {w}")
 
-        # -- Cleanup Reminder ------------------------------------
-        # Auto-detect stale project_map and remind user to run [整理]
+        # -- Cleanup Reminder (lightweight: stat only, no file reading) --
         import time as _time
         cleanup_reasons = []
 
-        # Check 1: activeContext.md mtime > 7 days
         ac_path = PROJECT_MAP_DIR / "activeContext.md"
         if ac_path.exists():
             ac_age_days = int((_time.time() - ac_path.stat().st_mtime) / 86400)
             if ac_age_days > 7:
                 cleanup_reasons.append(f"activeContext.md last updated {ac_age_days} days ago")
 
-        # Check 2: corrections key count > 10
         corrections_dir = PROJECT_MAP_DIR.parent / "corrections"
         if corrections_dir.exists():
             key_count = len(list(corrections_dir.glob("*.md")))
             if key_count > 10:
                 cleanup_reasons.append(f"{key_count} experience keys (consider consolidating)")
 
-        # Check 3: audit.log > 500 lines
-        audit_path = Path(".ai-operation/audit.log")
-        if audit_path.exists():
-            audit_lines = audit_path.read_text(encoding="utf-8").count("\n")
-            if audit_lines > 500:
-                cleanup_reasons.append(f"audit.log has {audit_lines} lines")
-
         if cleanup_reasons:
-            report.append("\n## [~] Cleanup Reminder\n")
-            report.append("  project_map may need cleanup. Reasons:")
+            report.append("\n## Cleanup Reminder\n")
             for r in cleanup_reasons:
-                report.append(f"    - {r}")
-            report.append("  Consider running [整理] to consolidate and trim.")
+                report.append(f"  - {r}")
+            report.append("  Run [整理] to consolidate.")
 
-        # -- Orphan Reference Check (Lint) ----------------------
-        # Verify that file paths mentioned in systemPatterns.md actually exist.
-        # Inspired by Karpathy's LLM Wiki "lint" workflow.
-        sp_path = PROJECT_MAP_DIR / "systemPatterns.md"
-        if sp_path.exists():
+        # -- Orphan Reference Check (use cached sp_text, no re-read) --
+        if sp_full:
             import re as _re
-            sp_content = sp_path.read_text(encoding="utf-8")
-            # Extract file paths from systemPatterns (patterns like path/to/file.ext)
             referenced_paths = _re.findall(
-                r'[`|]?\s*([\w./\-]+\.(?:py|ts|js|go|rs|sh|ps1|yml|yaml|json|md))\s*[`|]?',
-                sp_content
+                r'[`|]?\s*([\w./\-]+\.(?:py|ts|js|go|rs|sh|yml|yaml|json|md))\s*[`|]?',
+                sp_full
             )
             orphans = []
             for ref_path in set(referenced_paths):
-                # Skip obvious non-file references and framework internals
                 if ref_path.startswith("http") or ref_path.startswith("#"):
                     continue
-                full_path = Path(ref_path)
-                if not full_path.exists():
-                    # Also check relative to .ai-operation/
-                    alt_path = Path(".ai-operation") / ref_path
-                    if not alt_path.exists():
-                        orphans.append(ref_path)
+                if not Path(ref_path).exists() and not Path(".ai-operation", ref_path).exists():
+                    orphans.append(ref_path)
 
             if orphans:
-                report.append(f"\n## [?] Orphan References ({len(orphans)} found)\n")
-                report.append("  systemPatterns.md references files that don't exist:")
+                report.append(f"\n## Orphan References ({len(orphans)} found)\n")
+                report.append("  systemPatterns references missing files:")
                 for o in orphans[:10]:
-                    report.append(f"    - `{o}` -- missing or renamed")
-                report.append("  Update systemPatterns.md during next [存档] or [整理].")
+                    report.append(f"    - {o}")
 
-        # -- Skill Registry (frontmatter-driven) ----------------
-        # Show available skills with their trigger conditions.
-        # Skills with `paths` are only shown if current git status touches matching files.
+        # -- Skill Registry (no subprocess — just list available skills) --
         skills = _discover_skills()
         if skills:
-            # Get current git-modified files for conditional activation
-            import subprocess as _sp
-            try:
-                git_result = _sp.run(
-                    ["git", "diff", "--name-only", "HEAD"],
-                    capture_output=True, text=True, timeout=10
-                )
-                changed_files_git = set(git_result.stdout.strip().split("\n")) if git_result.stdout.strip() else set()
-                # Also add staged files
-                git_staged = _sp.run(
-                    ["git", "diff", "--name-only", "--cached"],
-                    capture_output=True, text=True, timeout=10
-                )
-                if git_staged.stdout.strip():
-                    changed_files_git.update(git_staged.stdout.strip().split("\n"))
-            except Exception:
-                changed_files_git = set()
-
-            import fnmatch
-            report.append("\n## [#] Available Skills\n")
+            report.append("\n## Available Skills\n")
             for skill in skills:
-                skill_paths = skill.get("paths", [])
-                # If skill has paths filter, only show if any changed file matches
-                if skill_paths:
-                    matched = any(
-                        fnmatch.fnmatch(cf, pat)
-                        for cf in changed_files_git
-                        for pat in skill_paths
-                    )
-                    if not matched and changed_files_git:
-                        continue  # Skip: no matching files in current changes
-
                 when_str = ", ".join(skill.get("when", [])) if skill.get("when") else "manual"
                 report.append(
                     f"  - **{skill['name']}**: {skill.get('description', '')} "
                     f"[triggers: {when_str}]"
                 )
 
-        _audit("aio__force_architect_read", "SUCCESS", f"budget={budget_pct}%,size={total_map_size},quality_warnings={len(quality_warnings)},cleanup_reasons={len(cleanup_reasons)},skills={len(skills)}")
-        return _budget_truncate("\n".join(report))
+        budget_pct = int(total_chars / MAX_TOTAL_CHARS * 100)
+        report.append(f"\n---\nBudget: {total_chars}/{MAX_TOTAL_CHARS} ({budget_pct}%)")
+
+        _audit("aio__force_architect_read", "SUCCESS",
+               f"budget={budget_pct}%,chars={total_chars},warnings={len(quality_warnings)},skills={len(skills)}")
+        return "\n".join(report)
 
     @mcp.tool()
     def aio__detail_read(
