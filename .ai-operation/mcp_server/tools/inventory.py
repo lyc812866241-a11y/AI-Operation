@@ -1,5 +1,5 @@
 """
-Inventory tools — real-time inventory append and consolidation.
+Inventory tools -- real-time inventory append and consolidation.
 Contains: aio__inventory_append, aio__inventory_consolidate
 """
 
@@ -27,13 +27,13 @@ def register_inventory_tools(mcp: FastMCP, _audit, _loop_guard):
         item immediately when discovered, ALL items are persisted regardless
         of context window limits.
 
-        This tool does NOT require taskSpec approval — it is a write-ahead log,
+        This tool does NOT require taskSpec approval -- it is a write-ahead log,
         not a code change.
 
         Args:
             category: The inventory category (e.g., "Skills", "API Endpoints", "Data Models").
             item: One-line description of the item. Include name and key details.
-                  Example: "scene_detect — 从视频中检测场景切换点，输入 video_path，输出 List[Timestamp]"
+                  Example: "scene_detect -- 从视频中检测场景切换点，输入 video_path，输出 List[Timestamp]"
 
         Returns:
             Confirmation with current count in that category.
@@ -111,7 +111,7 @@ def register_inventory_tools(mcp: FastMCP, _audit, _loop_guard):
         lines = content.split("\n")
 
         # Extract all inventory entries (lines starting with "- [")
-        entries = {}  # category → set of items
+        entries = {}  # category -> set of items
         non_entry_lines = []
 
         for line in lines:

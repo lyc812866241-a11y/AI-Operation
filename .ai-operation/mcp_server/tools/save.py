@@ -1,5 +1,5 @@
 """
-Save tools — two-phase architect save protocol.
+Save tools -- two-phase architect save protocol.
 Contains: aio__force_architect_save, aio__force_architect_save_confirm
 """
 
@@ -66,7 +66,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
            下一步：Node 4B 分流改用 LLM 判断; 产品还原换 imagen-4.0-ultra"
 
         EXAMPLE of BAD activeContext_update (will be REJECTED):
-          "完成了三阶编导，继续优化生图"  ← too vague, no file paths, no details
+          "完成了三阶编导，继续优化生图"  <- too vague, no file paths, no details
 
         Args:
             projectbrief_update: Section updates OR "NO_CHANGE_BECAUSE: [reason]"
@@ -77,10 +77,10 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             lessons_learned: REQUIRED. Lessons from this session. "NONE" only if truly nothing learned.
             inventory_update: Optional but CRITICAL for list data. If this session created, discovered,
                 or modified a list of items (skills, modules, APIs, models), provide the COMPLETE LIST
-                here. This is FULL OVERWRITE, not append — if you list 40 skills, the file will have
+                here. This is FULL OVERWRITE, not append -- if you list 40 skills, the file will have
                 exactly 40 skills. Always read inventory.md first and merge, don't rely on memory alone.
             conventions_update: Optional. SECOND-ORDER contracts only (naming, API format, UI tokens,
-                code style) — structural rules that prevent a CLASS of bugs. Do NOT put specific
+                code style) -- structural rules that prevent a CLASS of bugs. Do NOT put specific
                 incident lessons here (those go in corrections/{key}.md as first-order experience).
                 Section-aware merge. Use ===SECTION=== delimiters. "NO_CHANGE_BECAUSE: [reason]" to skip.
             session_compaction: Optional. Compressed summary of conversation for context overflow recovery.
@@ -96,7 +96,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             "progress.md": progress_update,
         }
 
-        # Add conventions if provided (optional field — default to NO_CHANGE)
+        # Add conventions if provided (optional field -- default to NO_CHANGE)
         if conventions_update and conventions_update.strip():
             updates["conventions.md"] = conventions_update
         else:
@@ -104,7 +104,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
 
         _audit("aio__force_architect_save", "CALLED")
 
-        # ── Re-entrancy guard: only one save at a time ──
+        # -- Re-entrancy guard: only one save at a time --
         if is_save_pending():
             _audit("aio__force_architect_save", "REJECTED", "save already pending")
             return (
@@ -112,7 +112,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                 "Call aio__force_architect_save_confirm to complete the current save first,\n"
                 "or wait for it to finish before starting a new one."
             )
-        # ── Cognitive Gate check: must have read corrections before saving ──
+        # -- Cognitive Gate check: must have read corrections before saving --
         # Only enforced when corrections.md has a SESSION_KEY (framework is fully set up)
         session_flag = Path(".ai-operation/.session_confirmed")
         corrections_path_check = PROJECT_MAP_DIR / "corrections.md"
@@ -126,7 +126,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                     "This ensures your save reflects awareness of project-specific experience."
                 )
 
-        # ── Loop detection ──────────────────────────────────────────
+        # -- Loop detection ------------------------------------------
         _loop_warning = ""
         loop_msg = _loop_guard("aio__force_architect_save", activeContext_update[:100])
         if loop_msg:
@@ -135,7 +135,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                 return loop_msg
             _loop_warning = loop_msg  # will be prepended to result
 
-        # ── Pre-save sanity check: read current file state ──────────
+        # -- Pre-save sanity check: read current file state ----------
         # Show AI the current file sizes so it can detect if its update
         # is suspiciously smaller than what's already there
         pre_save_state = {}
@@ -159,7 +159,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                 _audit("aio__force_architect_save", "WARNING",
                        f"{fn} update ({new_size} chars) much smaller than existing ({old_size} chars)")
 
-        # Validate: NO bare "NO_CHANGE" allowed — must provide reason
+        # Validate: NO bare "NO_CHANGE" allowed -- must provide reason
         # Build static file validation list (conventions is optional, only validate if provided)
         static_validations = {
             "projectbrief_update": projectbrief_update,
@@ -190,7 +190,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             return "REJECTED: activeContext_update cannot be NO_CHANGE. You must always update the current focus."
         if "NO_CHANGE" in progress_update.strip().upper() and "BECAUSE" not in progress_update.upper():
             return "REJECTED: progress_update cannot be NO_CHANGE. You must always record what was done this session."
-        # ── Auto-reflection: scan audit.log for session violations ──
+        # -- Auto-reflection: scan audit.log for session violations --
         # If AI was rejected/blocked/bypassed this session, it cannot claim "NONE" learned.
         session_violations = []
         audit_path = Path(".ai-operation/audit.log")
@@ -210,7 +210,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                                       "DANGEROUS_BLOCKED"):
                             tool = entry.get("tool", "")
                             details = entry.get("details", "")[:100]
-                            session_violations.append(f"{tool}: {status} — {details}")
+                            session_violations.append(f"{tool}: {status} -- {details}")
                     except _json.JSONDecodeError:
                         continue
             except Exception:
@@ -242,7 +242,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                 f"you had zero rejections/blocks in this session."
             )
 
-        # ── Information density validation ────────────────────────
+        # -- Information density validation ------------------------
         # Reject updates that are too vague to be useful as project memory.
         # A future AI reading these files must be able to pick up exactly where you left off.
 
@@ -269,8 +269,8 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             return (
                 f"REJECTED: progress_update is only {len(pg)} chars (minimum {MIN_PROGRESS_CHARS}).\n\n"
                 f"Each completed task must include the FILE it touched.\n"
-                f"Bad:  '✅ 完成了编导功能'\n"
-                f"Good: '✅ 新建 skills/director/formula_director.py (~300行): "
+                f"Bad:  '[OK] 完成了编导功能'\n"
+                f"Good: '[OK] 新建 skills/director/formula_director.py (~300行): "
                 f"round_1_analyze + round_2_adapt + round_3a/3b 并发画面设计'"
             )
 
@@ -306,7 +306,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                 "Good: 'src/engine/pipeline_engine.py: Node 2 轨道B 调用 formula_director 三阶编导'"
             )
 
-        # ── Git diff cross-validation ────────────────────────────
+        # -- Git diff cross-validation ----------------------------
         # Compare what AI claims to have changed (activeContext) with
         # what git actually shows as changed. Warn on mismatch.
         project_changes = []
@@ -320,7 +320,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             )
             if diff_result.returncode == 0 and diff_result.stdout.strip():
                 changed_in_git = [f.strip() for f in diff_result.stdout.strip().split("\n") if f.strip()]
-                # Filter out framework files — only check project code
+                # Filter out framework files -- only check project code
                 project_changes = [f for f in changed_in_git if not f.startswith(".ai-operation/")]
                 if project_changes:
                     mentioned = sum(1 for f in project_changes if any(part in ac for part in f.split("/")))
@@ -331,7 +331,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         except Exception:
             pass  # git diff is best-effort, don't block save
 
-        # ── Completion verification gate ──────────────────────────
+        # -- Completion verification gate --------------------------
         # If activeContext claims completion, must include terminal evidence
         completion_keywords = ["完成", "完毕", "done", "completed", "finished", "已完成"]
         evidence_indicators = ["$", ">", "exit code", "output:", "stdout", "stderr", "ls -", "cat ", "wc "]
@@ -339,9 +339,9 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         if any(kw in ac_lower for kw in completion_keywords):
             if not any(ev in ac_lower for ev in evidence_indicators):
                 _audit("aio__force_architect_save", "WARNING", "completion claimed without terminal evidence")
-                # Warning only, not rejection — prepended to diff preview later
+                # Warning only, not rejection -- prepended to diff preview later
 
-        # ── Pointer format gate for static files ─────────────────
+        # -- Pointer format gate for static files -----------------
         # systemPatterns should be pointer-style (module + path + short description)
         # Lines > 200 chars without a file path indicator are likely content leaking in
         sp = systemPatterns_update.strip()
@@ -355,17 +355,17 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                 _audit("aio__force_architect_save", "WARNING",
                        f"systemPatterns has {len(long_content_lines)} lines > 200 chars without file paths")
 
-        # ── Inventory quality gate ────────────────────────────────
+        # -- Inventory quality gate --------------------------------
         # Warn (not reject) if inventory is still empty after code exploration
         inv_path = PROJECT_MAP_DIR / "inventory.md"
         if inv_path.exists():
             inv_content = inv_path.read_text(encoding="utf-8")
             if inv_content.count("[待填写") >= 2:
                 if not inventory_update or not inventory_update.strip() or inventory_update.strip().upper() == "SKIP":
-                    # Don't reject — but add a loud warning that will show in diff preview
+                    # Don't reject -- but add a loud warning that will show in diff preview
                     _audit("aio__force_architect_save", "WARNING", "inventory still all placeholders")
 
-        # ── Ingest propagation check ──────────────────────────────
+        # -- Ingest propagation check ------------------------------
         # If AI created new files this session but inventory_update is NO_CHANGE,
         # warn that new assets should be reflected in inventory.
         # (Karpathy LLM Wiki pattern: one change should propagate to all related pages)
@@ -408,10 +408,10 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                     f"  rule_code=\"save.ingest_propagation\", user_said=\"<reason>\")"
                 )
 
-        # ══════════════════════════════════════════════════════════
-        # PHASE 1: PREPARE — generate diff preview, stage to file
+        # ==========================================================
+        # PHASE 1: PREPARE -- generate diff preview, stage to file
         # Do NOT write to project_map yet. Let AI review first.
-        # ══════════════════════════════════════════════════════════
+        # ==========================================================
         import json
         import datetime
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -437,7 +437,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             # Detect suspicious shrinkage
             if old_size > 500 and new_size < old_size * 0.3:
                 warnings.append(
-                    f"⚠️ {filename}: new update ({new_size} chars) is much smaller than "
+                    f"[!] {filename}: new update ({new_size} chars) is much smaller than "
                     f"existing content ({old_size} chars). Possible data loss?"
                 )
 
@@ -459,8 +459,8 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             new_count = inventory_update.count("- ") + inventory_update.count("- [")
             if old_count > 0 and new_count < old_count * 0.5:
                 warnings.append(
-                    f"⚠️ inventory.md: new list has ~{new_count} items but existing has "
-                    f"~{old_count} items. Significant reduction — did you read inventory.md first?"
+                    f"[!] inventory.md: new list has ~{new_count} items but existing has "
+                    f"~{old_count} items. Significant reduction -- did you read inventory.md first?"
                 )
             staged_updates["inventory.md"] = inventory_update.strip()
             diff_preview.append(f"### inventory.md (OVERWRITE)")
@@ -498,7 +498,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             report.append("")
 
         if warnings:
-            report.append("## ⚠️ SIZE WARNINGS\n")
+            report.append("## [!] SIZE WARNINGS\n")
             for w in warnings:
                 report.append(f"  {w}")
             report.append("")
@@ -506,10 +506,10 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         report.append(f"## Lessons: {staged_lessons[:150]}")
         report.append("")
 
-        # ── Self-Audit Checklist (forced reflection) ─────────────
+        # -- Self-Audit Checklist (forced reflection) -------------
         # The AI must answer each question before calling confirm.
-        # This uses the current AI's own reasoning — no external API needed.
-        report.append("## ⚡ MANDATORY SELF-AUDIT (answer before confirming)\n")
+        # This uses the current AI's own reasoning -- no external API needed.
+        report.append("## [!] MANDATORY SELF-AUDIT (answer before confirming)\n")
         report.append("You MUST think through each question below. If ANY answer is 'no',")
         report.append("call aio__force_architect_save again with corrected content.\n")
 
@@ -522,7 +522,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             new_size = len(content)
             if old_size > 300 and new_size < old_size * 0.5:
                 audit_questions.append(
-                    f"⚠️ {fn} is shrinking from {old_size} to {new_size} chars. "
+                    f"[!] {fn} is shrinking from {old_size} to {new_size} chars. "
                     f"Did you read the current {fn} before writing? Is anything lost?"
                 )
 
@@ -534,7 +534,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             inv_count = inv_content.count("- [")
             if inv_placeholder_count >= 2:
                 audit_questions.append(
-                    f"⚠️ CRITICAL: inventory.md still has {inv_placeholder_count} unfilled [待填写] sections. "
+                    f"[!] CRITICAL: inventory.md still has {inv_placeholder_count} unfilled [待填写] sections. "
                     f"You have NO asset inventory. If you scanned or explored the codebase in this session, "
                     f"you MUST populate inventory_update with discovered skills, modules, APIs, and data models. "
                     f"Do NOT leave inventory empty after a code exploration session."
@@ -572,9 +572,9 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             audit_questions.append(
                 "Knowledge hierarchy check: Did this session produce new lessons?\n"
                 "  - Structural rules (naming/API/style that prevent a CLASS of bugs) "
-                "→ conventions.md (二阶契约)\n"
+                "-> conventions.md (二阶契约)\n"
                 "  - Specific incident lessons (one-time pitfall) "
-                "→ corrections/{key}.md (一阶经验)\n"
+                "-> corrections/{key}.md (一阶经验)\n"
                 "  Do NOT put specific operational lessons in conventions.md."
             )
 
@@ -582,7 +582,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         if any(kw in ac_lower for kw in completion_keywords):
             if not any(ev in ac_lower for ev in evidence_indicators):
                 audit_questions.append(
-                    "⚠️ You claim completion but activeContext has no terminal evidence "
+                    "[!] You claim completion but activeContext has no terminal evidence "
                     "(command output, ls, cat, exit code). Add evidence or remove completion claim."
                 )
 
@@ -590,7 +590,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         if not sp.upper().startswith("NO_CHANGE"):
             if long_content_lines:
                 audit_questions.append(
-                    f"⚠️ systemPatterns has {len(long_content_lines)} lines over 200 chars without file paths. "
+                    f"[!] systemPatterns has {len(long_content_lines)} lines over 200 chars without file paths. "
                     f"project_map should be pointer-style: module name + file path + one-line description. "
                     f"Move detailed descriptions to the source files themselves."
                 )
@@ -601,7 +601,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             taskspec_content = taskspec_path.read_text(encoding="utf-8")
             if len(taskspec_content) > 50:
                 audit_questions.append(
-                    f"⚠️ Active taskSpec found. Review your approved plan:\n"
+                    f"[!] Active taskSpec found. Review your approved plan:\n"
                     f"{taskspec_content[:500]}{'...' if len(taskspec_content) > 500 else ''}\n\n"
                     f"Check: which items are done? Which are not? "
                     f"Does your progress_update accurately reflect this?"
@@ -610,7 +610,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         # Q10: Git diff cross-validation
         if project_changes and mentioned == 0:
             audit_questions.append(
-                f"⚠️ git diff shows {len(project_changes)} changed project files "
+                f"[!] git diff shows {len(project_changes)} changed project files "
                 f"({', '.join(project_changes[:5])}) but NONE are mentioned in your "
                 f"activeContext. Are you saving a complete picture of what happened?"
             )
@@ -620,10 +620,10 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         report.append("")
 
         report.append(
-            "───────────────────────────────────────────\n"
+            "-------------------------------------------\n"
             "After reviewing each question above:\n"
-            "  ✅ All correct → call aio__force_architect_save_confirm\n"
-            "  ❌ Something wrong → call aio__force_architect_save with fixes"
+            "  [OK] All correct -> call aio__force_architect_save_confirm\n"
+            "  [X] Something wrong -> call aio__force_architect_save with fixes"
         )
 
         _audit("aio__force_architect_save", "PREPARED",
@@ -640,8 +640,8 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         It reads the staging file, applies all updates, writes lessons, and commits.
 
         The two-phase save ensures AI reviews the diff before writing:
-        Phase 1 (save): validate + generate diff → PENDING_REVIEW
-        Phase 2 (confirm): apply writes + git commit → SUCCESS
+        Phase 1 (save): validate + generate diff -> PENDING_REVIEW
+        Phase 2 (confirm): apply writes + git commit -> SUCCESS
 
         Returns:
             Execution report with files updated and git commit status.
@@ -651,7 +651,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
 
         _audit("aio__force_architect_save_confirm", "CALLED")
 
-        # ── Loop detection ──────────────────────────────────────────
+        # -- Loop detection ------------------------------------------
         loop_msg = _loop_guard("aio__force_architect_save_confirm")
         if loop_msg and "BLOCKED" in loop_msg:
             _audit("aio__force_architect_save_confirm", "LOOP_BLOCKED")
@@ -715,25 +715,25 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                         f"{', '.join(changed_sections) if changed_sections else 'none'})"
                     )
                 elif filepath.exists():
-                    # No ===SECTION=== delimiter — full overwrite of static file.
+                    # No ===SECTION=== delimiter -- full overwrite of static file.
                     # APPEND was causing infinite content duplication. Static files
                     # should be replaced entirely when AI provides a full update.
                     # For partial updates, AI MUST use ===SECTION=== delimiters.
                     filepath.write_text(content, encoding="utf-8")
-                    merge_report.append(f"  {filename}: OVERWRITE (no section delimiters — use ===SECTION=== for partial updates)")
+                    merge_report.append(f"  {filename}: OVERWRITE (no section delimiters -- use ===SECTION=== for partial updates)")
                 else:
                     filepath.write_text(content, encoding="utf-8")
                     merge_report.append(f"  {filename}: CREATED")
 
             else:
                 # Dynamic files (activeContext, progress): append only
-                # No auto-compact — cleanup is handled by [整理] skill (human-in-the-loop)
+                # No auto-compact -- cleanup is handled by [整理] skill (human-in-the-loop)
                 if filename in ("activeContext.md", "progress.md") and filepath.exists():
                     existing = filepath.read_text(encoding="utf-8")
                     file_bytes = len(existing.encode("utf-8"))
                     if file_bytes > DYNAMIC_FILE_MAX_BYTES:
                         merge_report.append(
-                            f"  ⚠️ {filename} is {file_bytes // 1024}KB (>{DYNAMIC_FILE_MAX_BYTES // 1024}KB). "
+                            f"  [!] {filename} is {file_bytes // 1024}KB (>{DYNAMIC_FILE_MAX_BYTES // 1024}KB). "
                             f"Run [整理] to clean up."
                         )
 
@@ -764,7 +764,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             if "corrections.md" not in changed_files:
                 changed_files.append("corrections.md")
 
-        # ── Write lessons to corrections key-value system ──────────
+        # -- Write lessons to corrections key-value system ----------
         # Lessons go to corrections/{key}.md files (values).
         # New keys are registered in corrections.md (index).
         # AI specifies category with "category: lesson text" format.
@@ -821,18 +821,18 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                     changed_files.append("corrections.md")
 
             merge_report.append(
-                f"  Lessons: {len(lessons_lines)} entries → corrections/{', '.join(updated_keys)}"
+                f"  Lessons: {len(lessons_lines)} entries -> corrections/{', '.join(updated_keys)}"
             )
 
         # Write compaction summary
         if staged_compaction:
             compaction_path = PROJECT_MAP_DIR / "activeContext.md"
             with open(compaction_path, "a", encoding="utf-8") as f:
-                f.write(f"\n\n---\n### [Session Compaction — {timestamp}]\n{staged_compaction}\n")
+                f.write(f"\n\n---\n### [Session Compaction -- {timestamp}]\n{staged_compaction}\n")
             if "activeContext.md" not in changed_files:
                 changed_files.append("activeContext.md")
 
-        # ── Regenerate SESSION_KEY for next session ────────────
+        # -- Regenerate SESSION_KEY for next session ------------
         # Forces next session's AI to re-read corrections.md to get the new key
         import secrets
         new_key = secrets.token_hex(4)
@@ -858,22 +858,22 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         SAVE_STAGING_FILE.unlink()
         clear_save_pending()
 
-        # ── Universal size limit enforcement (last safety net) ────
+        # -- Universal size limit enforcement (last safety net) ----
         # Catches ANY file that exceeded MAX_FILE_CHARS after all writes,
         # regardless of whether it has ## headers or not.
         for fn in list(REQUIRED_FILES.values()) + ["corrections.md"]:
             fp = PROJECT_MAP_DIR / fn
             overflow_result = _enforce_file_size_limit(fp)
             if overflow_result:
-                merge_report.append(f"  ⚠️ {overflow_result}")
+                merge_report.append(f"  [!] {overflow_result}")
                 if fn not in changed_files:
                     changed_files.append(fn)
 
-        # Git commit — non-blocking fire-and-forget on Windows
+        # Git commit -- non-blocking fire-and-forget on Windows
         # WHY: subprocess.run(timeout=N) with capture_output=True deadlocks on Windows
         # when git spawns child processes. Python kills the parent but children hold the
         # pipe open, causing communicate() to block forever. The only safe approach is
-        # Popen without waiting — files are already written, git commit is best-effort.
+        # Popen without waiting -- files are already written, git commit is best-effort.
         git_status = "not attempted"
         git_diag = {}
         try:
@@ -882,7 +882,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
 
             _set_mcp_flag()
 
-            # ── Diagnostics: capture environment BEFORE any git calls ──
+            # -- Diagnostics: capture environment BEFORE any git calls --
             git_diag["cwd"] = str(Path.cwd())
             git_diag["project_map_dir"] = str(PROJECT_MAP_DIR.resolve()) if PROJECT_MAP_DIR.exists() else "MISSING"
             git_diag["git_path"] = shutil.which("git") or "NOT FOUND"
@@ -901,7 +901,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             git_diag["files_to_add_count"] = len(files_to_add)
 
             if files_to_add:
-                # DEVNULL only — PIPE deadlocks on Windows (confirmed twice)
+                # DEVNULL only -- PIPE deadlocks on Windows (confirmed twice)
                 t0 = time.time()
                 add_proc = subprocess.Popen(
                     ["git", "add"] + files_to_add,
@@ -936,7 +936,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                         commit_proc.kill()
                         commit_proc.wait()
                         git_diag["commit_time"] = f"{time.time() - t1:.1f}s (TIMEOUT)"
-                        git_status = "commit timed out — run manually"
+                        git_status = "commit timed out -- run manually"
         except Exception as e:
             git_status = f"error: {str(e)[:100]}"
         finally:

@@ -1,5 +1,5 @@
 """
-Cleanup tools — garbage collection and git health.
+Cleanup tools -- garbage collection and git health.
 Contains: aio__force_garbage_collection
 """
 
@@ -35,7 +35,7 @@ def register_cleanup_tools(mcp: FastMCP, _audit, _loop_guard):
         report_sections = []
         actions = []  # (action_type, description, command_or_path)
 
-        # ── Section 1: Temp files ─────────────────────────────────
+        # -- Section 1: Temp files ---------------------------------
         patterns = [
             "patch_*.py", "test_*.py", "temp_*.py",
             "*.temp", "debug_*.py", "fix_*.py",
@@ -56,7 +56,7 @@ def register_cleanup_tools(mcp: FastMCP, _audit, _loop_guard):
             for f in temp_files:
                 actions.append(("delete", f, f))
 
-        # ── Section 2: Git-tracked but gitignored files ───────────
+        # -- Section 2: Git-tracked but gitignored files -----------
         tracked_ignored = []
         try:
             result = subprocess.run(
@@ -80,7 +80,7 @@ def register_cleanup_tools(mcp: FastMCP, _audit, _loop_guard):
             for f in tracked_ignored:
                 actions.append(("git_rm_cached", f, f))
 
-        # ── Section 3: Large untracked files not in .gitignore ────
+        # -- Section 3: Large untracked files not in .gitignore ----
         large_untracked = []
         try:
             result = subprocess.run(
@@ -108,7 +108,7 @@ def register_cleanup_tools(mcp: FastMCP, _audit, _loop_guard):
                 "\n".join(f"  - {f} ({s // 1_000_000}MB)" for f, s in sorted(large_untracked, key=lambda x: -x[1]))
             )
 
-        # ── Section 4: Git repo health ────────────────────────────
+        # -- Section 4: Git repo health ----------------------------
         git_size = 0
         try:
             for root, dirs, files in os.walk(".git"):
@@ -125,19 +125,19 @@ def register_cleanup_tools(mcp: FastMCP, _audit, _loop_guard):
                 f"consider: git filter-branch or BFG Repo-Cleaner to purge them."
             )
 
-        # ── Build response ────────────────────────────────────────
+        # -- Build response ----------------------------------------
         if not report_sections:
             return "CLEAN: No issues found. Temp files clean, git healthy."
 
         if not confirm:
             return (
-                f"PENDING CONFIRMATION — Found {len(actions)} cleanable items\n\n" +
+                f"PENDING CONFIRMATION -- Found {len(actions)} cleanable items\n\n" +
                 "\n\n".join(report_sections) + "\n\n"
                 f"Call this tool again with confirm=True to clean up.\n"
                 f"(Git-tracked files will be untracked with 'git rm --cached', not deleted from disk.)"
             )
 
-        # ── Execute cleanup ───────────────────────────────────────
+        # -- Execute cleanup ---------------------------------------
         results = []
         deleted_count = 0
         untracked_count = 0

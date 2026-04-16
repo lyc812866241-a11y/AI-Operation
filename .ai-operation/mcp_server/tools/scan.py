@@ -1,5 +1,5 @@
 """
-Codebase scanner — single tool call replaces Phase 1 + Phase 2 T1/T3.
+Codebase scanner -- single tool call replaces Phase 1 + Phase 2 T1/T3.
 
 Contains: aio__scan_codebase
 
@@ -43,7 +43,7 @@ CONFIG_NAMES = {
     "pyproject.toml", "package.json", "Cargo.toml", "go.mod",
 }
 
-# No file cap — every code file must appear in output. Completeness is guaranteed.
+# No file cap -- every code file must appear in output. Completeness is guaranteed.
 # Signatures are extracted from the ENTIRE file (not just header).
 
 

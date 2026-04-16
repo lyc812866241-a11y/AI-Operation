@@ -22,7 +22,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 from tools.architect import register_architect_tools
 
-# ── Audit Logger ─────────────────────────────────────────────────────────────
+# -- Audit Logger -------------------------------------------------------------
 # Every MCP tool call is logged to .ai-operation/audit.log for traceability.
 # This provides a tamper-evident record of all AI actions through MCP tools.
 
@@ -56,11 +56,11 @@ def log_tool_call(tool_name: str, status: str, details: str = ""):
         pass  # Never let audit logging break the tool
 
 
-# ── Loop Detection ──────────────────────────────────────────────────────────
+# -- Loop Detection ----------------------------------------------------------
 # Tracks recent tool calls to detect AI stuck in a loop.
 # Same tool + similar args within WINDOW seconds:
-#   >= WARN_THRESHOLD  → tool executes but returns warning
-#   >= BLOCK_THRESHOLD → tool is REJECTED, forces AI to change approach
+#   >= WARN_THRESHOLD  -> tool executes but returns warning
+#   >= BLOCK_THRESHOLD -> tool is REJECTED, forces AI to change approach
 
 LOOP_WINDOW_SECONDS = 300  # 5 minutes
 LOOP_WARN_THRESHOLD = 3
@@ -94,21 +94,21 @@ def _check_loop(tool_name: str, args_str: str) -> str | None:
 
     if repeat_count >= LOOP_BLOCK_THRESHOLD:
         return (
-            f"BLOCKED: Loop detected — {tool_name} called {repeat_count + 1} times "
+            f"BLOCKED: Loop detected -- {tool_name} called {repeat_count + 1} times "
             f"with same/similar args in {LOOP_WINDOW_SECONDS}s.\n"
             f"You are stuck in a loop. STOP and change your approach.\n"
             f"Try: read the error message, check your assumptions, ask the user."
         )
     elif repeat_count >= LOOP_WARN_THRESHOLD:
         return (
-            f"⚠️ WARNING: {tool_name} called {repeat_count + 1} times with same/similar args "
+            f"[!] WARNING: {tool_name} called {repeat_count + 1} times with same/similar args "
             f"in {LOOP_WINDOW_SECONDS}s. You may be in a loop. "
             f"Consider changing approach before you get blocked."
         )
     return None
 
 
-# ── Initialize MCP Server ────────────────────────────────────────────────────
+# -- Initialize MCP Server ----------------------------------------------------
 mcp = FastMCP("Vibe-Agent-Architect")
 
 # --- Register Tool Categories ---

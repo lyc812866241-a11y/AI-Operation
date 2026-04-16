@@ -1,5 +1,5 @@
 """
-Skillify — extract reusable SKILL.md from audit.log patterns.
+Skillify -- extract reusable SKILL.md from audit.log patterns.
 Contains: aio__extract_skill
 """
 
@@ -33,7 +33,7 @@ def register_skillify_tools(mcp: FastMCP, _audit, _loop_guard):
         - What the common workflow sequence looks like
 
         Generates a SKILL.md draft with frontmatter, placed in skills/{skill_name}/.
-        The skill is in PENDING_REVIEW state — user must confirm before it's active.
+        The skill is in PENDING_REVIEW state -- user must confirm before it's active.
 
         Args:
             skill_name: Name for the new skill (lowercase, hyphenated, e.g., "api-migration")
@@ -152,7 +152,7 @@ def register_skillify_tools(mcp: FastMCP, _audit, _loop_guard):
             f"---\n\n"
             f"# {skill_name}\n\n"
             f"> Auto-extracted from audit.log ({len(recent)} entries analyzed).\n"
-            f"> **Status: PENDING_REVIEW** — review and edit before using.\n\n"
+            f"> **Status: PENDING_REVIEW** -- review and edit before using.\n\n"
             f"## Description\n\n{description}\n\n"
             f"## Observed Tool Usage\n\n{tool_list}\n\n"
             f"## Files Commonly Touched\n\n{file_list}\n\n"

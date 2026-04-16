@@ -1,5 +1,5 @@
 """
-Bootstrap tools — project initialization/bootstrap write.
+Bootstrap tools -- project initialization/bootstrap write.
 Contains: aio__force_project_bootstrap_write
 """
 
@@ -52,7 +52,7 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
             progress_initial: Initial milestone entry for progress.md.
             user_confirmed: MUST be True.
             conventions_content: Optional. SECOND-ORDER contracts only (naming, API format,
-                UI tokens, code style) — structural rules that prevent a class of bugs.
+                UI tokens, code style) -- structural rules that prevent a class of bugs.
                 Specific incident lessons go in corrections/{key}.md, not here.
                 Use "SKIP" to leave empty for now.
 
@@ -97,14 +97,14 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
         merge_report = []
 
-        # ── Merge static files (preserve template structure) ──────────
+        # -- Merge static files (preserve template structure) ----------
         def merge_into_template(filepath, ai_content):
             """Replace [待填写...] placeholders in template, preserve everything else."""
             if ai_content.strip().upper() == "SKIP":
                 return "SKIPPED"
 
             if not filepath.exists():
-                # No template to merge into — write directly
+                # No template to merge into -- write directly
                 filepath.write_text(ai_content.strip(), encoding="utf-8")
                 return "WRITTEN (no template found)"
 
@@ -115,7 +115,7 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
             placeholders = list(re.finditer(placeholder_pattern, template))
 
             if not placeholders:
-                # Template has no placeholders left — full overwrite (re-initialization)
+                # Template has no placeholders left -- full overwrite (re-initialization)
                 filepath.write_text(ai_content.strip(), encoding="utf-8")
                 return "OVERWRITTEN (no placeholders in template)"
 
@@ -147,7 +147,7 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
             )
             result = re.sub(
                 r'\[由 `\[存档\]` 写入日期和变更摘要\]',
-                f"{timestamp} — bootstrap merge",
+                f"{timestamp} -- bootstrap merge",
                 result
             )
 
@@ -172,7 +172,7 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
             except Exception as e:
                 return f"FAILED: Could not process {filename}: {e}"
 
-        # ── Generate dynamic files (always fresh) ─────────────────────
+        # -- Generate dynamic files (always fresh) ---------------------
         if activeContext_focus.strip().upper() != "SKIP":
             active_path = PROJECT_MAP_DIR / "activeContext.md"
             active_path.write_text(
@@ -210,7 +210,7 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
         if not written_files:
             return "WARNING: All files were SKIPPED. No changes made."
 
-        # ── Count remaining placeholders ──────────────────────────────
+        # -- Count remaining placeholders ------------------------------
         remaining = 0
         for filename in ["projectbrief.md", "systemPatterns.md", "techContext.md"]:
             filepath = PROJECT_MAP_DIR / filename
@@ -218,7 +218,7 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
                 content = filepath.read_text(encoding="utf-8")
                 remaining += len(re.findall(r'\[待填写[^\]]*\]', content))
 
-        # ── Git commit (non-blocking, same approach as save_confirm) ────
+        # -- Git commit (non-blocking, same approach as save_confirm) ----
         git_status = "not attempted"
         try:
             _set_mcp_flag()

@@ -1,15 +1,15 @@
 """
-Audit tools — programmatic verification of project_map claims against actual code.
+Audit tools -- programmatic verification of project_map claims against actual code.
 
 Contains: aio__audit_project_map
 
 This tool closes the "AI self-validates its own claims" gap in bootstrap.
 Instead of trusting AI to say "现有内容准确", it runs code-level checks:
-  1. File existence — do claimed paths actually exist?
-  2. Decorator count — does the actual count match inventory?
-  3. Dependency truth — are claimed libraries actually imported?
-  4. Naming consistency — do conventions match real code?
-  5. Config parsing — do .env / docker-compose match techContext?
+  1. File existence -- do claimed paths actually exist?
+  2. Decorator count -- does the actual count match inventory?
+  3. Dependency truth -- are claimed libraries actually imported?
+  4. Naming consistency -- do conventions match real code?
+  5. Config parsing -- do .env / docker-compose match techContext?
 """
 
 import re
@@ -275,10 +275,10 @@ def _check_dependency_truth(root: Path, files: dict) -> dict:
     claimed_present = {}  # lib -> True (claimed used) or False (claimed NOT used)
     for lib in known_libs:
         if lib.lower() in combined.lower():
-            # Check if it's an explicit negative claim — must be in same sentence/line
-            # Pattern: "零 X 依赖" or "不使用 X" or "no X dependency" — X must be adjacent
+            # Check if it's an explicit negative claim -- must be in same sentence/line
+            # Pattern: "零 X 依赖" or "不使用 X" or "no X dependency" -- X must be adjacent
             neg_patterns = [
-                rf'零\s*{lib}',           # "零LangChain" — directly adjacent
+                rf'零\s*{lib}',           # "零LangChain" -- directly adjacent
                 rf'不.*使用\s*{lib}',      # "不使用LangChain"
                 rf'no\s+{lib}',           # "no LangChain"
                 rf'without\s+{lib}',      # "without LangChain"
@@ -331,11 +331,11 @@ def _check_dependency_truth(root: Path, files: dict) -> dict:
         in_requirements = lib.lower() in req_content.lower()
 
         if claimed_used and not actually_imported and not in_requirements:
-            issues.append(f"CLAIMED but NOT FOUND: `{lib}` — no import in code, not in requirements")
+            issues.append(f"CLAIMED but NOT FOUND: `{lib}` -- no import in code, not in requirements")
         elif claimed_used and not actually_imported and in_requirements:
-            issues.append(f"WARN: `{lib}` in requirements but never imported — unused dependency?")
+            issues.append(f"WARN: `{lib}` in requirements but never imported -- unused dependency?")
         elif not claimed_used and actually_imported:
-            issues.append(f"CLAIMED ABSENT but FOUND: `{lib}` — import exists in code despite negative claim")
+            issues.append(f"CLAIMED ABSENT but FOUND: `{lib}` -- import exists in code despite negative claim")
         else:
             verified.append(lib)
 
@@ -481,7 +481,7 @@ def _check_config_parsing(root: Path, files: dict) -> dict:
                        "NOTE", "WARN", "INFO", "DEBUG", "ERROR", "FAIL", "PASS"}
     claimed_vars = {v for v in claimed_vars if v not in false_positives and len(v) > 4}
 
-    # Find .env files — search root and all immediate subdirectories
+    # Find .env files -- search root and all immediate subdirectories
     env_vars_in_file = set()
     env_found_path = None
     for env_name in [".env", ".env.example", ".env.sample"]:
@@ -620,11 +620,11 @@ def register_audit_tools(mcp: FastMCP, _audit, _loop_guard):
         [VERIFICATION] Programmatically verify project_map claims against actual code.
 
         Runs 5 automated checks against the target project's codebase:
-        1. File existence — paths in systemPatterns/inventory → os.path.exists
-        2. Decorator count — grep @enterprise_tool count vs inventory claim
-        3. Dependency truth — claimed libraries → grep actual imports
-        4. Naming consistency — conventions.md rules → sample-check code
-        5. Config parsing — .env / docker-compose vs techContext claims
+        1. File existence -- paths in systemPatterns/inventory -> os.path.exists
+        2. Decorator count -- grep @enterprise_tool count vs inventory claim
+        3. Dependency truth -- claimed libraries -> grep actual imports
+        4. Naming consistency -- conventions.md rules -> sample-check code
+        5. Config parsing -- .env / docker-compose vs techContext claims
 
         When to call:
         - After [初始化项目] Phase 3 (before writing to project_map)

@@ -40,9 +40,9 @@ BYPASS_DIR = Path(".ai-operation/.bypasses")  # Per-rule bypass flags
 # Size limits
 MAX_FILE_CHARS = 16_000      # 16KB per file
 MAX_TOTAL_CHARS = 50_000     # 50KB total (~12K tokens)
-SECTION_SIZE_THRESHOLD = 8_000  # 8KB — split section to subfile
-CORRECTIONS_MAX_BYTES = 10_000  # 10KB — archive old lessons
-MAX_TOOL_RESULT_BYTES = 12_000  # 12KB — truncate any MCP tool return exceeding this
+SECTION_SIZE_THRESHOLD = 8_000  # 8KB -- split section to subfile
+CORRECTIONS_MAX_BYTES = 10_000  # 10KB -- archive old lessons
+MAX_TOOL_RESULT_BYTES = 12_000  # 12KB -- truncate any MCP tool return exceeding this
 
 # Required project_map files
 REQUIRED_FILES = {
@@ -129,7 +129,7 @@ def _section_merge(existing_content: str, section_updates: dict) -> tuple:
 def _generate_toc(content: str, filename: str) -> str:
     """Generate table-of-contents summary for budget-tight mode."""
     lines = content.split("\n")
-    toc_lines = [f"[TOC mode — budget tight, use aio__detail_read('{filename}') for full content]\n"]
+    toc_lines = [f"[TOC mode -- budget tight, use aio__detail_read('{filename}') for full content]\n"]
 
     for line in lines:
         if line.startswith("## "):
@@ -188,7 +188,7 @@ def _auto_split_oversized_sections(filepath: Path, depth: int = 0, _file_counter
     for title, header_idx, body_start, body_end in sections:
         body = "\n".join(lines[body_start:body_end]).strip()
 
-        if "→ [详见" in body:
+        if "-> [详见" in body:
             continue
 
         if len(body) > SECTION_SIZE_THRESHOLD:
@@ -199,7 +199,7 @@ def _auto_split_oversized_sections(filepath: Path, depth: int = 0, _file_counter
             detail_content = f"{header_prefix}{title}\n\n> 拆分自 {filepath.name}，depth={depth}。\n\n{body}\n"
             detail_path.write_text(detail_content, encoding="utf-8")
 
-            pointer = f"\n> {'→' * (depth + 1)} [详见 {rel_path}]\n"
+            pointer = f"\n> {'->' * (depth + 1)} [详见 {rel_path}]\n"
             adj_start = body_start + offset
             adj_end = body_end + offset
             new_lines[adj_start:adj_end] = [pointer]
@@ -207,7 +207,7 @@ def _auto_split_oversized_sections(filepath: Path, depth: int = 0, _file_counter
 
             _file_counter[0] += 1
             split_sections.append(
-                f"{'  ' * depth}L{depth}: {title} → {rel_path} ({len(body)} chars)"
+                f"{'  ' * depth}L{depth}: {title} -> {rel_path} ({len(body)} chars)"
             )
 
             child_splits = _auto_split_oversized_sections(detail_path, depth + 1, _file_counter)
@@ -248,10 +248,10 @@ def _enforce_file_size_limit(filepath: Path) -> str:
     )
     overflow_path.write_text(overflow_content, encoding="utf-8")
 
-    pointer = f"\n\n> → [剩余内容: details/{overflow_name}] ({len(overflow)} chars)\n"
+    pointer = f"\n\n> -> [剩余内容: details/{overflow_name}] ({len(overflow)} chars)\n"
     filepath.write_text(summary + pointer, encoding="utf-8")
 
-    return f"{filepath.name}: overflow split → details/{overflow_name} ({len(overflow)} chars moved)"
+    return f"{filepath.name}: overflow split -> details/{overflow_name} ({len(overflow)} chars moved)"
 
 
 def _compact_corrections(filepath: Path) -> str:
@@ -282,7 +282,7 @@ def _compact_corrections(filepath: Path) -> str:
         filepath.write_text(rebuilt, encoding="utf-8")
         new_size = len(rebuilt.encode("utf-8"))
         if new_size <= CORRECTIONS_MAX_BYTES:
-            return f"corrections.md: header trimmed ({len(content.encode('utf-8'))} → {new_size} bytes)"
+            return f"corrections.md: header trimmed ({len(content.encode('utf-8'))} -> {new_size} bytes)"
         content = rebuilt
         header_parts = [slim_header]
 
@@ -302,7 +302,7 @@ def _compact_corrections(filepath: Path) -> str:
     archive_path.write_text(archive_content, encoding="utf-8")
 
     pointer = (
-        f"\n> → [旧经验归档: {len(to_archive)} 条已移至 details/{archive_name}]\n"
+        f"\n> -> [旧经验归档: {len(to_archive)} 条已移至 details/{archive_name}]\n"
     )
 
     rebuilt = "\n---\n".join(header_parts)
@@ -310,7 +310,7 @@ def _compact_corrections(filepath: Path) -> str:
     rebuilt += "\n---\n".join(to_keep)
 
     filepath.write_text(rebuilt, encoding="utf-8")
-    return f"corrections.md: archived {len(to_archive)} old entries → details/{archive_name}"
+    return f"corrections.md: archived {len(to_archive)} old entries -> details/{archive_name}"
 
 
 def _compact_dynamic_file(content: str, filename: str) -> str:
@@ -328,7 +328,7 @@ def _compact_dynamic_file(content: str, filename: str) -> str:
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
     compact_notice = (
-        f"\n### [Auto-Compacted — {timestamp}]\n"
+        f"\n### [Auto-Compacted -- {timestamp}]\n"
         f"{compacted_count} older entries compacted. History in git log."
     )
 
@@ -399,7 +399,7 @@ def _discover_skills(skills_dir: Path = None) -> list:
             meta["skill_dir"] = str(skill_md.parent)
             skills.append(meta)
         else:
-            # Skill without frontmatter — include with basic info
+            # Skill without frontmatter -- include with basic info
             skills.append({
                 "name": skill_md.parent.name,
                 "description": "(no frontmatter)",
@@ -427,7 +427,7 @@ def _budget_truncate(result: str, max_bytes: int = MAX_TOOL_RESULT_BYTES) -> str
     while truncated and truncated[-1] & 0xC0 == 0x80:
         truncated = truncated[:-1]
     if truncated and truncated[-1] & 0x80:
-        # Last byte is a lead byte without continuation — remove it too
+        # Last byte is a lead byte without continuation -- remove it too
         truncated = truncated[:-1]
     safe_str = truncated.decode("utf-8")
     return (
@@ -490,7 +490,7 @@ def git_commit_nonblocking(files_to_add: list, commit_msg: str, _audit_fn=None) 
                     commit_proc.kill()
                     commit_proc.wait()
                     git_diag["commit_time"] = f"{time.time() - t1:.1f}s (TIMEOUT)"
-                    git_status = "commit timed out — run manually"
+                    git_status = "commit timed out -- run manually"
     except Exception as e:
         git_status = f"error: {str(e)[:100]}"
     finally:

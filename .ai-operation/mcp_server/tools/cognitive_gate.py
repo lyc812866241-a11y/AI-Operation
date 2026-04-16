@@ -1,5 +1,5 @@
 """
-Cognitive Gate — forces AI to read project context before any file operation.
+Cognitive Gate -- forces AI to read project context before any file operation.
 
 Contains: aio__confirm_read, aio__load_experience
 
@@ -14,10 +14,10 @@ Flow:
   1. [存档] writes a random SESSION_KEY to corrections.md
   2. New session: AI reads corrections.md, sees keys + SESSION_KEY
   3. AI calls aio__confirm_read(session_key=xxx)
-  4. Tool verifies key matches → writes .session_confirmed (with counter=0)
-  5. AI about to do file ops → calls aio__load_experience(key="fileops")
+  4. Tool verifies key matches -> writes .session_confirmed (with counter=0)
+  5. AI about to do file ops -> calls aio__load_experience(key="fileops")
   6. Tool returns experience content from corrections/fileops.md
-  7. Hook checks .session_confirmed exists + counter < 30 → allows tool use
+  7. Hook checks .session_confirmed exists + counter < 30 -> allows tool use
 """
 
 from pathlib import Path
@@ -99,7 +99,7 @@ def register_cognitive_gate_tools(mcp: FastMCP, _audit, _loop_guard):
                 break
 
         if not actual_key:
-            # No key in file — framework not fully initialized.
+            # No key in file -- framework not fully initialized.
             # SESSION_KEY is set by aio__force_architect_save_confirm or bootstrap.
             _audit("aio__confirm_read", "REJECTED", "no SESSION_KEY in corrections.md")
             return (
@@ -134,7 +134,7 @@ def register_cognitive_gate_tools(mcp: FastMCP, _audit, _loop_guard):
                 key_file = corrections_dir / f"{key_name}.md"
                 if key_file.exists():
                     age_days = int((_time.time() - key_file.stat().st_mtime) / 86400)
-                    stale_mark = " ⚠STALE" if age_days > 30 else ""
+                    stale_mark = " [!]STALE" if age_days > 30 else ""
                     keys_display.append(f"  - {key_name} ({age_days}d ago{stale_mark})")
                 else:
                     keys_display.append(f"  - {key_name} (no file)")
@@ -188,7 +188,7 @@ def register_cognitive_gate_tools(mcp: FastMCP, _audit, _loop_guard):
         freshness = ""
         if age_days > 30:
             freshness = (
-                f"\n\n⚠ STALE ({age_days} days since last update). "
+                f"\n\n[!] STALE ({age_days} days since last update). "
                 f"Verify these lessons still apply before relying on them."
             )
         elif age_days > 7:

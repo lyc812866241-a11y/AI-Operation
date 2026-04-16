@@ -1,5 +1,5 @@
 """
-Workflow tools — taskSpec submit/approve, fast-track, architect report, test runner.
+Workflow tools -- taskSpec submit/approve, fast-track, architect report, test runner.
 Contains: aio__force_taskspec_submit, aio__force_taskspec_approve,
           aio__force_fast_track, aio__force_architect_report, aio__force_test_runner
 """
@@ -25,7 +25,7 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
         [ENFORCEMENT TOOL] Generate a structured Architect report.
 
         This tool MUST be called when the user issues the [汇报] command.
-        The AI MUST NOT provide a free-form report — it must fill all 4 sections.
+        The AI MUST NOT provide a free-form report -- it must fill all 4 sections.
 
         Args:
             files_modified: List of files modified in this session (one per line).
@@ -162,9 +162,9 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
                 f"Command: {test_command.strip()}\n\n" + "".join(report_parts)
             )
 
-    # ═══════════════════════════════════════════════════════════════
+    # ===============================================================
     # TaskSpec Workflow Enforcement (升级第 1 层软约束为硬约束)
-    # ═══════════════════════════════════════════════════════════════
+    # ===============================================================
 
     @mcp.tool()
     def aio__force_taskspec_submit(
@@ -212,7 +212,7 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
         if loop_msg and "BLOCKED" in loop_msg:
             return loop_msg
 
-        # ── Dry-run mode: collect all violations at once ────────
+        # -- Dry-run mode: collect all violations at once --------
         if is_dry_run:
             checks = []
 
@@ -223,9 +223,9 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
                 "acceptance_criteria": acceptance_criteria, "doc_impact": doc_impact,
             }.items():
                 if not value or not value.strip():
-                    checks.append(f"  ❌ {name}: REJECTED — cannot be empty")
+                    checks.append(f"  [X] {name}: REJECTED -- cannot be empty")
                 else:
-                    checks.append(f"  ✅ {name}: OK ({len(value.strip())} chars)")
+                    checks.append(f"  [OK] {name}: OK ({len(value.strip())} chars)")
 
             # Check 2: vague descriptions
             vague_found = False
@@ -234,24 +234,24 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
                 if pattern in files_to_modify.lower():
                     bypassed = has_bypass("taskspec.files_to_modify_vague")
                     status = "BYPASSED" if bypassed else "BYPASSABLE"
-                    checks.append(f"  ⚠️ files_to_modify: {status} — contains '{pattern}'")
+                    checks.append(f"  [!] files_to_modify: {status} -- contains '{pattern}'")
                     vague_found = True
                     break
             if not vague_found:
-                checks.append(f"  ✅ files_to_modify vagueness: OK")
+                checks.append(f"  [OK] files_to_modify vagueness: OK")
 
             # Check 3: file path presence
             has_path = re.search(r'[\w/\\]+\.\w{1,5}', files_to_modify) if files_to_modify else None
             if not has_path:
                 bypassed = has_bypass("taskspec.files_to_modify_no_path")
                 status = "BYPASSED" if bypassed else "BYPASSABLE"
-                checks.append(f"  ⚠️ files_to_modify paths: {status} — no file paths found")
+                checks.append(f"  [!] files_to_modify paths: {status} -- no file paths found")
             else:
-                checks.append(f"  ✅ files_to_modify paths: OK")
+                checks.append(f"  [OK] files_to_modify paths: OK")
 
             report = "\n".join(checks)
-            failures = sum(1 for c in checks if "❌" in c)
-            bypassable = sum(1 for c in checks if "⚠️" in c and "BYPASSABLE" in c)
+            failures = sum(1 for c in checks if "[X]" in c)
+            bypassable = sum(1 for c in checks if "[!]" in c and "BYPASSABLE" in c)
             bypassed_count = sum(1 for c in checks if "BYPASSED" in c)
 
             _audit("aio__force_taskspec_submit", "DRY_RUN",
@@ -259,15 +259,15 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
 
             summary = f"DRY_RUN RESULT: {failures} hard failures, {bypassable} bypassable, {bypassed_count} already bypassed\n\n"
             if failures > 0:
-                summary += "Fix all ❌ items before real submit.\n"
+                summary += "Fix all [X] items before real submit.\n"
             if bypassable > 0:
-                summary += "⚠️ items can be fixed or bypassed via aio__bypass_violation.\n"
+                summary += "[!] items can be fixed or bypassed via aio__bypass_violation.\n"
             if failures == 0 and bypassable == 0:
-                summary += "✅ All checks pass. Ready for real submit (remove dry_run).\n"
+                summary += "[OK] All checks pass. Ready for real submit (remove dry_run).\n"
 
             return f"{summary}\n{report}"
 
-        # ── Normal mode (not dry-run) ───────────────────────────
+        # -- Normal mode (not dry-run) ---------------------------
 
         # Validate: all fields must be non-empty
         fields = {
@@ -282,10 +282,10 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
             if not value or not value.strip():
                 return f"REJECTED: {name} cannot be empty. All 6 taskSpec sections are mandatory."
 
-        # ── Sub-task self-containment check ──────────────────────
+        # -- Sub-task self-containment check ----------------------
         # files_to_modify must contain actual file paths, not vague descriptions.
-        # This enforces "synthesize, don't delegate" — every sub-task must be specific.
-        # These rules are BYPASSABLE — user can authorize bypass with reason.
+        # This enforces "synthesize, don't delegate" -- every sub-task must be specific.
+        # These rules are BYPASSABLE -- user can authorize bypass with reason.
         RULE_VAGUE_FILES = "taskspec.files_to_modify_vague"
         RULE_NO_FILE_PATH = "taskspec.files_to_modify_no_path"
 
@@ -311,10 +311,10 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
                         f"Rule: {RULE_VAGUE_FILES}\n\n"
                         f"Each file must be listed with its path and what specifically to change.\n"
                         f"Example:\n"
-                        f"  - src/auth.py:42 — add null check before token.decode()\n"
-                        f"  - tests/test_auth.py — add test for null token case\n\n"
+                        f"  - src/auth.py:42 -- add null check before token.decode()\n"
+                        f"  - tests/test_auth.py -- add test for null token case\n\n"
                         f"Option 1: Fix the description and resubmit.\n"
-                        f"Option 2: Ask user to authorize bypass → call aio__bypass_violation(\n"
+                        f"Option 2: Ask user to authorize bypass -> call aio__bypass_violation(\n"
                         f"  rule_code=\"{RULE_VAGUE_FILES}\", user_said=\"<user's exact words>\")"
                     )
 
@@ -332,9 +332,9 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
                     f"BYPASSABLE: files_to_modify must contain at least one specific file path.\n"
                     f"Rule: {RULE_NO_FILE_PATH}\n\n"
                     f"Example: src/engine/pipeline.py, tests/test_pipeline.py\n"
-                    f"Don't describe files generically — name them.\n\n"
+                    f"Don't describe files generically -- name them.\n\n"
                     f"Option 1: Add file paths and resubmit.\n"
-                    f"Option 2: Ask user to authorize bypass → call aio__bypass_violation(\n"
+                    f"Option 2: Ask user to authorize bypass -> call aio__bypass_violation(\n"
                     f"  rule_code=\"{RULE_NO_FILE_PATH}\", user_said=\"<user's exact words>\")"
                 )
 
@@ -365,7 +365,7 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
             f"SUCCESS: TaskSpec submitted for approval.\n\n"
             f"{spec_content}\n"
             f"---\n"
-            f"⏸ Waiting for user approval. Do NOT write any code until approved.\n"
+            f"[PAUSE] Waiting for user approval. Do NOT write any code until approved.\n"
             f"After user says '批准/approved/ok go', call aio__force_taskspec_approve."
         )
 
@@ -437,7 +437,7 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
         # Clear any consumed bypass flags (single-use, reset after approval)
         clear_all_bypasses()
 
-        # ── Auto experience matching ────────────────────────────
+        # -- Auto experience matching ----------------------------
         # Read the approved taskSpec, extract file paths/keywords,
         # match against corrections keys, and auto-load relevant experience.
         matched_experience = []
@@ -446,7 +446,7 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
             available_keys = [f.stem for f in corrections_dir.glob("*.md")]
             spec_lower = spec_content.lower()
 
-            # Keyword → key mapping
+            # Keyword -> key mapping
             key_triggers = {
                 "fileops": [".py", ".ts", ".js", "write", "edit", "file", "path",
                             "encoding", "utf-8", "bytes", "size"],
@@ -473,7 +473,7 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
         experience_section = ""
         if matched_experience:
             experience_section = (
-                f"\n\n## ⚡ Auto-loaded Experience ({len(matched_experience)} keys matched)\n"
+                f"\n\n## [!] Auto-loaded Experience ({len(matched_experience)} keys matched)\n"
                 f"Read these BEFORE writing code:\n\n"
                 + "\n\n".join(matched_experience)
                 + "\n"
@@ -484,7 +484,7 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
         return (
             f"SUCCESS: TaskSpec APPROVED.\n"
             f"Approval recorded at {timestamp}.\n"
-            f"You may now proceed to Phase 2 (WORKER) — write code per the approved spec.\n"
+            f"You may now proceed to Phase 2 (WORKER) -- write code per the approved spec.\n"
             f"The approval flag has been created. Git commits will be allowed.\n\n"
             f"Reminder: Execute ONLY what the taskSpec specifies. No extra changes."
             f"{experience_section}"
@@ -528,7 +528,7 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
         if not change_description or not change_description.strip():
             return "REJECTED: change_description cannot be empty. Specify what will be changed."
 
-        # ── Trust Score Calculation ──────────────────────────────────
+        # -- Trust Score Calculation ----------------------------------
         # Read corrections.md to assess recent error frequency
         corrections_path = PROJECT_MAP_DIR / "corrections.md"
         recent_corrections = 0
@@ -547,7 +547,7 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
                 except ValueError:
                     pass
 
-        # Check recent saves — count NONE lessons as "clean saves"
+        # Check recent saves -- count NONE lessons as "clean saves"
         if corrections_path.exists():
             content = corrections_path.read_text(encoding="utf-8")
             entries = content.split("---")
@@ -595,7 +595,7 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
             f"SUCCESS: Fast-track permission granted.\n"
             f"Trust level: {trust_level} ({trust_reason})\n"
             f"Threshold: < {max_lines} lines\n"
-            f"⚡ Fast-track: {reason.strip()}\n"
+            f"[!] Fast-track: {reason.strip()}\n"
             f"Change: {change_description.strip()[:200]}\n\n"
             f"You may proceed. Remember to run [存档] after completion."
         )

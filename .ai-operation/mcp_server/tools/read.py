@@ -1,5 +1,5 @@
 """
-Read tools — project map reading, detail retrieval, and detail listing.
+Read tools -- project map reading, detail retrieval, and detail listing.
 Contains: aio__force_architect_read, aio__detail_read, aio__detail_list
 """
 
@@ -43,7 +43,7 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
         priority_order = [
             ("activeContext", "activeContext.md", True),    # always full
             ("progress", "progress.md", True),              # always full
-            ("conventions", "conventions.md", True),        # always full — 二阶 contracts (naming/API/style)
+            ("conventions", "conventions.md", True),        # always full -- 二阶 contracts (naming/API/style)
             ("projectbrief", "projectbrief.md", False),     # TOC if tight
             ("systemPatterns", "systemPatterns.md", False),  # TOC if tight
             ("techContext", "techContext.md", False),        # TOC if tight
@@ -62,11 +62,11 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
             if always_full or not budget_tight:
                 # Read full content (with per-file cap)
                 if file_size > MAX_FILE_CHARS:
-                    content = content[:MAX_FILE_CHARS] + "\n\n[truncated — 4KB per-file limit]"
+                    content = content[:MAX_FILE_CHARS] + "\n\n[truncated -- 4KB per-file limit]"
                 if total_chars + len(content) > MAX_TOTAL_CHARS:
                     remaining = MAX_TOTAL_CHARS - total_chars
                     if remaining > 500:
-                        content = content[:remaining] + "\n\n[truncated — budget reached]"
+                        content = content[:remaining] + "\n\n[truncated -- budget reached]"
                     else:
                         # Switch to TOC mode for this file
                         content = _generate_toc(content, filename)
@@ -101,14 +101,14 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
                     if total_chars + len(content) > MAX_TOTAL_CHARS:
                         remaining = MAX_TOTAL_CHARS - total_chars
                         if remaining > 200:
-                            content = content[:remaining] + "\n\n[truncated — budget reached]"
+                            content = content[:remaining] + "\n\n[truncated -- budget reached]"
                         else:
-                            report.append(f"\n### {rf.name}\n[omitted — budget exhausted]")
+                            report.append(f"\n### {rf.name}\n[omitted -- budget exhausted]")
                             continue
                     total_chars += len(content)
                     report.append(f"\n### {rf.name}\n{content}")
 
-        # ── Auto-Save Reminder ────────────────────────────────────
+        # -- Auto-Save Reminder ------------------------------------
         # Estimate total project_map size. If growing large, recommend [存档].
         total_map_size = 0
         for filename in REQUIRED_FILES.values():
@@ -122,19 +122,19 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
 
         if budget_pct >= 70:
             report.append(
-                f"\n⚠️ WARNING: Prompt budget at {budget_pct}%. "
+                f"\n[!] WARNING: Prompt budget at {budget_pct}%. "
                 f"activeContext.md may be growing too large. "
                 f"Consider running [存档] with session_compaction to compress older entries, "
                 f"or manually trim activeContext.md via [清理]."
             )
         if total_map_size > 50_000:
             report.append(
-                f"\n⚠️ WARNING: Project map total size ({total_map_size:,} bytes) exceeds 50KB. "
+                f"\n[!] WARNING: Project map total size ({total_map_size:,} bytes) exceeds 50KB. "
                 f"Some content may be truncated during [读档]. "
                 f"Consider archiving older entries in activeContext.md and progress.md."
             )
 
-        # ── Data Quality Checks ────────────────────────────────────
+        # -- Data Quality Checks ------------------------------------
         quality_warnings = []
 
         # Check 1: inventory.md still has [待填写] placeholders
@@ -144,7 +144,7 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
             placeholder_count = inv_content.count("[待填写")
             if placeholder_count >= 2:
                 quality_warnings.append(
-                    f"⚠️ inventory.md has {placeholder_count} unfilled [待填写] sections. "
+                    f"[!] inventory.md has {placeholder_count} unfilled [待填写] sections. "
                     f"You have NO asset inventory. After scanning the codebase, "
                     f"use aio__inventory_append to populate skills, APIs, data models."
                 )
@@ -164,20 +164,20 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
             ]
             for old_term, new_term, msg in stale_pairs:
                 if old_term in sp_content and new_term in tc_content:
-                    quality_warnings.append(f"⚠️ STALE DATA: {msg}. Update systemPatterns.md during next [存档].")
+                    quality_warnings.append(f"[!] STALE DATA: {msg}. Update systemPatterns.md during next [存档].")
 
         # Check 3: conventions.md missing or all placeholders
         conv_path = PROJECT_MAP_DIR / "conventions.md"
         if not conv_path.exists():
             quality_warnings.append(
-                "ℹ️ conventions.md does not exist yet. Create it during next [存档] "
+                "[i] conventions.md does not exist yet. Create it during next [存档] "
                 "to define naming, API, and code style conventions."
             )
         elif conv_path.exists():
             conv_content = conv_path.read_text(encoding="utf-8")
             if conv_content.count("[待填写") >= 3:
                 quality_warnings.append(
-                    "⚠️ conventions.md has 3+ unfilled sections. "
+                    "[!] conventions.md has 3+ unfilled sections. "
                     "Fill in project conventions during next [存档] to improve code consistency."
                 )
 
@@ -188,8 +188,8 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
                         or "Codebase Scan" in sp_text)
             if not has_scan:
                 quality_warnings.append(
-                    "⚠️ systemPatterns.md has no file tree. Run:\n"
-                    "  aio__scan_codebase(project_root, scope) → update systemPatterns module inventory.\n"
+                    "[!] systemPatterns.md has no file tree. Run:\n"
+                    "  aio__scan_codebase(project_root, scope) -> update systemPatterns module inventory.\n"
                     "  This ensures 100% file coverage (no omissions)."
                 )
 
@@ -200,7 +200,7 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
             signal_count = sum(1 for s in first_order_signals if s in conv_text)
             if signal_count >= 2:
                 quality_warnings.append(
-                    "⚠️ conventions.md may contain first-order lessons (found operational "
+                    "[!] conventions.md may contain first-order lessons (found operational "
                     "language like '禁止/不能/踩过坑'). conventions.md is for second-order "
                     "contracts (naming/API/style). Specific lessons belong in corrections/{key}.md."
                 )
@@ -210,7 +210,7 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
             for w in quality_warnings:
                 report.append(f"  {w}")
 
-        # ── Cleanup Reminder ────────────────────────────────────
+        # -- Cleanup Reminder ------------------------------------
         # Auto-detect stale project_map and remind user to run [整理]
         import time as _time
         cleanup_reasons = []
@@ -237,13 +237,13 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
                 cleanup_reasons.append(f"audit.log has {audit_lines} lines")
 
         if cleanup_reasons:
-            report.append("\n## 🧹 Cleanup Reminder\n")
+            report.append("\n## [~] Cleanup Reminder\n")
             report.append("  project_map may need cleanup. Reasons:")
             for r in cleanup_reasons:
                 report.append(f"    - {r}")
             report.append("  Consider running [整理] to consolidate and trim.")
 
-        # ── Orphan Reference Check (Lint) ──────────────────────
+        # -- Orphan Reference Check (Lint) ----------------------
         # Verify that file paths mentioned in systemPatterns.md actually exist.
         # Inspired by Karpathy's LLM Wiki "lint" workflow.
         sp_path = PROJECT_MAP_DIR / "systemPatterns.md"
@@ -268,13 +268,13 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
                         orphans.append(ref_path)
 
             if orphans:
-                report.append(f"\n## 👻 Orphan References ({len(orphans)} found)\n")
+                report.append(f"\n## [?] Orphan References ({len(orphans)} found)\n")
                 report.append("  systemPatterns.md references files that don't exist:")
                 for o in orphans[:10]:
-                    report.append(f"    - `{o}` — missing or renamed")
+                    report.append(f"    - `{o}` -- missing or renamed")
                 report.append("  Update systemPatterns.md during next [存档] or [整理].")
 
-        # ── Skill Registry (frontmatter-driven) ────────────────
+        # -- Skill Registry (frontmatter-driven) ----------------
         # Show available skills with their trigger conditions.
         # Skills with `paths` are only shown if current git status touches matching files.
         skills = _discover_skills()
@@ -298,7 +298,7 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
                 changed_files_git = set()
 
             import fnmatch
-            report.append("\n## 📋 Available Skills\n")
+            report.append("\n## [#] Available Skills\n")
             for skill in skills:
                 skill_paths = skill.get("paths", [])
                 # If skill has paths filter, only show if any changed file matches
@@ -328,9 +328,9 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
         [RETRIEVAL TOOL] Read a file from project_map or its detail subfiles.
 
         Use this tool in TWO situations:
-        1. When [读档] shows "[TOC mode]" for a file — call this with the filename
+        1. When [读档] shows "[TOC mode]" for a file -- call this with the filename
            (e.g., "systemPatterns.md") to get the full content.
-        2. When [读档] shows "→ [详见 details/xxx.md]" — call this with the detail
+        2. When [读档] shows "-> [详见 details/xxx.md]" -- call this with the detail
            filename to get the split section content.
 
         Args:

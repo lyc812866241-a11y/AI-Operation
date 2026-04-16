@@ -1,20 +1,20 @@
 """
-Bypass & Monitor framework — structured rule enforcement with audit trail.
+Bypass & Monitor framework -- structured rule enforcement with audit trail.
 
 Contains: aio__bypass_violation, has_bypass, clear_bypass, clear_all_bypasses,
           is_monitor_rule, set_rule_monitor, set_rule_active
 
 Four-state enforcement model (inspired by Harness):
-  REJECTED    — hard block, must fix, cannot bypass
-  BYPASSABLE  — violation detected, user can authorize bypass with reason
-  MONITOR     — violation detected, logged but NOT blocked (observation mode)
-  SUCCESS     — passed all checks
+  REJECTED    -- hard block, must fix, cannot bypass
+  BYPASSABLE  -- violation detected, user can authorize bypass with reason
+  MONITOR     -- violation detected, logged but NOT blocked (observation mode)
+  SUCCESS     -- passed all checks
 
-Monitor mode: new rules start in MONITOR → see how often they'd fire →
+Monitor mode: new rules start in MONITOR -> see how often they'd fire ->
 user decides to promote to BYPASSABLE/REJECTED. Safer rule rollout.
 
-Bypass flow: BYPASSABLE → user says "绕过" → aio__bypass_violation →
-single-use flag → next submit skips that rule → flag consumed.
+Bypass flow: BYPASSABLE -> user says "绕过" -> aio__bypass_violation ->
+single-use flag -> next submit skips that rule -> flag consumed.
 """
 
 import json
@@ -149,7 +149,7 @@ def register_bypass_tools(mcp: FastMCP, _audit, _loop_guard):
                         f"Wait {24 - age_hours:.1f} more hours, or fix the underlying issue."
                     )
             except (json.JSONDecodeError, KeyError, ValueError):
-                pass  # Corrupted flag — allow re-bypass
+                pass  # Corrupted flag -- allow re-bypass
 
         # Write per-rule bypass flag
         BYPASS_DIR.mkdir(parents=True, exist_ok=True)
@@ -172,7 +172,7 @@ def register_bypass_tools(mcp: FastMCP, _audit, _loop_guard):
             f"SUCCESS: Bypass granted for rule '{rule_code}'.\n"
             f"Reason: {user_said.strip()[:200]}\n"
             f"Recorded at {timestamp}.\n\n"
-            f"This bypass is single-use — it applies to the next submit only.\n"
+            f"This bypass is single-use -- it applies to the next submit only.\n"
             f"All other rules still apply. Proceed with your operation."
         )
 
