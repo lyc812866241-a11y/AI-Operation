@@ -6,6 +6,9 @@
         "-u",
         ".ai-operation/mcp_server/server.py"
       ],
+      "env": {
+        "PYTHONIOENCODING": "utf-8"
+      },
       "alwaysAllow": [
         "aio__force_architect_save",
         "aio__force_architect_read",
