@@ -462,5 +462,278 @@ class TestAuditLog(unittest.TestCase, TestSetup):
         self.assertEqual(parsed["status"], "SUCCESS")
 
 
+class TestGitignoreSelfHeal(unittest.TestCase, TestSetup):
+    """Fix 5: _check_and_heal_gitignore auto-removes/whitelists offending rules."""
+
+    def setUp(self):
+        self.create_temp_project()
+        # Init a real git repo so `git check-ignore` works.
+        import subprocess
+        subprocess.run(["git", "init", "-q"], check=False,
+                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def _gi_heal(self):
+        from tools.constants import _check_and_heal_gitignore
+        return _check_and_heal_gitignore()
+
+    def test_removes_precise_project_map_rule(self):
+        """Precise rule '.ai-operation/docs/project_map/' -> deleted from .gitignore."""
+        Path(".gitignore").write_text(
+            "# user rules\nnode_modules/\n.ai-operation/docs/project_map/\nvenv/\n",
+            encoding="utf-8",
+        )
+        actions = self._gi_heal()
+        self.assertTrue(actions, "expected at least one action when project_map is ignored")
+        gi = Path(".gitignore").read_text(encoding="utf-8")
+        self.assertNotIn(".ai-operation/docs/project_map/", gi)
+        self.assertIn("node_modules/", gi)  # preserved
+        self.assertIn("venv/", gi)          # preserved
+
+    def test_removes_precise_rule_without_trailing_slash(self):
+        """Precise rule 'project_map' (no slash, no prefix) -> deleted."""
+        Path(".gitignore").write_text("project_map\nfoo\n", encoding="utf-8")
+        # Git may or may not match this depending on how paths resolve; only
+        # assert the heal result is consistent with check-ignore's verdict.
+        import subprocess
+        probe = subprocess.run(
+            ["git", "check-ignore", "-v", ".ai-operation/docs/project_map/activeContext.md"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+        )
+        actions = self._gi_heal()
+        if probe.returncode == 0:
+            self.assertTrue(actions)
+            gi = Path(".gitignore").read_text(encoding="utf-8")
+            self.assertNotIn("project_map\n", gi.split("\nfoo")[0] + "\n")
+        # else: no-op is also acceptable
+
+    def test_broad_rule_appends_whitelist_not_removed(self):
+        """Broad rule '.ai-operation/*' -> whitelist appended, original preserved."""
+        Path(".gitignore").write_text(
+            ".ai-operation/*\n",
+            encoding="utf-8",
+        )
+        actions = self._gi_heal()
+        self.assertTrue(actions, "broad rule should trigger whitelist append")
+        gi = Path(".gitignore").read_text(encoding="utf-8")
+        self.assertIn(".ai-operation/*", gi)  # preserved
+        self.assertIn("!.ai-operation/docs/project_map/", gi)  # whitelist added
+
+    def test_no_gitignore_is_noop(self):
+        """No .gitignore file -> returns empty actions, no crash."""
+        self.assertFalse(Path(".gitignore").exists())
+        actions = self._gi_heal()
+        self.assertEqual(actions, [])
+
+    def test_not_ignored_is_noop(self):
+        """.gitignore exists but does not block project_map -> empty actions."""
+        Path(".gitignore").write_text("node_modules/\n", encoding="utf-8")
+        actions = self._gi_heal()
+        self.assertEqual(actions, [])
+
+    def test_idempotent_on_second_call(self):
+        """Running heal twice should not accumulate changes."""
+        Path(".gitignore").write_text(".ai-operation/docs/project_map/\n", encoding="utf-8")
+        self._gi_heal()
+        first = Path(".gitignore").read_text(encoding="utf-8")
+        self._gi_heal()
+        second = Path(".gitignore").read_text(encoding="utf-8")
+        self.assertEqual(first, second, "second heal must not re-modify .gitignore")
+
+
+class TestGitCommitHardening(unittest.TestCase, TestSetup):
+    """Fix 2 + Fix 6: git add -f, stderr capture, flag transaction."""
+
+    def setUp(self):
+        self.create_temp_project()
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def test_git_add_uses_force_flag(self):
+        """git_commit_nonblocking must invoke `git add -f` (bypass gitignore)."""
+        from tools import constants as C
+
+        captured = {"args": None}
+
+        class FakeProc:
+            def __init__(self, *args, **kwargs):
+                captured["args"] = list(args[0]) if args else None
+                self.returncode = 1  # simulate add failure so we don't proceed to commit
+
+            def wait(self, timeout=None):
+                return self.returncode
+
+            def kill(self):
+                pass
+
+        with patch.object(C.subprocess, "Popen", FakeProc):
+            C.git_commit_nonblocking(["foo.txt"], "test")
+
+        args = captured["args"]
+        self.assertIsNotNone(args)
+        self.assertEqual(args[:3], ["git", "add", "-f"],
+                         f"expected `git add -f` prefix, got {args[:3]}")
+
+    def test_stderr_captured_on_add_failure(self):
+        """Non-zero `git add` rc -> stderr text surfaced in status string + diag."""
+        from tools import constants as C
+
+        class FakeProc:
+            def __init__(self, cmd, stdin=None, stdout=None, stderr=None):
+                self.returncode = 1
+                # Write to the tempfile passed as stderr
+                if hasattr(stderr, "write"):
+                    stderr.write(b"fatal: pathspec 'foo.txt' did not match any files\n")
+                    stderr.flush()
+
+            def wait(self, timeout=None):
+                return self.returncode
+
+            def kill(self):
+                pass
+
+        with patch.object(C.subprocess, "Popen", FakeProc):
+            status, diag = C.git_commit_nonblocking(["foo.txt"], "test")
+
+        self.assertIn("add_stderr", diag)
+        self.assertIn("fatal", diag["add_stderr"])
+        self.assertIn("fatal", status)
+        self.assertIn("rc=1", status)
+
+    def test_flag_preserved_on_failure(self):
+        """Fix 6: git add failure -> TASKSPEC_APPROVED_FLAG + FAST_TRACK_FLAG kept."""
+        from tools import constants as C
+
+        C.TASKSPEC_APPROVED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        C.TASKSPEC_APPROVED_FLAG.write_text("approved", encoding="utf-8")
+        C.FAST_TRACK_FLAG.write_text("fast", encoding="utf-8")
+
+        class FakeProc:
+            def __init__(self, *a, **kw):
+                self.returncode = 1
+
+            def wait(self, timeout=None):
+                return self.returncode
+
+            def kill(self):
+                pass
+
+        with patch.object(C.subprocess, "Popen", FakeProc):
+            C.git_commit_nonblocking(["foo.txt"], "test")
+
+        self.assertTrue(C.TASKSPEC_APPROVED_FLAG.exists(),
+                        "taskspec_approved must persist when git add fails")
+        self.assertTrue(C.FAST_TRACK_FLAG.exists(),
+                        "fast_track must persist when git add fails")
+
+    def test_flag_consumed_on_success(self):
+        """Fix 6: commit success -> approval flags consumed (old behavior preserved)."""
+        from tools import constants as C
+
+        C.TASKSPEC_APPROVED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        C.TASKSPEC_APPROVED_FLAG.write_text("approved", encoding="utf-8")
+        C.FAST_TRACK_FLAG.write_text("fast", encoding="utf-8")
+
+        # Both add and commit succeed
+        call_idx = {"n": 0}
+
+        class FakeProc:
+            def __init__(self, *a, **kw):
+                call_idx["n"] += 1
+                self.returncode = 0
+
+            def wait(self, timeout=None):
+                return self.returncode
+
+            def kill(self):
+                pass
+
+        with patch.object(C.subprocess, "Popen", FakeProc):
+            status, _diag = C.git_commit_nonblocking(["foo.txt"], "test")
+
+        self.assertEqual(status, "committed")
+        self.assertFalse(C.TASKSPEC_APPROVED_FLAG.exists(),
+                         "taskspec_approved must be consumed on commit success")
+        self.assertFalse(C.FAST_TRACK_FLAG.exists(),
+                         "fast_track must be consumed on commit success")
+
+
+class TestHookBlocksProjectMap(unittest.TestCase, TestSetup):
+    """Fix 3: require-context.sh blocks Edit/Write targeting project_map."""
+
+    def setUp(self):
+        self.create_temp_project()
+        import shutil
+        hook_src = REPO_ROOT / ".claude" / "hooks" / "require-context.sh"
+        # copy hook and corrections template into temp project
+        dst_dir = Path(".claude/hooks")
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(hook_src, dst_dir / "require-context.sh")
+        # Gate must be uninitialized (no SESSION_KEY) to keep the default allow
+        # path for non-project_map edits; the lockdown we test runs BEFORE the
+        # session check anyway.
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def _find_bash(self):
+        import shutil as _sh
+        b = _sh.which("bash")
+        if b:
+            return b
+        for cand in (r"C:\Program Files\Git\bin\bash.exe",
+                     r"C:\Program Files\Git\usr\bin\bash.exe",
+                     "/usr/bin/bash", "/bin/bash"):
+            if Path(cand).exists():
+                return cand
+        return None
+
+    def _run_hook(self, payload: dict):
+        import subprocess as _sp
+        bash = self._find_bash()
+        if bash is None:
+            self.skipTest("bash not available on this platform")
+        proc = _sp.run(
+            [bash, ".claude/hooks/require-context.sh"],
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            timeout=10,
+        )
+        return proc
+
+    def test_blocks_edit_on_project_map(self):
+        r = self._run_hook({
+            "tool_name": "Edit",
+            "tool_input": {"file_path": ".ai-operation/docs/project_map/activeContext.md"},
+        })
+        self.assertEqual(r.returncode, 2, f"expected exit 2, got {r.returncode} stderr={r.stderr}")
+        self.assertIn("aio__force_architect_save", r.stderr)
+
+    def test_blocks_write_on_project_map(self):
+        r = self._run_hook({
+            "tool_name": "Write",
+            "tool_input": {"file_path": ".ai-operation/docs/project_map/systemPatterns.md"},
+        })
+        self.assertEqual(r.returncode, 2)
+
+    def test_allows_edit_on_src_code(self):
+        r = self._run_hook({
+            "tool_name": "Edit",
+            "tool_input": {"file_path": "src/foo.py"},
+        })
+        self.assertEqual(r.returncode, 0, f"expected exit 0, got {r.returncode} stderr={r.stderr}")
+
+    def test_allows_mcp_tools(self):
+        r = self._run_hook({
+            "tool_name": "mcp__project_architect__aio__force_architect_save",
+            "tool_input": {},
+        })
+        self.assertEqual(r.returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

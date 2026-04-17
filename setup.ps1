@@ -143,6 +143,72 @@ print(f'OK:{n}')
     if ($pmFilled -ge 5) { Check-Pass "$pmFilled/8 files have content" }
     else { Check-Warn "Only $pmFilled/8 files filled - run [初始化项目]" }
 
+    # 7. Git integration -- auto-fix .gitignore blocking project_map
+    Write-Step "7. Git integration"
+    $gitCmd = Get-Command git -ErrorAction SilentlyContinue
+    if (-not $gitCmd) {
+        Check-Warn "git not installed - skipping .gitignore audit"
+    } else {
+        $gitDirProbe = & git rev-parse --git-dir 2>$null
+        if (-not $gitDirProbe) {
+            Check-Warn "not a git repo - skipping .gitignore audit"
+        } elseif (-not (Test-Path ".gitignore")) {
+            Check-Pass "no .gitignore (nothing can block project_map)"
+        } elseif (-not (Test-Path $pmDir)) {
+            Check-Warn "project_map missing - cannot probe ignore state"
+        } else {
+            $probeFile = $null
+            foreach ($cand in @("activeContext.md", "projectbrief.md")) {
+                $pf = Join-Path $pmDir $cand
+                if (Test-Path $pf) { $probeFile = $pf; break }
+            }
+            if (-not $probeFile) {
+                Check-Warn "no project_map file to probe ignore rules"
+            } else {
+                $ignoreOut = & git check-ignore -v $probeFile 2>$null
+                if (-not $ignoreOut) {
+                    Check-Pass ".gitignore does not block project_map"
+                } else {
+                    $first = ($ignoreOut -split "`n")[0]
+                    $left = $first -split "`t", 2 | Select-Object -First 1
+                    $srcParts = $left -split ":", 3
+                    $pattern = if ($srcParts.Count -ge 3) { $srcParts[2].Trim() } else { "" }
+                    if (-not $pattern) {
+                        Check-Warn "could not parse check-ignore output: $first"
+                    } elseif ($pattern -match "project_map") {
+                        # Precise - delete the line
+                        $key = $pattern.TrimEnd('/')
+                        $lines = Get-Content ".gitignore" -Encoding UTF8
+                        $kept = @()
+                        $removed = 0
+                        foreach ($l in $lines) {
+                            $s = $l.Trim()
+                            if ($s -and -not $s.StartsWith("#") -and $s.TrimEnd('/') -eq $key) {
+                                $removed++
+                                continue
+                            }
+                            $kept += $l
+                        }
+                        ($kept -join "`n") + "`n" | Set-Content ".gitignore" -Encoding UTF8 -NoNewline
+                        Check-Pass "Auto-fixed: removed '$pattern' from .gitignore (was blocking project_map)"
+                    } else {
+                        # Broad rule - append whitelist
+                        $wl = "!.ai-operation/docs/project_map/"
+                        $wlGlob = "!.ai-operation/docs/project_map/**"
+                        $giContent = Get-Content ".gitignore" -Encoding UTF8
+                        $hasWl = $giContent | Where-Object { $_.Trim() -eq $wl -or $_.Trim() -eq $wlGlob }
+                        if ($hasWl) {
+                            Check-Warn "broad rule '$pattern' blocks project_map but whitelist already present (may need manual review)"
+                        } else {
+                            Add-Content ".gitignore" -Value $wl -Encoding UTF8
+                            Check-Pass "Auto-fixed: appended whitelist '$wl' (broad rule '$pattern' preserved)"
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     # Summary
     Write-Host ""
     if ($fail -eq 0) {

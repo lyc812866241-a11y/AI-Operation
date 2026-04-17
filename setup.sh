@@ -170,6 +170,87 @@ print(f'OK:{n}')
         check_warn "Only $PM_FILLED/8 files filled — run [初始化项目] to populate"
     fi
 
+    # 7. Git integration -- auto-fix .gitignore blocking project_map
+    print_step "7. Git integration"
+    if ! command -v git &>/dev/null; then
+        check_warn "git not installed — skipping .gitignore audit"
+    elif ! git rev-parse --git-dir &>/dev/null; then
+        check_warn "not a git repo — skipping .gitignore audit"
+    elif [ ! -f ".gitignore" ]; then
+        check_pass "no .gitignore (nothing can block project_map)"
+    elif [ ! -d "$PM_DIR" ]; then
+        check_warn "project_map missing — cannot probe ignore state"
+    else
+        PROBE_FILE=""
+        for pf in "$PM_DIR/activeContext.md" "$PM_DIR/projectbrief.md"; do
+            if [ -f "$pf" ]; then PROBE_FILE="$pf"; break; fi
+        done
+        if [ -z "$PROBE_FILE" ]; then
+            check_warn "no project_map file to probe ignore rules"
+        else
+            IGNORE_OUT=$(git check-ignore -v "$PROBE_FILE" 2>/dev/null || true)
+            if [ -z "$IGNORE_OUT" ]; then
+                check_pass ".gitignore does not block project_map"
+            else
+                # Parse: source:lineno:pattern<TAB>pathname
+                FIRST=$(echo "$IGNORE_OUT" | head -1)
+                LEFT="${FIRST%%$'\t'*}"
+                # Strip off source: and lineno: (first two colons)
+                PATTERN="${LEFT#*:}"
+                PATTERN="${PATTERN#*:}"
+                PATTERN_TRIM="${PATTERN%% }"
+                PATTERN_TRIM="${PATTERN_TRIM%%	}"
+                # Auto-fix: decide precise vs broad
+                if echo "$PATTERN_TRIM" | grep -q "project_map"; then
+                    # Precise -- find a working python (verify --version succeeds,
+                    # since Windows App Execution Aliases stub python3 to a silent
+                    # Microsoft Store launcher that exits 0 without running code)
+                    PY_FIX=""
+                    for cmd in python3.12 python3.11 python3.10 python3.9 python3.8 python python3; do
+                        if command -v "$cmd" &>/dev/null; then
+                            if "$cmd" -c "import sys; sys.exit(0)" 2>/dev/null; then
+                                PY_FIX="$cmd"
+                                break
+                            fi
+                        fi
+                    done
+                    if [ -z "$PY_FIX" ]; then
+                        check_fail ".gitignore blocks project_map via '$PATTERN_TRIM' but no working python to auto-fix"
+                    else
+                        "$PY_FIX" - "$PATTERN_TRIM" <<'PYFIX'
+import sys, pathlib
+pat = sys.argv[1].strip()
+key = pat.rstrip("/")
+p = pathlib.Path(".gitignore")
+lines = p.read_text(encoding="utf-8").splitlines()
+new = []
+removed = 0
+for l in lines:
+    s = l.strip()
+    if s and not s.startswith("#") and s.rstrip("/") == key:
+        removed += 1
+        continue
+    new.append(l)
+p.write_text("\n".join(new) + "\n", encoding="utf-8")
+print(f"removed={removed}")
+PYFIX
+                        check_pass "Auto-fixed: removed '$PATTERN_TRIM' from .gitignore (was blocking project_map)"
+                    fi
+                else
+                    # Broad rule -- append whitelist if not already present
+                    WL="!.ai-operation/docs/project_map/"
+                    WL_GLOB="!.ai-operation/docs/project_map/**"
+                    if grep -qxF "$WL" .gitignore || grep -qxF "$WL_GLOB" .gitignore; then
+                        check_warn "broad rule '$PATTERN_TRIM' blocks project_map but whitelist already present (may need manual review)"
+                    else
+                        echo "$WL" >> .gitignore
+                        check_pass "Auto-fixed: appended whitelist '$WL' (broad rule '$PATTERN_TRIM' preserved)"
+                    fi
+                fi
+            fi
+        fi
+    fi
+
     # Summary
     echo ""
     TOTAL=$((PASS + FAIL + WARN))

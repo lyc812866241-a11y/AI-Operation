@@ -104,6 +104,17 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
 
         _audit("aio__force_architect_save", "CALLED")
 
+        # -- Self-heal .gitignore before anything else ---------------
+        # If the project's .gitignore is blocking project_map, auto-fix it
+        # now so the Phase 2 commit can land without user intervention.
+        try:
+            gi_actions = _check_and_heal_gitignore(_audit)
+            if gi_actions:
+                _audit("aio__force_architect_save", "AUTO_FIX",
+                       f"gitignore: {'; '.join(gi_actions)}")
+        except Exception as e:
+            _audit("aio__force_architect_save", "AUTO_FIX_ERROR", str(e)[:200])
+
         # -- Re-entrancy guard: only one save at a time --
         if is_save_pending():
             _audit("aio__force_architect_save", "REJECTED", "save already pending")
@@ -869,82 +880,50 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                 if fn not in changed_files:
                     changed_files.append(fn)
 
-        # Git commit -- non-blocking fire-and-forget on Windows
-        # WHY: subprocess.run(timeout=N) with capture_output=True deadlocks on Windows
-        # when git spawns child processes. Python kills the parent but children hold the
-        # pipe open, causing communicate() to block forever. The only safe approach is
-        # Popen without waiting -- files are already written, git commit is best-effort.
-        git_status = "not attempted"
-        git_diag = {}
+        # Self-heal .gitignore again in Phase 2 (idempotent). If a third
+        # party wrote to .gitignore between Phase 1 and Phase 2 and re-blocked
+        # project_map, catch it here.
         try:
-            import shutil
-            import time
-
-            _set_mcp_flag()
-
-            # -- Diagnostics: capture environment BEFORE any git calls --
-            git_diag["cwd"] = str(Path.cwd())
-            git_diag["project_map_dir"] = str(PROJECT_MAP_DIR.resolve()) if PROJECT_MAP_DIR.exists() else "MISSING"
-            git_diag["git_path"] = shutil.which("git") or "NOT FOUND"
-            git_diag["files_exist"] = {}
-
-            files_to_add = []
-            for cf in changed_files:
-                filepath = PROJECT_MAP_DIR / cf
-                git_diag["files_exist"][cf] = filepath.exists()
-                if filepath.exists():
-                    files_to_add.append(str(filepath))
-            if DETAILS_DIR.exists():
-                for df in DETAILS_DIR.glob("*.md"):
-                    files_to_add.append(str(df))
-
-            git_diag["files_to_add_count"] = len(files_to_add)
-
-            if files_to_add:
-                # DEVNULL only -- PIPE deadlocks on Windows (confirmed twice)
-                t0 = time.time()
-                add_proc = subprocess.Popen(
-                    ["git", "add"] + files_to_add,
-                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                )
-                try:
-                    add_proc.wait(timeout=60)
-                    git_diag["add_time"] = f"{time.time() - t0:.1f}s"
-                    git_diag["add_rc"] = add_proc.returncode
-                except subprocess.TimeoutExpired:
-                    add_proc.kill()
-                    add_proc.wait()
-                    git_diag["add_time"] = f"{time.time() - t0:.1f}s (TIMEOUT)"
-                    git_status = "git add timed out"
-
-                if add_proc.returncode == 0:
-                    commit_msg = f"chore: architect save [{', '.join(changed_files)}]"
-                    t1 = time.time()
-                    commit_proc = subprocess.Popen(
-                        ["git", "commit", "--no-verify", "--no-status", "-m", commit_msg, "--"] + files_to_add,
-                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                    )
-                    try:
-                        commit_proc.wait(timeout=30)
-                        git_diag["commit_time"] = f"{time.time() - t1:.1f}s"
-                        git_diag["commit_rc"] = commit_proc.returncode
-                        if commit_proc.returncode == 0:
-                            git_status = "committed"
-                        else:
-                            git_status = f"commit exited {commit_proc.returncode}"
-                    except subprocess.TimeoutExpired:
-                        commit_proc.kill()
-                        commit_proc.wait()
-                        git_diag["commit_time"] = f"{time.time() - t1:.1f}s (TIMEOUT)"
-                        git_status = "commit timed out -- run manually"
+            gi_actions_p2 = _check_and_heal_gitignore(_audit)
+            if gi_actions_p2:
+                _audit("aio__force_architect_save_confirm", "AUTO_FIX",
+                       f"gitignore: {'; '.join(gi_actions_p2)}")
         except Exception as e:
-            git_status = f"error: {str(e)[:100]}"
-        finally:
-            _clear_mcp_flag()
-            if TASKSPEC_APPROVED_FLAG.exists():
-                TASKSPEC_APPROVED_FLAG.unlink()
-            if FAST_TRACK_FLAG.exists():
-                FAST_TRACK_FLAG.unlink()
+            _audit("aio__force_architect_save_confirm", "AUTO_FIX_ERROR", str(e)[:200])
+
+        # Build files_to_add for git commit.
+        files_exist = {}
+        files_to_add = []
+        for cf in changed_files:
+            filepath = PROJECT_MAP_DIR / cf
+            files_exist[cf] = filepath.exists()
+            if filepath.exists():
+                files_to_add.append(str(filepath))
+        if DETAILS_DIR.exists():
+            for df in DETAILS_DIR.glob("*.md"):
+                files_to_add.append(str(df))
+
+        # If .gitignore is modified vs HEAD (heal may have touched it, or a
+        # prior phase did), include it in this commit so the fix is persisted.
+        try:
+            diff_check = subprocess.run(
+                ["git", "diff", "HEAD", "--name-only", ".gitignore"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                text=True,
+            )
+            if diff_check.returncode == 0 and diff_check.stdout.strip():
+                files_to_add.append(".gitignore")
+        except Exception:
+            pass
+
+        # Non-blocking commit via shared helper (git add -f + stderr capture
+        # + flag transaction all live in constants.py now).
+        commit_msg = f"chore: architect save [{', '.join(changed_files)}]"
+        git_status, git_diag = git_commit_nonblocking(files_to_add, commit_msg, _audit)
+        git_diag["files_exist"] = files_exist
 
         # Format diagnostics for debugging
         diag_str = ""

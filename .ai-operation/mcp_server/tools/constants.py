@@ -20,6 +20,7 @@ __all__ = [
     "_generate_toc", "_auto_split_oversized_sections",
     "_enforce_file_size_limit", "_compact_corrections",
     "_compact_dynamic_file", "git_commit_nonblocking",
+    "_check_and_heal_gitignore",
     "_budget_truncate",
     "_parse_skill_frontmatter", "_discover_skills",
 ]
@@ -437,16 +438,137 @@ def _budget_truncate(result: str, max_bytes: int = MAX_TOOL_RESULT_BYTES) -> str
     )
 
 
+def _check_and_heal_gitignore(audit_fn=None) -> list:
+    """Detect if project_map is gitignored and auto-heal .gitignore.
+
+    Strategy:
+      - Precise rule containing "project_map" substring -> remove the line.
+      - Broad rule (e.g. .ai-operation/*) -> append whitelist exception
+        `!.ai-operation/docs/project_map/` instead of removing.
+
+    Returns list of action strings describing what was changed. Empty list
+    means no change (either not ignored, or nothing safe to touch).
+    """
+    import tempfile
+
+    gitignore = Path(".gitignore")
+    if not gitignore.exists():
+        return []
+
+    probe = PROJECT_MAP_DIR / "activeContext.md"
+    if not probe.exists():
+        # Nothing to probe with -- cannot determine ignore state.
+        return []
+
+    # Probe: is project_map currently ignored?
+    try:
+        result = subprocess.run(
+            ["git", "check-ignore", "-v", str(probe)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            text=True,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return []
+
+    if result.returncode != 0 or not result.stdout.strip():
+        return []  # not ignored
+
+    # Parse `git check-ignore -v` output.
+    # Format: <source>:<lineno>:<pattern><TAB><pathname>
+    first_line = result.stdout.strip().split("\n")[0]
+    tab_parts = first_line.split("\t")
+    if not tab_parts:
+        return []
+    left = tab_parts[0]
+    src_parts = left.split(":", 2)
+    if len(src_parts) < 3:
+        return []
+    pattern = src_parts[2].strip()
+    if not pattern:
+        return []
+
+    lines = gitignore.read_text(encoding="utf-8").splitlines()
+    actions = []
+    is_precise = "project_map" in pattern
+
+    if is_precise:
+        # Remove matching line(s). Compare with trailing-slash normalization.
+        key = pattern.rstrip("/")
+        new_lines = []
+        removed = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#") and stripped.rstrip("/") == key:
+                removed.append(line)
+                continue
+            new_lines.append(line)
+        if removed:
+            gitignore.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+            for r in removed:
+                actions.append(f"removed '{r}'")
+                if audit_fn:
+                    audit_fn(
+                        "aio__auto_fix_gitignore", "SUCCESS",
+                        f"removed line '{r}' reason=blocking_project_map",
+                    )
+    else:
+        # Broad rule -- preserve it, add whitelist exception.
+        whitelist = "!.ai-operation/docs/project_map/"
+        whitelist_glob = "!.ai-operation/docs/project_map/**"
+        already = any(l.strip() in (whitelist, whitelist_glob) for l in lines)
+        if not already:
+            # Ensure trailing newline discipline, then append.
+            new_lines = list(lines) + [whitelist]
+            gitignore.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+            actions.append(
+                f"appended '{whitelist}' (broad rule '{pattern}' preserved)"
+            )
+            if audit_fn:
+                audit_fn(
+                    "aio__auto_fix_gitignore", "SUCCESS",
+                    f"appended whitelist '{whitelist}' reason=broad_rule={pattern}",
+                )
+
+    # Stage the modified .gitignore so the next commit can include it.
+    if actions:
+        try:
+            subprocess.run(
+                ["git", "add", "-f", ".gitignore"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+            )
+        except Exception:
+            pass  # non-fatal; next commit will pick it up when files_to_add includes .gitignore
+
+    return actions
+
+
 def git_commit_nonblocking(files_to_add: list, commit_msg: str, _audit_fn=None) -> tuple:
     """Non-blocking git add + commit. Returns (git_status, git_diag).
 
-    Uses Popen + stdin=DEVNULL to avoid Windows stdio deadlocks.
+    Hardening:
+      - Uses `git add -f` so framework-managed project_map files bypass any
+        user-side .gitignore rule.
+      - Captures stderr to a TemporaryFile (avoids the Windows PIPE deadlock
+        that subprocess.run+capture_output triggers while still preserving
+        error diagnostics on non-zero rc).
+      - Only consumes TASKSPEC_APPROVED_FLAG / FAST_TRACK_FLAG on commit
+        SUCCESS. On failure the flags stay, so a retry does not require
+        re-approval (flag transaction).
     """
     import shutil
+    import tempfile
     import time
 
     git_status = "not attempted"
     git_diag = {}
+    commit_succeeded = False
+    add_rc = None
 
     try:
         _set_mcp_flag()
@@ -458,46 +580,68 @@ def git_commit_nonblocking(files_to_add: list, commit_msg: str, _audit_fn=None) 
 
         if files_to_add:
             t0 = time.time()
-            add_proc = subprocess.Popen(
-                ["git", "add"] + files_to_add,
-                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
-            try:
-                add_proc.wait(timeout=60)
-                git_diag["add_time"] = f"{time.time() - t0:.1f}s"
-                git_diag["add_rc"] = add_proc.returncode
-            except subprocess.TimeoutExpired:
-                add_proc.kill()
-                add_proc.wait()
-                git_diag["add_time"] = f"{time.time() - t0:.1f}s (TIMEOUT)"
-                git_status = "git add timed out"
-
-            if add_proc.returncode == 0:
-                t1 = time.time()
-                commit_proc = subprocess.Popen(
-                    ["git", "commit", "--no-verify", "--no-status", "-m", commit_msg, "--"] + files_to_add,
-                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            with tempfile.TemporaryFile() as add_err_f:
+                add_proc = subprocess.Popen(
+                    ["git", "add", "-f"] + files_to_add,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=add_err_f,
                 )
                 try:
-                    commit_proc.wait(timeout=30)
-                    git_diag["commit_time"] = f"{time.time() - t1:.1f}s"
-                    git_diag["commit_rc"] = commit_proc.returncode
-                    if commit_proc.returncode == 0:
-                        git_status = "committed"
-                    else:
-                        git_status = f"commit exited {commit_proc.returncode}"
+                    add_proc.wait(timeout=60)
+                    git_diag["add_time"] = f"{time.time() - t0:.1f}s"
+                    add_rc = add_proc.returncode
+                    git_diag["add_rc"] = add_rc
                 except subprocess.TimeoutExpired:
-                    commit_proc.kill()
-                    commit_proc.wait()
-                    git_diag["commit_time"] = f"{time.time() - t1:.1f}s (TIMEOUT)"
-                    git_status = "commit timed out -- run manually"
+                    add_proc.kill()
+                    add_proc.wait()
+                    git_diag["add_time"] = f"{time.time() - t0:.1f}s (TIMEOUT)"
+                    git_status = "git add timed out"
+
+                if add_rc is not None and add_rc != 0:
+                    add_err_f.seek(0)
+                    err_bytes = add_err_f.read()
+                    err_text = err_bytes.decode("utf-8", errors="replace").strip()
+                    git_diag["add_stderr"] = err_text[:500] if err_text else "(no stderr output)"
+                    git_status = f"git add failed (rc={add_rc}): {err_text[:200] or '(empty)'}"
+
+            if add_rc == 0:
+                t1 = time.time()
+                with tempfile.TemporaryFile() as commit_err_f:
+                    commit_proc = subprocess.Popen(
+                        ["git", "commit", "--no-verify", "--no-status", "-m", commit_msg, "--"] + files_to_add,
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL,
+                        stderr=commit_err_f,
+                    )
+                    try:
+                        commit_proc.wait(timeout=30)
+                        git_diag["commit_time"] = f"{time.time() - t1:.1f}s"
+                        git_diag["commit_rc"] = commit_proc.returncode
+                        if commit_proc.returncode == 0:
+                            git_status = "committed"
+                            commit_succeeded = True
+                        else:
+                            commit_err_f.seek(0)
+                            err_text = commit_err_f.read().decode("utf-8", errors="replace").strip()
+                            git_diag["commit_stderr"] = err_text[:500] if err_text else "(no stderr output)"
+                            git_status = f"commit exited {commit_proc.returncode}: {err_text[:200] or '(empty)'}"
+                    except subprocess.TimeoutExpired:
+                        commit_proc.kill()
+                        commit_proc.wait()
+                        git_diag["commit_time"] = f"{time.time() - t1:.1f}s (TIMEOUT)"
+                        git_status = "commit timed out -- run manually"
     except Exception as e:
         git_status = f"error: {str(e)[:100]}"
     finally:
         _clear_mcp_flag()
-        if TASKSPEC_APPROVED_FLAG.exists():
-            TASKSPEC_APPROVED_FLAG.unlink()
-        if FAST_TRACK_FLAG.exists():
-            FAST_TRACK_FLAG.unlink()
+        # Flag transaction: only consume approval flags when the commit
+        # actually landed. Keeping them on failure lets the user retry
+        # the save without re-submitting a taskSpec.
+        if commit_succeeded:
+            if TASKSPEC_APPROVED_FLAG.exists():
+                TASKSPEC_APPROVED_FLAG.unlink()
+            if FAST_TRACK_FLAG.exists():
+                FAST_TRACK_FLAG.unlink()
 
     return git_status, git_diag
