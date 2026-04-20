@@ -170,11 +170,18 @@ def register_cleanup_tools(mcp: FastMCP, _audit, _loop_guard):
             finally:
                 _clear_mcp_flag()
 
+        # -- Snapshot directory GC (save_history) -----------------
+        # Keep the SNAPSHOT_RETAIN_COUNT most recent Phase 2 snapshots so
+        # rollback remains available for recent saves, but old snapshots
+        # don't accumulate forever.
+        snapshots_deleted = _gc_save_history()
+
         _audit("aio__force_garbage_collection", "SUCCESS",
-               f"deleted={deleted_count}, untracked={untracked_count}")
+               f"deleted={deleted_count}, untracked={untracked_count}, snapshots={snapshots_deleted}")
         return (
             f"CLEANUP COMPLETE\n"
             f"Temp files deleted: {deleted_count}\n"
             f"Git-tracked files untracked: {untracked_count}\n"
+            f"Old save snapshots purged: {snapshots_deleted}\n"
             f"{'Run `git gc` to reclaim .git disk space.' if git_size > 100_000_000 else ''}"
         )

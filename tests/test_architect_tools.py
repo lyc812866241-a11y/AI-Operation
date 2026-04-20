@@ -735,5 +735,307 @@ class TestHookBlocksProjectMap(unittest.TestCase, TestSetup):
         self.assertEqual(r.returncode, 0)
 
 
+class TestSnapshotHelpers(unittest.TestCase, TestSetup):
+    """Fix C helpers: snapshot / restore / GC over project_map."""
+
+    def setUp(self):
+        self.create_temp_project()
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def test_snapshot_copies_all_project_map_md(self):
+        from tools.constants import _snapshot_project_map, SAVE_HISTORY_DIR
+
+        pm = Path(".ai-operation/docs/project_map")
+        (pm / "details").mkdir(parents=True, exist_ok=True)
+        (pm / "details" / "nested.md").write_text("nested content", encoding="utf-8")
+
+        snap = _snapshot_project_map("20260420T120000")
+        self.assertTrue(snap.exists())
+        self.assertTrue((snap / "activeContext.md").exists())
+        self.assertTrue((snap / "details" / "nested.md").exists())
+        self.assertEqual(
+            (snap / "details" / "nested.md").read_text(encoding="utf-8"),
+            "nested content",
+        )
+        # Snapshot directory is under SAVE_HISTORY_DIR
+        self.assertEqual(snap.parent.resolve(), SAVE_HISTORY_DIR.resolve())
+
+    def test_restore_returns_files_and_overwrites(self):
+        from tools.constants import _snapshot_project_map, _restore_from_snapshot
+
+        pm = Path(".ai-operation/docs/project_map")
+        original = "ORIGINAL\n"
+        (pm / "activeContext.md").write_text(original, encoding="utf-8")
+        snap = _snapshot_project_map("20260420T120001")
+        # Tamper with file, then restore
+        (pm / "activeContext.md").write_text("TAMPERED\n", encoding="utf-8")
+        restored = _restore_from_snapshot(snap)
+        self.assertIn("activeContext.md", restored)
+        self.assertEqual(
+            (pm / "activeContext.md").read_text(encoding="utf-8"),
+            original,
+        )
+
+    def test_gc_keeps_latest_n_snapshots(self):
+        from tools.constants import SAVE_HISTORY_DIR, _gc_save_history, SNAPSHOT_RETAIN_COUNT
+        import time
+
+        SAVE_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+        # Create 15 fake snapshots with ascending mtimes
+        for i in range(15):
+            d = SAVE_HISTORY_DIR / f"snap_{i:03d}"
+            d.mkdir()
+            (d / "mark.md").write_text(str(i), encoding="utf-8")
+            # Ensure deterministic ordering by mtime
+            ts = time.time() + i
+            os.utime(d, (ts, ts))
+
+        deleted = _gc_save_history(retain=SNAPSHOT_RETAIN_COUNT)  # default 10
+        self.assertEqual(deleted, 5)
+
+        remaining = sorted(d.name for d in SAVE_HISTORY_DIR.iterdir() if d.is_dir())
+        self.assertEqual(len(remaining), 10)
+        # The 5 oldest (snap_000..snap_004) should have been deleted
+        self.assertNotIn("snap_000", remaining)
+        self.assertNotIn("snap_004", remaining)
+        self.assertIn("snap_014", remaining)
+
+    def test_gc_noop_when_under_threshold(self):
+        from tools.constants import SAVE_HISTORY_DIR, _gc_save_history
+
+        SAVE_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+        for i in range(3):
+            (SAVE_HISTORY_DIR / f"snap_{i}").mkdir()
+        deleted = _gc_save_history(retain=10)
+        self.assertEqual(deleted, 0)
+        self.assertEqual(len([d for d in SAVE_HISTORY_DIR.iterdir()]), 3)
+
+
+class TestSavePhase2Guards(unittest.TestCase, TestSetup):
+    """Fix A + Fix B: zero-match and no-delimiter guards in Phase 2 save."""
+
+    def setUp(self):
+        self.create_temp_project()
+        # Populate corrections with a valid SESSION_KEY + approved flag so the
+        # cognitive gate and taskspec gate don't interfere with these tests.
+        pm = Path(".ai-operation/docs/project_map")
+        (pm / "corrections.md").write_text(
+            "# Corrections\n_none_\nSESSION_KEY: testkey\n", encoding="utf-8"
+        )
+        Path(".ai-operation/.session_confirmed").write_text("0", encoding="utf-8")
+
+        # Replace systemPatterns.md with a real structured file (3 sections)
+        (pm / "systemPatterns.md").write_text(
+            "# System Patterns\n\n"
+            "## 1. 系统定性\n原定性内容\n\n"
+            "## 2. 数据流\n原数据流\n\n"
+            "## 3. 架构约束\n原约束\n",
+            encoding="utf-8",
+        )
+        # techContext also structured for the "blob on structured file" test
+        (pm / "techContext.md").write_text(
+            "# Tech Context\n\n"
+            "## 1. 核心技术栈\nPython 3.9+\n\n"
+            "## 2. 已知坑点\nN/A\n",
+            encoding="utf-8",
+        )
+
+        # Register tools
+        self.mcp = MagicMock()
+        self.tools = {}
+
+        def capture_tool():
+            def decorator(fn):
+                self.tools[fn.__name__] = fn
+                return fn
+            return decorator
+
+        self.mcp.tool = capture_tool
+        from tools.architect import register_architect_tools
+        register_architect_tools(self.mcp)
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def _valid_phase1_args(self, **overrides):
+        args = dict(
+            projectbrief_update="NO_CHANGE_BECAUSE: not relevant for this test",
+            systemPatterns_update="NO_CHANGE_BECAUSE: not relevant for this test",
+            techContext_update="NO_CHANGE_BECAUSE: not relevant for this test",
+            conventions_update="NO_CHANGE_BECAUSE: not relevant for this test",
+            activeContext_update=(
+                "Current focus: testing Phase 2 guards in tests/test_architect_tools.py. "
+                "Just completed: modified .ai-operation/mcp_server/tools/save.py to add "
+                "zero-match refuse and no-delimiter refuse guards. "
+                "Next step: run pytest to verify all guard paths behave correctly."
+            ),
+            progress_update=(
+                "DONE .ai-operation/mcp_server/tools/save.py: added Phase 2 defensive guards "
+                "(zero-match refuse, no-delimiter refuse, FULL_OVERWRITE_CONFIRMED escape, "
+                "snapshot+restore on exception)\n"
+                "DONE tests/test_architect_tools.py: added 7 new guard tests covering every path\n"
+                "DONE .ai-operation/mcp_server/tools/constants.py: snapshot helpers + GC helper\n"
+                "TODO: run full pytest suite; then git commit + push"
+            ),
+            lessons_learned="NONE",
+        )
+        args.update(overrides)
+        return args
+
+    def _run_both_phases(self, **overrides):
+        p1 = self.tools["aio__force_architect_save"](**self._valid_phase1_args(**overrides))
+        if p1.startswith("REJECTED"):
+            return p1
+        # Mock git operations in Phase 2
+        with patch("tools.constants.subprocess") as mock_sub:
+            # simulate git add + commit success
+            mock_proc = MagicMock()
+            mock_proc.returncode = 0
+            mock_proc.wait.return_value = 0
+            mock_sub.Popen.return_value = mock_proc
+            mock_sub.DEVNULL = -3  # doesn't matter, just needs a value
+            mock_sub.run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            # subprocess.TimeoutExpired referenced — preserve real class
+            import subprocess as _sp
+            mock_sub.TimeoutExpired = _sp.TimeoutExpired
+            p2 = self.tools["aio__force_architect_save_confirm"]()
+        return p2
+
+    def test_zero_section_match_rejected_with_diagnostic(self):
+        """AI passes ===SECTION=== with wrong titles -> REJECTED, original file unchanged."""
+        bad_update = (
+            "===SECTION===\n不存在的小节\n"
+            "文件 systemPatterns.md 的节点内容占位文字，用于通过 Phase 1 字数校验\n"
+            "===SECTION===\n另一个假小节\n"
+            "同样是为了通过字数校验的占位内容，涉及 .ai-operation/mcp_server/tools/save.py 的改动\n"
+        )
+        result = self._run_both_phases(systemPatterns_update=bad_update)
+
+        self.assertIn("REJECTED", result)
+        self.assertIn("systemPatterns.md", result)
+        # Diagnostic must list actual section titles
+        self.assertIn("系统定性", result)
+        self.assertIn("数据流", result)
+        # And echo the bad keys
+        self.assertIn("不存在的小节", result)
+        # Original file content preserved
+        sp = Path(".ai-operation/docs/project_map/systemPatterns.md").read_text(encoding="utf-8")
+        self.assertIn("原定性内容", sp)
+        self.assertIn("原数据流", sp)
+
+    def test_section_match_succeeds_with_numeric_prefix_stripped(self):
+        """===SECTION===\n系统定性\n... (no '1.') matches '## 1. 系统定性'."""
+        good_update = (
+            "===SECTION===\n系统定性\n"
+            "新定性内容，包含 .ai-operation/mcp_server/tools/save.py 的 Phase 2 guard 说明 "
+            "和 constants.py 的 snapshot helper 说明，用于通过 Phase 1 字数校验\n"
+        )
+        result = self._run_both_phases(systemPatterns_update=good_update)
+
+        self.assertNotIn("REJECTED", result)
+        sp = Path(".ai-operation/docs/project_map/systemPatterns.md").read_text(encoding="utf-8")
+        self.assertIn("新定性内容", sp)
+        # Other sections preserved
+        self.assertIn("原数据流", sp)
+        self.assertIn("原约束", sp)
+
+    def test_no_delimiter_on_structured_file_rejected(self):
+        """Blob content (no ===SECTION===) on a file with existing sections -> REJECTED."""
+        blob = (
+            "just a bunch of text without any section delimiters whatsoever, "
+            "long enough to clear the 100-char minimum for static file updates so "
+            "that the Phase 1 validation doesn't reject this for the wrong reason."
+        )
+        result = self._run_both_phases(systemPatterns_update=blob)
+
+        self.assertIn("REJECTED", result)
+        self.assertIn("systemPatterns.md", result)
+        self.assertIn("FULL_OVERWRITE_CONFIRMED", result)
+        # Original file UNTOUCHED
+        sp = Path(".ai-operation/docs/project_map/systemPatterns.md").read_text(encoding="utf-8")
+        self.assertIn("原定性内容", sp)
+        self.assertIn("原约束", sp)
+
+    def test_full_overwrite_confirmed_prefix_allows_overwrite(self):
+        """FULL_OVERWRITE_CONFIRMED: prefix -> full OVERWRITE, guard bypassed."""
+        replacement = (
+            "FULL_OVERWRITE_CONFIRMED:\n# 完全重写\n"
+            "新内容无任何原有 section 结构。这是显式 opt-in 的全替换路径，"
+            "用于当 AI 真的想重建整份 systemPatterns.md 时使用。"
+            "涉及文件 .ai-operation/mcp_server/tools/save.py Phase 2 判定逻辑。\n"
+        )
+        result = self._run_both_phases(systemPatterns_update=replacement)
+
+        self.assertNotIn("REJECTED", result)
+        self.assertIn("FULL_OVERWRITE", result)
+        sp = Path(".ai-operation/docs/project_map/systemPatterns.md").read_text(encoding="utf-8")
+        self.assertIn("完全重写", sp)
+        self.assertNotIn("原定性内容", sp)  # old content gone
+
+    def test_bootstrap_template_file_still_accepts_blob(self):
+        """File with no existing `##` sections (fresh template) -> blob OVERWRITE works."""
+        # Replace systemPatterns.md with template-shape (no `##` headers)
+        (Path(".ai-operation/docs/project_map/systemPatterns.md")).write_text(
+            "# System Patterns\n\n[待填写]\n", encoding="utf-8"
+        )
+        blob = (
+            "# System Patterns\n\nfilled in on first bootstrap. "
+            "此文件原本是模板（无 `##` section），因此走 template-shape overwrite 路径。"
+            "涉及 .ai-operation/mcp_server/tools/save.py 的 bootstrap 分支 (d)。\n"
+        )
+        result = self._run_both_phases(systemPatterns_update=blob)
+
+        self.assertNotIn("REJECTED", result)
+        sp = Path(".ai-operation/docs/project_map/systemPatterns.md").read_text(encoding="utf-8")
+        self.assertIn("filled in on first bootstrap", sp)
+
+    def test_phase2_exception_restores_from_snapshot(self):
+        """If Phase 2 raises inside the write loop, snapshot restore kicks in."""
+        from pathlib import Path as _P
+
+        # Pre-seed contents that the test will verify are preserved
+        sp_path = _P(".ai-operation/docs/project_map/systemPatterns.md")
+        original = sp_path.read_text(encoding="utf-8")
+
+        # Phase 1 first (doesn't write project_map)
+        p1_args = self._valid_phase1_args(
+            systemPatterns_update=(
+                "===SECTION===\n系统定性\n"
+                "新定性内容，用于测试 Phase 2 异常回滚。涉及 .ai-operation/mcp_server/tools/save.py "
+                "的 snapshot + restore 路径，以及 constants.py 的 _snapshot_project_map helper。\n"
+            )
+        )
+        p1 = self.tools["aio__force_architect_save"](**p1_args)
+        self.assertFalse(p1.startswith("REJECTED"), f"Phase 1 unexpectedly rejected: {p1[:200]}")
+
+        # Phase 2: patch filepath.write_text on the STATIC file to raise a
+        # generic exception AFTER snapshot, simulating e.g. a disk error.
+        import tools.save as save_mod
+        real_write = _P.write_text
+
+        def flaky_write(self, data, *a, **kw):
+            if self.name == "systemPatterns.md":
+                raise OSError("simulated disk error")
+            return real_write(self, data, *a, **kw)
+
+        with patch.object(_P, "write_text", flaky_write), \
+             patch("tools.constants.subprocess") as mock_sub:
+            mock_proc = MagicMock(returncode=0)
+            mock_proc.wait.return_value = 0
+            mock_sub.Popen.return_value = mock_proc
+            mock_sub.run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            import subprocess as _sp
+            mock_sub.TimeoutExpired = _sp.TimeoutExpired
+            p2 = self.tools["aio__force_architect_save_confirm"]()
+
+        self.assertIn("RESTORED", p2)
+        # systemPatterns.md should be back to original (snapshot restored)
+        restored_text = sp_path.read_text(encoding="utf-8")
+        self.assertEqual(restored_text, original,
+                         "systemPatterns.md should be restored to pre-Phase2 content")
+
+
 if __name__ == "__main__":
     unittest.main()

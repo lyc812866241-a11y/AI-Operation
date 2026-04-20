@@ -10,6 +10,7 @@ __all__ = [
     "PROJECT_MAP_DIR", "DETAILS_DIR", "MCP_COMMIT_FLAG",
     "TASKSPEC_DIR", "TASKSPEC_FILE", "TASKSPEC_APPROVED_FLAG",
     "FAST_TRACK_FLAG", "SAVE_STAGING_FILE", "BYPASS_DIR",
+    "SAVE_HISTORY_DIR", "SNAPSHOT_RETAIN_COUNT",
     # Size limits
     "MAX_FILE_CHARS", "MAX_TOTAL_CHARS", "SECTION_SIZE_THRESHOLD",
     "CORRECTIONS_MAX_BYTES", "MAX_TOOL_RESULT_BYTES",
@@ -21,6 +22,8 @@ __all__ = [
     "_enforce_file_size_limit", "_compact_corrections",
     "_compact_dynamic_file", "git_commit_nonblocking",
     "_check_and_heal_gitignore",
+    "_snapshot_project_map", "_restore_from_snapshot", "_gc_save_history",
+    "_extract_section_titles",
     "_budget_truncate",
     "_parse_skill_frontmatter", "_discover_skills",
 ]
@@ -37,6 +40,8 @@ TASKSPEC_APPROVED_FLAG = Path(".ai-operation/.taskspec_approved")
 FAST_TRACK_FLAG = Path(".ai-operation/.fast_track")
 SAVE_STAGING_FILE = Path(".ai-operation/.save_staging.json")
 BYPASS_DIR = Path(".ai-operation/.bypasses")  # Per-rule bypass flags
+SAVE_HISTORY_DIR = Path(".ai-operation/.save_history")  # Phase 2 snapshots for rollback
+SNAPSHOT_RETAIN_COUNT = 10  # gc keeps this many latest snapshots
 
 # Size limits
 MAX_FILE_CHARS = 16_000      # 16KB per file
@@ -411,6 +416,110 @@ def _discover_skills(skills_dir: Path = None) -> list:
             })
 
     return skills
+
+
+def _extract_section_titles(content: str) -> list:
+    """Return the list of `## ` section titles in a markdown file, with
+    leading numeric prefixes stripped (mirrors _section_merge matching).
+
+    Used by save.py to produce diagnostic messages when AI-supplied
+    ===SECTION=== keys fail to match.
+    """
+    import re
+    titles = []
+    for line in content.split("\n"):
+        if line.startswith("## "):
+            raw = line[3:].strip()
+            clean = re.sub(r"^\d+\.\s*", "", raw)
+            titles.append(clean)
+    return titles
+
+
+def _snapshot_project_map(ts: str) -> "Path":
+    """Copy every .md file under project_map (including details/) into
+    SAVE_HISTORY_DIR/<ts>/ so Phase 2 can roll back on exception.
+
+    Returns the snapshot directory path. Non-existent project_map yields
+    an empty snapshot dir (still created so the restore path is uniform).
+    """
+    import shutil
+
+    snapshot = SAVE_HISTORY_DIR / ts
+    snapshot.mkdir(parents=True, exist_ok=True)
+
+    if not PROJECT_MAP_DIR.exists():
+        return snapshot
+
+    for md in PROJECT_MAP_DIR.rglob("*.md"):
+        try:
+            rel = md.relative_to(PROJECT_MAP_DIR)
+        except ValueError:
+            continue
+        dst = snapshot / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copy2(md, dst)
+        except Exception:
+            # Best-effort snapshot; a single unreadable file should not
+            # block the save flow.
+            continue
+
+    return snapshot
+
+
+def _restore_from_snapshot(snapshot_dir: "Path") -> list:
+    """Restore every .md under snapshot_dir back into PROJECT_MAP_DIR.
+
+    Returns the list of restored relative paths. Missing snapshot or
+    filesystem errors produce an empty list rather than raising, so the
+    save tool can surface a PARTIAL status instead of exploding.
+    """
+    import shutil
+
+    if not snapshot_dir or not snapshot_dir.exists():
+        return []
+
+    restored = []
+    PROJECT_MAP_DIR.mkdir(parents=True, exist_ok=True)
+    for md in snapshot_dir.rglob("*.md"):
+        try:
+            rel = md.relative_to(snapshot_dir)
+        except ValueError:
+            continue
+        dst = PROJECT_MAP_DIR / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copy2(md, dst)
+            restored.append(str(rel))
+        except Exception:
+            continue
+    return restored
+
+
+def _gc_save_history(retain: int = SNAPSHOT_RETAIN_COUNT) -> int:
+    """Delete snapshot directories under SAVE_HISTORY_DIR beyond `retain`.
+
+    Keeps the `retain` most-recently-modified subdirs. Returns the number
+    of directories deleted. Silent on missing SAVE_HISTORY_DIR.
+    """
+    import shutil
+
+    if not SAVE_HISTORY_DIR.exists():
+        return 0
+
+    dirs = [d for d in SAVE_HISTORY_DIR.iterdir() if d.is_dir()]
+    if len(dirs) <= retain:
+        return 0
+
+    dirs.sort(key=lambda d: d.stat().st_mtime, reverse=True)
+    deleted = 0
+    for old in dirs[retain:]:
+        try:
+            shutil.rmtree(old)
+            deleted += 1
+        except Exception:
+            continue
+    return deleted
 
 
 def _budget_truncate(result: str, max_bytes: int = MAX_TOOL_RESULT_BYTES) -> str:

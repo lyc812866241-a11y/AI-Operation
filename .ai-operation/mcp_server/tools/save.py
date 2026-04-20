@@ -11,6 +11,13 @@ from .cognitive_gate import is_save_pending, set_save_pending, clear_save_pendin
 from .bypass import has_bypass
 
 
+class _SaveAbort(Exception):
+    """Internal signal used by save Phase 2 guards to abort the write loop
+    with a user-facing REJECTED message. Caller restores from snapshot
+    and returns the message verbatim -- do NOT re-raise.
+    """
+
+
 def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
     """Register save-related tools onto the MCP server instance."""
 
@@ -47,7 +54,19 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
 
         Each block: first line = section title to match, rest = new content for that section.
         Sections not mentioned are left unchanged. Use SKIP as content to explicitly skip a section.
-        If no ===SECTION=== delimiters found, falls back to append mode (backward compatible).
+
+        Section-title matching: leading "N. " numeric prefixes are ignored on BOTH sides.
+        Example: the file has "## 1. 当前焦点", you pass `===SECTION===\n当前焦点\n...` -- matches.
+        If ZERO sections match, the tool REJECTS the call (no silent no-op) and lists the actual
+        section titles in the file so you can fix your keys.
+
+        If you provide content WITHOUT any ===SECTION=== delimiters for a file that already has
+        `##` sections, the tool REJECTS to prevent accidental full-file wipe. To deliberately
+        REPLACE the entire file, prefix your content with `FULL_OVERWRITE_CONFIRMED:` on its
+        own first line -- this explicit opt-in is the only path to total overwrite.
+
+        Files that do NOT yet have any `##` sections (fresh templates, new files) accept raw
+        content without delimiters -- that's the bootstrap path.
 
         MINIMUM DETAIL REQUIREMENTS (MCP tool will REJECT if too vague):
         - activeContext_update must mention specific FILE PATHS that were changed
@@ -75,10 +94,12 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             activeContext_update: REQUIRED. See detail requirements above. Min 200 chars.
             progress_update: REQUIRED. Each task with file path. Min 150 chars.
             lessons_learned: REQUIRED. Lessons from this session. "NONE" only if truly nothing learned.
-            inventory_update: Optional but CRITICAL for list data. If this session created, discovered,
-                or modified a list of items (skills, modules, APIs, models), provide the COMPLETE LIST
-                here. This is FULL OVERWRITE, not append -- if you list 40 skills, the file will have
-                exactly 40 skills. Always read inventory.md first and merge, don't rely on memory alone.
+            inventory_update: **FULL OVERWRITE MODE** -- whatever you pass replaces the entire
+                inventory.md body. For INCREMENTAL additions (single new skill, module, API) use
+                `aio__inventory_append` instead -- that's the safe path. Use this `inventory_update`
+                parameter only when you intentionally rebuild the full list from scratch (e.g. after
+                [整理]). If you use it: ALWAYS read inventory.md first, merge by hand, then pass the
+                COMPLETE list here. Passing partial content will erase everything you didn't include.
             conventions_update: Optional. SECOND-ORDER contracts only (naming, API format, UI tokens,
                 code style) -- structural rules that prevent a CLASS of bugs. Do NOT put specific
                 incident lessons here (those go in corrections/{key}.md as first-order experience).
@@ -687,72 +708,162 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         changed_files = []
         merge_report = []
 
-        for filename, content in staged_updates.items():
-            filepath = PROJECT_MAP_DIR / filename
+        # Phase 2 snapshot -- snapshots every .md under project_map/ before we
+        # write. On exception (see outer try), we restore so AI never leaves
+        # project_map half-corrupted.
+        snapshot_ts = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+        try:
+            snapshot_dir = _snapshot_project_map(snapshot_ts)
+        except Exception as e:
+            snapshot_dir = None
+            _audit("aio__force_architect_save_confirm", "SNAPSHOT_ERROR", str(e)[:200])
 
-            if filename == "inventory.md":
-                # Inventory: full overwrite
-                inv_content = (
-                    f"# Project Inventory (资产清单)\n\n"
-                    f"> 上次更新：{timestamp}\n\n---\n\n"
-                    f"{content}\n"
-                )
-                filepath.write_text(inv_content, encoding="utf-8")
-                merge_report.append(f"  {filename}: OVERWRITE")
+        try:
+            for filename, content in staged_updates.items():
+                filepath = PROJECT_MAP_DIR / filename
 
-            elif filename in STATIC_FILES:
-                # Static files: section-aware merge
-                # AI passes content as "section_title: content" pairs separated by ===SECTION===
-                # Or as a single block (falls back to append)
-                if filepath.exists() and "===SECTION===" in content:
-                    existing = filepath.read_text(encoding="utf-8")
-                    # Parse section updates from AI content
-                    section_updates = {}
-                    for section_block in content.split("===SECTION==="):
-                        section_block = section_block.strip()
-                        if not section_block:
-                            continue
-                        # First line is the section title hint
-                        lines = section_block.split("\n", 1)
-                        if len(lines) == 2:
-                            section_updates[lines[0].strip()] = lines[1].strip()
-                        else:
-                            section_updates[lines[0].strip()] = ""
-
-                    merged, changed_sections = _section_merge(existing, section_updates)
-                    filepath.write_text(merged, encoding="utf-8")
-                    merge_report.append(
-                        f"  {filename}: SECTION MERGE ({len(changed_sections)} sections updated: "
-                        f"{', '.join(changed_sections) if changed_sections else 'none'})"
+                if filename == "inventory.md":
+                    # Inventory: full overwrite (documented in tool docstring).
+                    inv_content = (
+                        f"# Project Inventory (资产清单)\n\n"
+                        f"> 上次更新：{timestamp}\n\n---\n\n"
+                        f"{content}\n"
                     )
-                elif filepath.exists():
-                    # No ===SECTION=== delimiter -- full overwrite of static file.
-                    # APPEND was causing infinite content duplication. Static files
-                    # should be replaced entirely when AI provides a full update.
-                    # For partial updates, AI MUST use ===SECTION=== delimiters.
-                    filepath.write_text(content, encoding="utf-8")
-                    merge_report.append(f"  {filename}: OVERWRITE (no section delimiters -- use ===SECTION=== for partial updates)")
-                else:
-                    filepath.write_text(content, encoding="utf-8")
-                    merge_report.append(f"  {filename}: CREATED")
+                    filepath.write_text(inv_content, encoding="utf-8")
+                    merge_report.append(f"  {filename}: OVERWRITE")
 
-            else:
-                # Dynamic files (activeContext, progress): append only
-                # No auto-compact -- cleanup is handled by [整理] skill (human-in-the-loop)
-                if filename in ("activeContext.md", "progress.md") and filepath.exists():
-                    existing = filepath.read_text(encoding="utf-8")
-                    file_bytes = len(existing.encode("utf-8"))
-                    if file_bytes > DYNAMIC_FILE_MAX_BYTES:
+                elif filename in STATIC_FILES:
+                    # Static files: section-aware merge with defensive guards.
+                    #
+                    # Decision tree (prevents the three footguns observed in the
+                    # wild -- silent zero-match, silent full-wipe, docstring
+                    # saying APPEND while code OVERWRITE-d):
+                    #   (a) FULL_OVERWRITE_CONFIRMED: prefix -> explicit OVERWRITE
+                    #   (b) ===SECTION=== delimiters present -> merge; zero-match
+                    #       is REJECTED with diagnostic (actual titles vs keys)
+                    #   (c) existing file has `##` sections but no delimiters and
+                    #       no confirm prefix -> REJECTED (would wipe the file)
+                    #   (d) no existing sections (fresh template) -> OVERWRITE/CREATE
+                    OVERWRITE_SENTINEL = "FULL_OVERWRITE_CONFIRMED:"
+                    content_head = content.lstrip()
+
+                    if content_head.startswith(OVERWRITE_SENTINEL):
+                        # (a) explicit opt-in to full replace
+                        body = content_head[len(OVERWRITE_SENTINEL):].lstrip("\n").lstrip()
+                        filepath.write_text(body, encoding="utf-8")
                         merge_report.append(
-                            f"  [!] {filename} is {file_bytes // 1024}KB (>{DYNAMIC_FILE_MAX_BYTES // 1024}KB). "
-                            f"Run [整理] to clean up."
+                            f"  {filename}: FULL_OVERWRITE applied (explicit opt-in)"
                         )
 
-                with open(filepath, "a", encoding="utf-8") as f:
-                    f.write(f"\n\n---\n### [MCP Auto-Archive]\n{content}\n")
-                merge_report.append(f"  {filename}: APPEND")
+                    elif filepath.exists() and "===SECTION===" in content:
+                        # (b) section-aware merge; guard against zero-match.
+                        existing = filepath.read_text(encoding="utf-8")
+                        section_updates = {}
+                        for section_block in content.split("===SECTION==="):
+                            section_block = section_block.strip()
+                            if not section_block:
+                                continue
+                            lines = section_block.split("\n", 1)
+                            if len(lines) == 2:
+                                section_updates[lines[0].strip()] = lines[1].strip()
+                            else:
+                                section_updates[lines[0].strip()] = ""
 
-            changed_files.append(filename)
+                        merged, changed_sections = _section_merge(existing, section_updates)
+
+                        non_skip_keys = [
+                            k for k, v in section_updates.items()
+                            if v.strip().upper() != "SKIP"
+                        ]
+                        if non_skip_keys and not changed_sections:
+                            # Zero-match silent no-op -- refuse instead of pretending success.
+                            actual_titles = _extract_section_titles(existing)
+                            actual_list = ", ".join(actual_titles) if actual_titles else "(none)"
+                            keys_list = ", ".join(non_skip_keys)
+                            _audit("aio__force_architect_save_confirm", "REJECTED",
+                                   f"{filename} zero section match: keys={keys_list}")
+                            raise _SaveAbort(
+                                f"REJECTED: {filename} -- 0 of {len(non_skip_keys)} section updates matched.\n"
+                                f"  Your keys:     [{keys_list}]\n"
+                                f"  Actual titles: [{actual_list}]\n"
+                                f"  Fix: copy the exact section name from the file "
+                                f"(numeric prefixes like '1.' are auto-stripped on BOTH sides,\n"
+                                f"  so don't include them; match the text after the number)."
+                            )
+
+                        filepath.write_text(merged, encoding="utf-8")
+                        merge_report.append(
+                            f"  {filename}: SECTION MERGE ({len(changed_sections)} sections updated: "
+                            f"{', '.join(changed_sections) if changed_sections else 'none'})"
+                        )
+
+                    elif filepath.exists():
+                        existing = filepath.read_text(encoding="utf-8")
+                        existing_titles = _extract_section_titles(existing)
+                        if existing_titles:
+                            # (c) file has structure, AI passed a blob with no delimiters
+                            # -> would wipe the file. Refuse.
+                            _audit("aio__force_architect_save_confirm", "REJECTED",
+                                   f"{filename} blob update on structured file")
+                            raise _SaveAbort(
+                                f"REJECTED: {filename} already has {len(existing_titles)} sections "
+                                f"({', '.join(existing_titles[:5])}{'...' if len(existing_titles) > 5 else ''}) "
+                                f"but you passed content with no ===SECTION=== delimiters.\n"
+                                f"  This would WIPE the whole file. Two valid paths:\n"
+                                f"  (1) Partial update: re-submit using ===SECTION===\\ntitle\\ncontent "
+                                f"blocks, one per section you want to change.\n"
+                                f"  (2) Full replace: prefix the very first line with "
+                                f"'FULL_OVERWRITE_CONFIRMED:' -- this is the explicit opt-in."
+                            )
+                        # (d) template-shaped file (no `##` headers) -> overwrite safely
+                        filepath.write_text(content, encoding="utf-8")
+                        merge_report.append(
+                            f"  {filename}: OVERWRITE (template shape -- no existing sections)"
+                        )
+                    else:
+                        filepath.write_text(content, encoding="utf-8")
+                        merge_report.append(f"  {filename}: CREATED")
+
+                else:
+                    # Dynamic files (activeContext, progress): append only
+                    # No auto-compact -- cleanup is handled by [整理] skill (human-in-the-loop)
+                    if filename in ("activeContext.md", "progress.md") and filepath.exists():
+                        existing = filepath.read_text(encoding="utf-8")
+                        file_bytes = len(existing.encode("utf-8"))
+                        if file_bytes > DYNAMIC_FILE_MAX_BYTES:
+                            merge_report.append(
+                                f"  [!] {filename} is {file_bytes // 1024}KB (>{DYNAMIC_FILE_MAX_BYTES // 1024}KB). "
+                                f"Run [整理] to clean up."
+                            )
+
+                    with open(filepath, "a", encoding="utf-8") as f:
+                        f.write(f"\n\n---\n### [MCP Auto-Archive]\n{content}\n")
+                    merge_report.append(f"  {filename}: APPEND")
+
+                changed_files.append(filename)
+        except _SaveAbort as e:
+            # Our own guard fired. Restore from snapshot so earlier-iteration
+            # writes don't leave project_map in a partial state.
+            restored = _restore_from_snapshot(snapshot_dir) if snapshot_dir else []
+            clear_save_pending()
+            _audit("aio__force_architect_save_confirm", "ABORTED",
+                   f"restored={len(restored)}")
+            return (
+                f"{e}\n\n"
+                f"(no permanent changes -- {len(restored)} files restored from "
+                f"snapshot {snapshot_ts})"
+            )
+        except Exception as e:
+            # Unexpected error during Phase 2 writes. Roll back everything.
+            restored = _restore_from_snapshot(snapshot_dir) if snapshot_dir else []
+            clear_save_pending()
+            _audit("aio__force_architect_save_confirm", "RESTORED",
+                   f"error={str(e)[:120]} restored={len(restored)}")
+            return (
+                f"RESTORED: Phase 2 failed -- {str(e)[:200]}\n"
+                f"Restored {len(restored)} files from snapshot {snapshot_ts}.\n"
+                f"The save did NOT land; re-run aio__force_architect_save to try again."
+            )
 
         # Auto-split oversized sections to detail subfiles
         split_report = []

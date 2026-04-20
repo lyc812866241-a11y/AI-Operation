@@ -98,3 +98,48 @@
 
 ### 4. 环境依赖
 运行项目必须满足的条件（Python 版本、CUDA、API key 等）。
+
+---
+
+## save 工具写入语义（必读）
+
+不同参数走不同写入策略，**搞混会直接丢数据**。
+
+### 静态文件（projectbrief / systemPatterns / techContext / conventions）
+
+三种模式，按优先级：
+
+1. **精准增量**（首选）—— 用 `===SECTION===` 分隔符
+   ```
+   ===SECTION===
+   系统定性
+   新定性内容
+   ===SECTION===
+   架构约束
+   新约束内容
+   ```
+   - title 忽略 `N.` 数字前缀，两边都会自动 strip
+   - 零匹配 → REJECTED（带实际 section 清单），**不会偷偷改成 no-op**
+
+2. **显式全替换**—— 用 `FULL_OVERWRITE_CONFIRMED:` 前缀
+   ```
+   FULL_OVERWRITE_CONFIRMED:
+   # 全新文件内容
+   ...
+   ```
+   - 仅在你真要重写整份文件时用
+
+3. **空/新文件**—— 纯文本
+   - 只在文件不存在或无任何 `##` section 时允许
+   - 已有 section 结构的文件传纯文本 → **REJECTED**（上面规则 2 的保护）
+
+### 动态文件（activeContext / progress）
+
+始终 APPEND（追加到末尾）。
+
+### inventory 清单
+
+- **`save(inventory_update=...)`** = **FULL OVERWRITE**，替换整个 inventory.md
+- **`aio__inventory_append(category, item)`** = **增量追加**，首选这个
+
+新增 1-2 条资产时**千万不要**用 save 的 `inventory_update`——会清空整个清单。
