@@ -723,11 +723,35 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                 filepath = PROJECT_MAP_DIR / filename
 
                 if filename == "inventory.md":
-                    # Inventory: full overwrite (documented in tool docstring).
+                    # Inventory: full overwrite, but guard against accidental wipe.
+                    # If the new content is < 50% of existing entry count AND the AI
+                    # did not explicitly prefix FULL_OVERWRITE_CONFIRMED:, refuse.
+                    OVERWRITE_SENTINEL = "FULL_OVERWRITE_CONFIRMED:"
+                    inv_head = content.lstrip()
+                    if inv_head.startswith(OVERWRITE_SENTINEL):
+                        inv_body = inv_head[len(OVERWRITE_SENTINEL):].lstrip("\n").lstrip()
+                    else:
+                        inv_body = content
+                        if filepath.exists():
+                            old_inv = filepath.read_text(encoding="utf-8")
+                            old_count = old_inv.count("- [") + old_inv.count("- ")
+                            new_count = content.count("- [") + content.count("- ")
+                            if old_count > 4 and new_count < old_count * 0.5:
+                                _audit("aio__force_architect_save_confirm", "REJECTED",
+                                       f"inventory.md wipe guard: old~{old_count} new~{new_count}")
+                                raise _SaveAbort(
+                                    f"REJECTED: inventory.md wipe guard triggered.\n"
+                                    f"  Existing entry count: ~{old_count}\n"
+                                    f"  Your update entry count: ~{new_count} (< 50% of existing)\n"
+                                    f"  This looks like a partial inventory that would erase the rest.\n\n"
+                                    f"  Option 1: Read inventory.md first, merge by hand, pass the COMPLETE list.\n"
+                                    f"  Option 2: If you intentionally want to replace everything, prefix\n"
+                                    f"             your content with 'FULL_OVERWRITE_CONFIRMED:' on the first line."
+                                )
                     inv_content = (
                         f"# Project Inventory (资产清单)\n\n"
                         f"> 上次更新：{timestamp}\n\n---\n\n"
-                        f"{content}\n"
+                        f"{inv_body}\n"
                     )
                     filepath.write_text(inv_content, encoding="utf-8")
                     merge_report.append(f"  {filename}: OVERWRITE")
@@ -1052,4 +1076,88 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             f"Git: {git_status}\n"
             f"{git_hint}"
             f"{diag_str}"
+        )
+
+    @mcp.tool()
+    def aio__force_architect_save_cancel() -> str:
+        """
+        [ENFORCEMENT TOOL] Cancel a pending Phase 1 save before it is confirmed.
+
+        Use this when aio__force_architect_save returned PENDING_REVIEW but you
+        discovered an error in the staged content and want to start over without
+        confirming a bad save.
+
+        This tool deletes the staging file and releases the save-pending lock so
+        you can call aio__force_architect_save again with corrected content.
+
+        Returns:
+            Confirmation that the pending save was cancelled.
+        """
+        _audit("aio__force_architect_save_cancel", "CALLED")
+
+        if not is_save_pending() and not SAVE_STAGING_FILE.exists():
+            _audit("aio__force_architect_save_cancel", "NOOP", "no pending save")
+            return "NOOP: No pending save found. Nothing to cancel."
+
+        if SAVE_STAGING_FILE.exists():
+            SAVE_STAGING_FILE.unlink()
+        clear_save_pending()
+
+        _audit("aio__force_architect_save_cancel", "SUCCESS", "pending save cancelled")
+        return (
+            "SUCCESS: Pending save cancelled.\n"
+            "The staging file has been deleted and the save lock released.\n"
+            "You may now call aio__force_architect_save again with corrected content."
+        )
+
+    @mcp.tool()
+    def aio__force_architect_restore_last(confirm: bool = False) -> str:
+        """
+        [ENFORCEMENT TOOL] List or restore the most recent project_map snapshot.
+
+        Snapshots are taken automatically at the start of every Phase 2 save.
+        Use this tool to roll back project_map to the state it was in before the
+        last save completed.
+
+        Args:
+            confirm: If False (default), only lists the snapshot contents without
+                     writing anything. If True, restores the files to project_map.
+
+        Returns:
+            List of files in the snapshot (dry run) or restoration report.
+        """
+        _audit("aio__force_architect_restore_last", "CALLED", f"confirm={confirm}")
+
+        if not SAVE_HISTORY_DIR.exists():
+            return "No snapshots found. SAVE_HISTORY_DIR does not exist yet."
+
+        snapshots = sorted(SAVE_HISTORY_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)
+        snapshots = [s for s in snapshots if s.is_dir()]
+
+        if not snapshots:
+            return "No snapshots found in SAVE_HISTORY_DIR."
+
+        latest = snapshots[0]
+        snapshot_files = list(latest.glob("*.md"))
+
+        if not confirm:
+            file_list = "\n".join(
+                f"  - {f.name} ({len(f.read_text(encoding='utf-8'))} chars)"
+                for f in sorted(snapshot_files)
+            )
+            _audit("aio__force_architect_restore_last", "LIST", f"snapshot={latest.name}")
+            return (
+                f"Most recent snapshot: {latest.name}\n"
+                f"Files that would be restored:\n{file_list}\n\n"
+                f"Call this tool again with confirm=True to restore these files to project_map."
+            )
+
+        restored = _restore_from_snapshot(latest)
+        _audit("aio__force_architect_restore_last", "SUCCESS",
+               f"snapshot={latest.name}, restored={len(restored)}")
+        return (
+            f"SUCCESS: Restored {len(restored)} files from snapshot {latest.name}.\n"
+            f"Restored: {', '.join(restored)}\n\n"
+            f"Note: This does NOT commit the restored files. Run [存档] to save the current state,\n"
+            f"or run git manually to commit the restoration."
         )

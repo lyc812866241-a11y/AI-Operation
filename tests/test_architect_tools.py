@@ -1037,5 +1037,300 @@ class TestSavePhase2Guards(unittest.TestCase, TestSetup):
                          "systemPatterns.md should be restored to pre-Phase2 content")
 
 
+class TestInventoryWipeGuard(unittest.TestCase, TestSetup):
+    """Fix 1: inventory.md Phase 2 entry-count guard."""
+
+    def setUp(self):
+        self.create_temp_project()
+        pm = Path(".ai-operation/docs/project_map")
+        (pm / "corrections.md").write_text(
+            "# Corrections\n_none_\nSESSION_KEY: testkey\n", encoding="utf-8"
+        )
+        Path(".ai-operation/.session_confirmed").write_text("0", encoding="utf-8")
+        # Write a rich inventory (10 entries)
+        (pm / "inventory.md").write_text(
+            "# Project Inventory\n\n"
+            + "\n".join(f"- item_{i}" for i in range(10)) + "\n",
+            encoding="utf-8",
+        )
+        self.mcp = MagicMock()
+        self.tools = {}
+
+        def capture_tool():
+            def decorator(fn):
+                self.tools[fn.__name__] = fn
+                return fn
+            return decorator
+
+        self.mcp.tool = capture_tool
+        from tools.architect import register_architect_tools
+        register_architect_tools(self.mcp)
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def _valid_phase1_args(self, **overrides):
+        args = dict(
+            projectbrief_update="NO_CHANGE_BECAUSE: test",
+            systemPatterns_update="NO_CHANGE_BECAUSE: test",
+            techContext_update="NO_CHANGE_BECAUSE: test",
+            conventions_update="NO_CHANGE_BECAUSE: test",
+            activeContext_update=(
+                "Current focus: testing inventory wipe guard in "
+                "tests/test_architect_tools.py. "
+                "Just completed: added entry-count guard to "
+                ".ai-operation/mcp_server/tools/save.py Phase 2 inventory.md "
+                "branch -- raises _SaveAbort when new_count < 50% of old_count "
+                "without FULL_OVERWRITE_CONFIRMED prefix. Next step: run pytest."
+            ),
+            progress_update=(
+                "DONE .ai-operation/mcp_server/tools/save.py: "
+                "inventory wipe guard -- raises _SaveAbort when new < 50% old "
+                "without FULL_OVERWRITE_CONFIRMED prefix.\n"
+                "DONE tests/test_architect_tools.py: added inventory guard tests.\n"
+            ),
+            lessons_learned="NONE",
+        )
+        args.update(overrides)
+        return args
+
+    def _run_both_phases(self, **overrides):
+        p1 = self.tools["aio__force_architect_save"](**self._valid_phase1_args(**overrides))
+        if p1.startswith("REJECTED"):
+            return p1
+        with patch("tools.constants.subprocess") as mock_sub:
+            mock_proc = MagicMock(returncode=0)
+            mock_proc.wait.return_value = 0
+            mock_sub.Popen.return_value = mock_proc
+            mock_sub.run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            import subprocess as _sp
+            mock_sub.TimeoutExpired = _sp.TimeoutExpired
+            return self.tools["aio__force_architect_save_confirm"]()
+
+    def test_partial_inventory_rejected(self):
+        """Passing < 50% of existing entries without prefix -> REJECTED."""
+        result = self._run_both_phases(inventory_update="- item_0\n- item_1\n")
+        self.assertIn("REJECTED", result)
+        self.assertIn("wipe guard", result)
+        # Original inventory intact
+        inv = Path(".ai-operation/docs/project_map/inventory.md").read_text(encoding="utf-8")
+        self.assertIn("item_9", inv)
+
+    def test_full_overwrite_confirmed_bypasses_guard(self):
+        """FULL_OVERWRITE_CONFIRMED: prefix bypasses entry-count guard."""
+        result = self._run_both_phases(
+            inventory_update="FULL_OVERWRITE_CONFIRMED:\n- only_item\n"
+        )
+        self.assertNotIn("REJECTED", result)
+        inv = Path(".ai-operation/docs/project_map/inventory.md").read_text(encoding="utf-8")
+        self.assertIn("only_item", inv)
+        self.assertNotIn("item_9", inv)
+
+    def test_complete_inventory_passes_guard(self):
+        """Passing all existing items (>= 50%) passes the guard normally."""
+        full_list = "\n".join(f"- item_{i}" for i in range(10)) + "\n- item_new\n"
+        result = self._run_both_phases(inventory_update=full_list)
+        self.assertNotIn("REJECTED", result)
+        inv = Path(".ai-operation/docs/project_map/inventory.md").read_text(encoding="utf-8")
+        self.assertIn("item_new", inv)
+
+
+class TestSaveCancelTool(unittest.TestCase, TestSetup):
+    """Fix 2: aio__force_architect_save_cancel aborts a pending Phase 1."""
+
+    def setUp(self):
+        self.create_temp_project()
+        pm = Path(".ai-operation/docs/project_map")
+        (pm / "corrections.md").write_text(
+            "# Corrections\n_none_\nSESSION_KEY: testkey\n", encoding="utf-8"
+        )
+        Path(".ai-operation/.session_confirmed").write_text("0", encoding="utf-8")
+        self.mcp = MagicMock()
+        self.tools = {}
+
+        def capture_tool():
+            def decorator(fn):
+                self.tools[fn.__name__] = fn
+                return fn
+            return decorator
+
+        self.mcp.tool = capture_tool
+        from tools.architect import register_architect_tools
+        register_architect_tools(self.mcp)
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def _phase1_args(self):
+        return dict(
+            projectbrief_update="NO_CHANGE_BECAUSE: test",
+            systemPatterns_update="NO_CHANGE_BECAUSE: test",
+            techContext_update="NO_CHANGE_BECAUSE: test",
+            conventions_update="NO_CHANGE_BECAUSE: test",
+            activeContext_update=(
+                "Current focus: testing save_cancel in tests/test_architect_tools.py. "
+                "Completed: save_cancel tool added to save.py; "
+                "uses clear_save_pending + SAVE_STAGING_FILE.unlink. "
+                "Next step: verify cancel unblocks re-submit."
+            ),
+            progress_update=(
+                "DONE .ai-operation/mcp_server/tools/save.py: "
+                "aio__force_architect_save_cancel tool added.\n"
+                "DONE tests/test_architect_tools.py: cancel tool tests added.\n"
+            ),
+            lessons_learned="NONE",
+        )
+
+    def test_cancel_removes_staging_and_unlocks(self):
+        """After Phase 1, cancel clears staging; confirm then returns REJECTED."""
+        p1 = self.tools["aio__force_architect_save"](**self._phase1_args())
+        self.assertIn("PENDING_REVIEW", p1)
+
+        cancel_result = self.tools["aio__force_architect_save_cancel"]()
+        self.assertIn("SUCCESS", cancel_result)
+
+        # Now confirm should say nothing is staged
+        confirm_result = self.tools["aio__force_architect_save_confirm"]()
+        self.assertIn("REJECTED", confirm_result)
+        self.assertIn("aio__force_architect_save", confirm_result)
+
+    def test_cancel_noop_when_nothing_pending(self):
+        """Calling cancel with no pending save returns NOOP."""
+        result = self.tools["aio__force_architect_save_cancel"]()
+        self.assertIn("NOOP", result)
+
+    def test_can_resubmit_after_cancel(self):
+        """After cancel, a second Phase 1 call is accepted."""
+        self.tools["aio__force_architect_save"](**self._phase1_args())
+        self.tools["aio__force_architect_save_cancel"]()
+        p1_again = self.tools["aio__force_architect_save"](**self._phase1_args())
+        self.assertIn("PENDING_REVIEW", p1_again)
+        # Cleanup pending state
+        self.tools["aio__force_architect_save_cancel"]()
+
+
+class TestRestoreLastTool(unittest.TestCase, TestSetup):
+    """Fix 3: aio__force_architect_restore_last lists and restores snapshots."""
+
+    def setUp(self):
+        self.create_temp_project()
+        pm = Path(".ai-operation/docs/project_map")
+        (pm / "corrections.md").write_text(
+            "# Corrections\n_none_\nSESSION_KEY: testkey\n", encoding="utf-8"
+        )
+        Path(".ai-operation/.session_confirmed").write_text("0", encoding="utf-8")
+        self.mcp = MagicMock()
+        self.tools = {}
+
+        def capture_tool():
+            def decorator(fn):
+                self.tools[fn.__name__] = fn
+                return fn
+            return decorator
+
+        self.mcp.tool = capture_tool
+        from tools.architect import register_architect_tools
+        register_architect_tools(self.mcp)
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def _make_snapshot(self, label="20260420T000000"):
+        from tools.constants import _snapshot_project_map
+        return _snapshot_project_map(label)
+
+    def test_dry_run_lists_files_without_writing(self):
+        """confirm=False (default) lists snapshot files, does not write."""
+        pm = Path(".ai-operation/docs/project_map")
+        original = (pm / "activeContext.md").read_text(encoding="utf-8")
+        self._make_snapshot()
+        # Tamper with file
+        (pm / "activeContext.md").write_text("TAMPERED", encoding="utf-8")
+
+        result = self.tools["aio__force_architect_restore_last"](confirm=False)
+        self.assertIn("activeContext.md", result)
+        self.assertNotIn("SUCCESS", result)
+        # File should still be tampered (dry run)
+        self.assertEqual(
+            (pm / "activeContext.md").read_text(encoding="utf-8"), "TAMPERED"
+        )
+
+    def test_confirm_true_restores_files(self):
+        """confirm=True actually writes snapshot files back to project_map."""
+        pm = Path(".ai-operation/docs/project_map")
+        original = (pm / "activeContext.md").read_text(encoding="utf-8")
+        self._make_snapshot()
+        (pm / "activeContext.md").write_text("CORRUPTED", encoding="utf-8")
+
+        result = self.tools["aio__force_architect_restore_last"](confirm=True)
+        self.assertIn("SUCCESS", result)
+        self.assertEqual(
+            (pm / "activeContext.md").read_text(encoding="utf-8"), original
+        )
+
+    def test_no_snapshots_returns_info(self):
+        """When SAVE_HISTORY_DIR is empty, returns informative message."""
+        result = self.tools["aio__force_architect_restore_last"](confirm=False)
+        self.assertIn("No snapshot", result)
+
+
+class TestCognitiveGateKeyParsing(unittest.TestCase, TestSetup):
+    """Fix 4: aio__confirm_read only treats slug-shaped lines as keys."""
+
+    def setUp(self):
+        self.create_temp_project()
+        # Write corrections.md with a mix of real keys and sentence bullets
+        pm = Path(".ai-operation/docs/project_map")
+        (pm / "corrections.md").write_text(
+            "# Corrections\n\n"
+            "- fileops\n"
+            "- git\n"
+            "- Blast radius / impact analysis\n"
+            "- This is a full sentence that should NOT be a key\n"
+            "- valid_key\n"
+            "\nSESSION_KEY: slugtest\n",
+            encoding="utf-8",
+        )
+        self.mcp = MagicMock()
+        self.tools = {}
+
+        def capture_tool():
+            def decorator(fn):
+                self.tools[fn.__name__] = fn
+                return fn
+            return decorator
+
+        self.mcp.tool = capture_tool
+        from tools.architect import register_architect_tools
+        register_architect_tools(self.mcp)
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def test_slug_lines_are_parsed_as_keys(self):
+        """Lines like '- fileops' and '- valid_key' appear in the key list."""
+        result = self.tools["aio__confirm_read"](session_key="slugtest")
+        self.assertIn("SUCCESS", result)
+        self.assertIn("fileops", result)
+        self.assertIn("valid_key", result)
+
+    def test_sentence_bullets_not_parsed_as_keys(self):
+        """Full-sentence bullets like '- Blast radius / impact analysis' are skipped."""
+        result = self.tools["aio__confirm_read"](session_key="slugtest")
+        self.assertIn("SUCCESS", result)
+        # These should NOT appear as keys in the output
+        self.assertNotIn("Blast radius", result)
+        self.assertNotIn("full sentence", result)
+
+    def test_no_false_no_file_entries_for_sentences(self):
+        """Sentence bullets don't produce spurious '(no file)' entries."""
+        result = self.tools["aio__confirm_read"](session_key="slugtest")
+        # Count '(no file)' entries -- should only be for real keys without files
+        # 'fileops', 'git', 'valid_key' have no .md files in temp dir
+        lines_with_no_file = [l for l in result.split("\n") if "(no file)" in l]
+        # Sentence bullets must not generate entries -- so at most 3 (fileops, git, valid_key)
+        self.assertLessEqual(len(lines_with_no_file), 3)
+
+
 if __name__ == "__main__":
     unittest.main()

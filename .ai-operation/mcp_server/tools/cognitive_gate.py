@@ -120,8 +120,12 @@ def register_cognitive_gate_tools(mcp: FastMCP, _audit, _loop_guard):
         SESSION_CONFIRMED_FLAG.parent.mkdir(parents=True, exist_ok=True)
         SESSION_CONFIRMED_FLAG.write_text("0", encoding="utf-8")
 
-        # Read available keys from corrections.md to show AI what's available
+        # Read available keys from corrections.md to show AI what's available.
+        # Only lines whose extracted token matches a valid slug pattern are keys;
+        # full-sentence bullet points (spaces, slashes, capitals) are skipped.
+        import re as _re
         import time as _time
+        _SLUG_RE = _re.compile(r'^[a-z0-9_-]+$')
         corrections_dir = PROJECT_MAP_DIR.parent / "corrections"
         keys = []
         keys_display = []
@@ -129,6 +133,11 @@ def register_cognitive_gate_tools(mcp: FastMCP, _audit, _loop_guard):
             line = line.strip()
             if line.startswith("- ") and not line.startswith("- ["):
                 key_name = line[2:].split("SINCE:")[0].strip()
+                # Reject anything that isn't a lowercase slug (no spaces, no uppercase,
+                # no special chars other than _ and -). This prevents full-sentence
+                # bullet points from being parsed as experience keys.
+                if not _SLUG_RE.match(key_name) or len(key_name) > 30:
+                    continue
                 keys.append(key_name)
                 # Show freshness per key
                 key_file = corrections_dir / f"{key_name}.md"
