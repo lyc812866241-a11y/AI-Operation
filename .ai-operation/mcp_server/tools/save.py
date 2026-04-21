@@ -1054,9 +1054,50 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         except Exception:
             pass
 
+        # If an approved taskSpec is active, close it out by including its
+        # dirty code files in this same commit. This makes save atomic:
+        # code + memory land together, approval is consumed on that commit's
+        # success (via git_commit_nonblocking's flag transaction). Without
+        # this, approval gets cleared while code is still uncommitted,
+        # leaving the next commit blocked by the pre-commit hook.
+        taskspec_files = []
+        closes_taskspec = False
+        if TASKSPEC_APPROVED_FLAG.exists() and TASKSPEC_FILE.exists():
+            try:
+                spec_paths = _extract_taskspec_files()
+                dirty = _git_dirty_files(spec_paths) if spec_paths else []
+                # Skip files already in files_to_add (e.g. .gitignore)
+                existing = set(files_to_add)
+                for p in dirty:
+                    if p not in existing:
+                        taskspec_files.append(p)
+                        existing.add(p)
+                if taskspec_files:
+                    files_to_add.extend(taskspec_files)
+                    closes_taskspec = True
+            except Exception as e:
+                _audit("aio__force_architect_save_confirm",
+                       "TASKSPEC_SCAN_ERROR", str(e)[:120])
+
         # Non-blocking commit via shared helper (git add -f + stderr capture
         # + flag transaction all live in constants.py now).
-        commit_msg = f"chore: architect save [{', '.join(changed_files)}]"
+        if closes_taskspec:
+            # Pull a short handle from taskSpec section 1 for the commit msg
+            try:
+                spec_text = TASKSPEC_FILE.read_text(encoding="utf-8")
+                import re as _re_goal
+                goal_m = _re_goal.search(
+                    r"##\s*1\.[^\n]*\n(.+?)\n", spec_text, _re_goal.DOTALL
+                )
+                goal = goal_m.group(1).strip()[:80] if goal_m else "active task"
+            except Exception:
+                goal = "active task"
+            commit_msg = (
+                f"chore: architect save [{', '.join(changed_files)}] "
+                f"(closes taskSpec: {goal})"
+            )
+        else:
+            commit_msg = f"chore: architect save [{', '.join(changed_files)}]"
         git_status, git_diag = git_commit_nonblocking(files_to_add, commit_msg, _audit)
         git_diag["files_exist"] = files_exist
 
@@ -1067,11 +1108,17 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             diag_str = f"\n\nGit Diagnostics (for debugging):\n{json_mod.dumps(git_diag, indent=2, ensure_ascii=False)}"
 
         _audit("aio__force_architect_save_confirm", "SUCCESS",
-               f"files={','.join(changed_files)},git={git_status},cwd={git_diag.get('cwd','?')}")
+               f"files={','.join(changed_files)},taskspec_files={len(taskspec_files)},"
+               f"git={git_status},cwd={git_diag.get('cwd','?')}")
         git_hint = 'Run `git add .ai-operation/docs/project_map/ && git commit -m "save"` if git failed.' if git_status != 'committed' else 'TaskSpec approval cleared.'
+        taskspec_line = (
+            f"Closed taskSpec ({len(taskspec_files)} code files): "
+            f"{', '.join(taskspec_files)}\n"
+        ) if taskspec_files else ""
         return (
             f"SUCCESS\n"
             f"Files updated: {', '.join(changed_files)}\n"
+            f"{taskspec_line}"
             f"Merge details:\n" + "\n".join(merge_report) + "\n\n"
             f"Git: {git_status}\n"
             f"{git_hint}"

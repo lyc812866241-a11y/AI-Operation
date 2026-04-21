@@ -1274,6 +1274,205 @@ class TestRestoreLastTool(unittest.TestCase, TestSetup):
         self.assertIn("No snapshot", result)
 
 
+class TestExtractTaskspecFiles(unittest.TestCase, TestSetup):
+    """Helper that parses taskSpec.md section 3 to return dirty code paths."""
+
+    def setUp(self):
+        self.create_temp_project()
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def _write_taskspec(self, body: str):
+        from tools.constants import TASKSPEC_FILE
+        TASKSPEC_FILE.parent.mkdir(parents=True, exist_ok=True)
+        TASKSPEC_FILE.write_text(body, encoding="utf-8")
+
+    def test_missing_taskspec_returns_empty(self):
+        from tools.constants import _extract_taskspec_files
+        self.assertEqual(_extract_taskspec_files(), [])
+
+    def test_existing_project_paths_included(self):
+        from tools.constants import _extract_taskspec_files
+        Path("src").mkdir()
+        Path("src/foo.py").write_text("x", encoding="utf-8")
+        self._write_taskspec(
+            "## 1. Task Goal\nTest\n\n"
+            "## 3. Files to Modify\n- src/foo.py: edit\n\n"
+            "## 4. Constraints\nnone\n"
+        )
+        result = _extract_taskspec_files()
+        self.assertIn("src/foo.py", result)
+
+    def test_nonexistent_paths_silently_skipped(self):
+        from tools.constants import _extract_taskspec_files
+        self._write_taskspec(
+            "## 1. Task Goal\nTest\n\n"
+            "## 3. Files to Modify\n- src/missing.py: edit\n"
+        )
+        self.assertEqual(_extract_taskspec_files(), [])
+
+    def test_framework_paths_excluded(self):
+        from tools.constants import _extract_taskspec_files
+        # .ai-operation already exists from scaffold
+        Path(".ai-operation/mcp_server").mkdir(parents=True, exist_ok=True)
+        Path(".ai-operation/mcp_server/foo.py").write_text("x", encoding="utf-8")
+        self._write_taskspec(
+            "## 3. Files to Modify\n- .ai-operation/mcp_server/foo.py: edit\n"
+        )
+        self.assertEqual(_extract_taskspec_files(), [])
+
+
+class TestSaveClosesTaskSpec(unittest.TestCase, TestSetup):
+    """Fix: save must commit taskSpec's dirty code files atomically with memory."""
+
+    def setUp(self):
+        self.create_temp_project()
+        pm = Path(".ai-operation/docs/project_map")
+        (pm / "corrections.md").write_text(
+            "# Corrections\n_none_\nSESSION_KEY: testkey\n", encoding="utf-8"
+        )
+        Path(".ai-operation/.session_confirmed").write_text("0", encoding="utf-8")
+
+        # Create a fake code file the taskSpec will reference
+        Path("src").mkdir()
+        Path("src/foo.py").write_text("initial", encoding="utf-8")
+
+        # Approved taskSpec that references src/foo.py
+        from tools.constants import TASKSPEC_FILE, TASKSPEC_APPROVED_FLAG
+        TASKSPEC_FILE.parent.mkdir(parents=True, exist_ok=True)
+        TASKSPEC_FILE.write_text(
+            "## 1. Task Goal\nEdit foo for testing\n\n"
+            "## 3. Files to Modify\n- src/foo.py: add hello\n",
+            encoding="utf-8",
+        )
+        TASKSPEC_APPROVED_FLAG.write_text("approved", encoding="utf-8")
+
+        self.mcp = MagicMock()
+        self.tools = {}
+
+        def capture_tool():
+            def decorator(fn):
+                self.tools[fn.__name__] = fn
+                return fn
+            return decorator
+
+        self.mcp.tool = capture_tool
+        from tools.architect import register_architect_tools
+        register_architect_tools(self.mcp)
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def _args(self):
+        return dict(
+            projectbrief_update="NO_CHANGE_BECAUSE: test",
+            systemPatterns_update="NO_CHANGE_BECAUSE: test",
+            techContext_update="NO_CHANGE_BECAUSE: test",
+            conventions_update="NO_CHANGE_BECAUSE: test",
+            activeContext_update=(
+                "Current focus: testing save-closes-taskSpec in "
+                "tests/test_architect_tools.py. Just completed: added "
+                "_extract_taskspec_files and _git_dirty_files to "
+                ".ai-operation/mcp_server/tools/constants.py; wired them into "
+                "save.py Phase 2 git block. Next step: verify behavior."
+            ),
+            progress_update=(
+                "DONE .ai-operation/mcp_server/tools/constants.py: added "
+                "_extract_taskspec_files + _git_dirty_files helpers.\n"
+                "DONE .ai-operation/mcp_server/tools/save.py: include dirty "
+                "taskSpec code files in Phase 2 commit.\n"
+            ),
+            lessons_learned="NONE",
+        )
+
+    def _run_both_phases(self, dirty_files_override=None, **overrides):
+        """Run Phase 1 + Phase 2, mocking subprocess. Returns (result, captured_add_args)."""
+        args = self._args()
+        args.update(overrides)
+        p1 = self.tools["aio__force_architect_save"](**args)
+        if p1.startswith("REJECTED"):
+            return p1, None
+
+        captured = {"add_args": None}
+
+        with patch("tools.constants.subprocess") as mock_sub:
+            # git status --porcelain: return our override, or default to dirty src/foo.py
+            if dirty_files_override is None:
+                porcelain = " M src/foo.py\n"
+            else:
+                porcelain = dirty_files_override
+
+            # Popen needs to behave differently per call (status / add / commit)
+            call_counter = {"n": 0}
+
+            def popen_side_effect(cmd, **kw):
+                proc = MagicMock()
+                proc.returncode = 0
+                proc.wait.return_value = 0
+                # If this is the git status call, write porcelain to stdout tempfile
+                if "status" in cmd:
+                    out_f = kw.get("stdout")
+                    if out_f is not None and hasattr(out_f, "write"):
+                        out_f.write(porcelain.encode("utf-8"))
+                elif "add" in cmd:
+                    captured["add_args"] = list(cmd)
+                return proc
+
+            mock_sub.Popen.side_effect = popen_side_effect
+            mock_sub.DEVNULL = -3
+            mock_sub.run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            import subprocess as _sp
+            mock_sub.TimeoutExpired = _sp.TimeoutExpired
+
+            result = self.tools["aio__force_architect_save_confirm"]()
+
+        return result, captured["add_args"]
+
+    def test_dirty_taskspec_code_included_in_commit(self):
+        result, add_args = self._run_both_phases()
+        self.assertIn("SUCCESS", result)
+        self.assertIn("src/foo.py", result)
+        self.assertIn("Closed taskSpec", result)
+        # The git add invocation must include src/foo.py
+        self.assertIsNotNone(add_args)
+        self.assertIn("src/foo.py", add_args)
+
+    def test_approval_flag_cleared_after_combined_commit(self):
+        from tools.constants import TASKSPEC_APPROVED_FLAG
+        self.assertTrue(TASKSPEC_APPROVED_FLAG.exists())
+        self._run_both_phases()
+        self.assertFalse(
+            TASKSPEC_APPROVED_FLAG.exists(),
+            "approval flag should be cleared after successful combined commit",
+        )
+
+    def test_no_taskspec_falls_back_to_memory_only(self):
+        from tools.constants import TASKSPEC_FILE, TASKSPEC_APPROVED_FLAG
+        TASKSPEC_FILE.unlink()
+        TASKSPEC_APPROVED_FLAG.unlink()
+        # With no taskSpec, porcelain call shouldn't happen; add_args only has memory files.
+        result, add_args = self._run_both_phases(dirty_files_override="")
+        self.assertIn("SUCCESS", result)
+        self.assertNotIn("Closed taskSpec", result)
+        self.assertIsNotNone(add_args)
+        self.assertNotIn("src/foo.py", add_args)
+
+    def test_missing_paths_silently_skipped(self):
+        # Rewrite taskSpec to reference a nonexistent file
+        from tools.constants import TASKSPEC_FILE
+        TASKSPEC_FILE.write_text(
+            "## 1. Task Goal\nTest\n\n"
+            "## 3. Files to Modify\n- src/does_not_exist.py: edit\n",
+            encoding="utf-8",
+        )
+        result, add_args = self._run_both_phases(dirty_files_override="")
+        self.assertIn("SUCCESS", result)
+        self.assertNotIn("Closed taskSpec", result)
+        # Save still succeeds with just memory files
+        self.assertIsNotNone(add_args)
+
+
 class TestCognitiveGateKeyParsing(unittest.TestCase, TestSetup):
     """Fix 4: aio__confirm_read only treats slug-shaped lines as keys."""
 

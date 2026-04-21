@@ -24,6 +24,7 @@ __all__ = [
     "_check_and_heal_gitignore",
     "_snapshot_project_map", "_restore_from_snapshot", "_gc_save_history",
     "_extract_section_titles",
+    "_extract_taskspec_files", "_git_dirty_files",
     "_budget_truncate",
     "_parse_skill_frontmatter", "_discover_skills",
 ]
@@ -433,6 +434,104 @@ def _extract_section_titles(content: str) -> list:
             clean = re.sub(r"^\d+\.\s*", "", raw)
             titles.append(clean)
     return titles
+
+
+def _extract_taskspec_files() -> list:
+    """Parse the active taskSpec.md and return existing project code paths
+    referenced under '## 3. Files to Modify'.
+
+    Only paths that:
+      - match r'[\\w./-]+\\.\\w{1,5}' (simple path + extension, no spaces)
+      - are NOT under .ai-operation/ (framework-managed)
+      - are NOT absolute paths
+      - actually exist on disk
+    are returned. Missing paths are silently skipped (tolerate spec typos).
+    """
+    import re
+
+    if not TASKSPEC_FILE.exists():
+        return []
+
+    try:
+        content = TASKSPEC_FILE.read_text(encoding="utf-8")
+    except Exception:
+        return []
+
+    # Carve out section 3 (from "## 3." up to next "## " or EOF)
+    m = re.search(
+        r"##\s*3\.[^\n]*\n(.*?)(?=\n##\s|\Z)",
+        content,
+        re.DOTALL,
+    )
+    if not m:
+        return []
+
+    section = m.group(1)
+    candidates = re.findall(r"[\w./-]+\.\w{1,5}", section)
+
+    results = []
+    seen = set()
+    for c in candidates:
+        c = c.strip().lstrip("./")
+        if not c or c in seen:
+            continue
+        seen.add(c)
+        if c.startswith(".ai-operation/") or c.startswith(".ai-operation\\"):
+            continue
+        p = Path(c)
+        if p.is_absolute():
+            continue
+        if not p.exists():
+            continue
+        results.append(c)
+    return results
+
+
+def _git_dirty_files(paths: list) -> list:
+    """Return the subset of `paths` that show up as dirty (modified, added,
+    or untracked) in `git status --porcelain`. Uses Popen + DEVNULL to avoid
+    Windows PIPE deadlock.
+    """
+    import tempfile
+
+    if not paths:
+        return []
+
+    try:
+        with tempfile.TemporaryFile() as out_f, tempfile.TemporaryFile() as err_f:
+            proc = subprocess.Popen(
+                ["git", "status", "--porcelain", "--"] + paths,
+                stdin=subprocess.DEVNULL,
+                stdout=out_f,
+                stderr=err_f,
+            )
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+                return []
+            if proc.returncode != 0:
+                return []
+            out_f.seek(0)
+            raw = out_f.read().decode("utf-8", errors="replace")
+    except Exception:
+        return []
+
+    dirty = []
+    path_set = set(p.replace("\\", "/") for p in paths)
+    for line in raw.split("\n"):
+        if len(line) < 4:
+            continue
+        # porcelain format: "XY path" or "XY orig -> new" (rename)
+        tail = line[3:].strip()
+        if "->" in tail:
+            tail = tail.split("->", 1)[1].strip()
+        tail = tail.strip('"').replace("\\", "/")
+        if tail in path_set:
+            dirty.append(tail)
+    # Preserve input order
+    return [p for p in paths if p.replace("\\", "/") in set(dirty)]
 
 
 def _snapshot_project_map(ts: str) -> "Path":
