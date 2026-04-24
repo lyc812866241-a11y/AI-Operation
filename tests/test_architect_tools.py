@@ -1274,6 +1274,185 @@ class TestRestoreLastTool(unittest.TestCase, TestSetup):
         self.assertIn("No snapshot", result)
 
 
+class TestEnforceFileSizeLimit(unittest.TestCase, TestSetup):
+    """Fix: _enforce_file_size_limit should do adaptive semantic splits first,
+    and only fall back to newline-aligned char slice for section-less blobs."""
+
+    def setUp(self):
+        self.create_temp_project()
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def test_adaptive_split_prefers_section_boundaries(self):
+        """File with many <8KB sections summing to >16KB -> adaptive split moves
+        the biggest section(s) to details/ rather than char-slicing."""
+        from tools.constants import _enforce_file_size_limit, PROJECT_MAP_DIR
+        pm = PROJECT_MAP_DIR
+        pm.mkdir(parents=True, exist_ok=True)
+        fp = pm / "testfile.md"
+        # Build a >16KB file with 6 sections of ~3.5KB each (none > 8KB)
+        chunks = []
+        chunks.append("# Test File\n\n")
+        for i in range(6):
+            chunks.append(f"## Section {i} \u6807\u9898\n\n")
+            chunks.append(("\u4e2d\u6587\u5185\u5bb9 filler line.\n" * 150))
+            chunks.append("\n")
+        fp.write_text("".join(chunks), encoding="utf-8")
+        assert len(fp.read_text(encoding="utf-8").encode("utf-8")) > 16_000
+
+        result = _enforce_file_size_limit(fp)
+        self.assertIn("adaptive semantic split", result)
+        # File is now under limit
+        self.assertLessEqual(
+            len(fp.read_text(encoding="utf-8").encode("utf-8")), 16_000
+        )
+        # At least one details/ file was created
+        details_files = list((pm / "details").glob("testfile__*.md"))
+        self.assertGreater(len(details_files), 0)
+
+    def test_last_resort_cut_aligns_to_newline(self):
+        """Section-less blob file -> last-resort cut, but at newline boundary."""
+        from tools.constants import _enforce_file_size_limit, PROJECT_MAP_DIR
+        pm = PROJECT_MAP_DIR
+        pm.mkdir(parents=True, exist_ok=True)
+        fp = pm / "blob.md"
+        # 20KB blob with newlines but no ## headers
+        lines = []
+        for i in range(400):
+            # Mix Chinese + English to ensure cut doesn't split a UTF-8 char
+            lines.append(f"line {i} \u4e2d\u6587\u5185\u5bb9 product_appearance_extractor value")
+        fp.write_text("\n".join(lines), encoding="utf-8")
+        assert len(fp.read_text(encoding="utf-8").encode("utf-8")) > 16_000
+
+        result = _enforce_file_size_limit(fp)
+        self.assertIn("last-resort char slice", result)
+        summary = fp.read_text(encoding="utf-8")
+        # Summary must end at a newline (before the overflow pointer block)
+        summary_before_pointer = summary.split("\n\n> ->")[0]
+        self.assertTrue(
+            summary_before_pointer.endswith("\n") or
+            "\n" in summary_before_pointer[-50:],
+            "cut must align to newline, not mid-line"
+        )
+        # And must not end mid-word like "produc"
+        last_line = summary_before_pointer.rstrip("\n").rsplit("\n", 1)[-1]
+        self.assertFalse(
+            last_line.endswith("produc"),
+            f"cut split a word: ...{last_line[-30:]!r}"
+        )
+
+    def test_under_limit_is_noop(self):
+        from tools.constants import _enforce_file_size_limit, PROJECT_MAP_DIR
+        fp = PROJECT_MAP_DIR / "small.md"
+        fp.write_text("tiny file", encoding="utf-8")
+        self.assertEqual(_enforce_file_size_limit(fp), "")
+
+
+class TestOrphanRegex(unittest.TestCase, TestSetup):
+    """Fix: orphan detector regex must not match .js inside state.json,
+    and must find files under .ai-operation/docs/project_map/details/."""
+
+    def setUp(self):
+        self.create_temp_project()
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def test_json_not_misparsed_as_js(self):
+        import re as _re
+        pattern = r'([\w./\-]+\.(?:json|yaml|py|ts|js|go|rs|sh|yml|md))(?!\w)'
+        matches = _re.findall(pattern, "See state.json for config")
+        self.assertIn("state.json", matches)
+        self.assertNotIn("state.js", matches)
+
+    def test_yaml_not_misparsed_as_yml(self):
+        import re as _re
+        pattern = r'([\w./\-]+\.(?:json|yaml|py|ts|js|go|rs|sh|yml|md))(?!\w)'
+        matches = _re.findall(pattern, "See config.yaml")
+        self.assertIn("config.yaml", matches)
+        self.assertNotIn("config.yml", matches)
+
+    def test_details_path_not_reported_as_orphan(self):
+        """A ref like 'details/foo.md' should resolve to project_map/details/foo.md."""
+        pm_root = Path(".ai-operation/docs/project_map")
+        (pm_root / "details").mkdir(parents=True, exist_ok=True)
+        (pm_root / "details" / "foo.md").write_text("content", encoding="utf-8")
+        ref_path = "details/foo.md"
+        # Mirror the fixed lookup
+        exists = (
+            Path(ref_path).exists()
+            or Path(".ai-operation", ref_path).exists()
+            or (pm_root / ref_path).exists()
+        )
+        self.assertTrue(exists, "details/foo.md should be found under project_map/")
+
+
+class TestSaveOverflowWarning(unittest.TestCase, TestSetup):
+    """Fix: Phase 1 warns when main file has a dangling overflow pointer."""
+
+    def setUp(self):
+        self.create_temp_project()
+        pm = Path(".ai-operation/docs/project_map")
+        (pm / "corrections.md").write_text(
+            "# Corrections\n_none_\nSESSION_KEY: testkey\n", encoding="utf-8"
+        )
+        Path(".ai-operation/.session_confirmed").write_text("0", encoding="utf-8")
+        # Main file with overflow pointer baked in
+        (pm / "systemPatterns.md").write_text(
+            "# System Patterns\n\n"
+            "## 1. \u7cfb\u7edf\u5b9a\u6027\n"
+            "some content\n\n"
+            "> -> [\u5269\u4f59\u5185\u5bb9: details/systemPatterns__overflow_20260417_0945.md] (9364 chars)\n",
+            encoding="utf-8",
+        )
+        self.mcp = MagicMock()
+        self.tools = {}
+
+        def capture_tool():
+            def decorator(fn):
+                self.tools[fn.__name__] = fn
+                return fn
+            return decorator
+
+        self.mcp.tool = capture_tool
+        from tools.architect import register_architect_tools
+        register_architect_tools(self.mcp)
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def test_phase1_warns_about_stale_overflow(self):
+        p1 = self.tools["aio__force_architect_save"](
+            projectbrief_update="NO_CHANGE_BECAUSE: test",
+            systemPatterns_update=(
+                "===SECTION===\n\u7cfb\u7edf\u5b9a\u6027\n"
+                "new content referencing .ai-operation/mcp_server/tools/save.py "
+                "long enough to clear the 100 char static file minimum requirement "
+                "for Phase 1 validation.\n"
+            ),
+            techContext_update="NO_CHANGE_BECAUSE: test",
+            conventions_update="NO_CHANGE_BECAUSE: test",
+            activeContext_update=(
+                "Current focus: testing overflow warning in "
+                "tests/test_architect_tools.py. Completed: added stale-overflow "
+                "detection in .ai-operation/mcp_server/tools/save.py Phase 1 "
+                "diff preview. Next step: verify warning surfaces correctly."
+            ),
+            progress_update=(
+                "DONE .ai-operation/mcp_server/tools/save.py: "
+                "added overflow-pointer detection in Phase 1 warnings block.\n"
+                "DONE tests/test_architect_tools.py: added overflow warning test.\n"
+            ),
+            lessons_learned="NONE",
+        )
+        self.assertIn("PENDING_REVIEW", p1)
+        self.assertIn("overflow", p1.lower())
+        self.assertIn("systemPatterns__overflow", p1)
+        # Cleanup pending
+        self.tools["aio__force_architect_save_cancel"]()
+
+
 class TestExtractTaskspecFiles(unittest.TestCase, TestSetup):
     """Helper that parses taskSpec.md section 3 to return dirty code paths."""
 

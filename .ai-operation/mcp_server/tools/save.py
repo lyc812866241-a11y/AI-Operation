@@ -473,6 +473,19 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                     f"existing content ({old_size} chars). Possible data loss?"
                 )
 
+            # Detect stale overflow: main file still has an overflow pointer
+            # from a past save. A fresh ===SECTION=== update won't re-merge
+            # that content, so it can drift out of sync with reality.
+            if filepath.exists() and "-> [剩余内容: details/" in old_content:
+                import re as _ov_re
+                m = _ov_re.search(r"-> \[剩余内容: (details/[^\]]+)\]", old_content)
+                overflow_ref = m.group(1) if m else "details/<unknown>"
+                warnings.append(
+                    f"[!] {filename}: contains overflow pointer to {overflow_ref}. "
+                    f"Your update will NOT re-merge that file's content -- it may go stale. "
+                    f"Run [整理] to re-integrate before next substantive edit."
+                )
+
             # Build diff preview
             diff_preview.append(f"### {filename}")
             diff_preview.append(f"  Current size: {old_size} chars")

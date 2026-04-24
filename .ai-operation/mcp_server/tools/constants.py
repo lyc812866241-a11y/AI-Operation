@@ -148,13 +148,20 @@ def _generate_toc(content: str, filename: str) -> str:
     return "\n".join(toc_lines)
 
 
-def _auto_split_oversized_sections(filepath: Path, depth: int = 0, _file_counter: list = None) -> list:
-    """Recursively split oversized sections into detail subfiles."""
+def _auto_split_oversized_sections(filepath: Path, depth: int = 0, _file_counter: list = None, threshold: int = None) -> list:
+    """Recursively split oversized sections into detail subfiles.
+
+    threshold: override SECTION_SIZE_THRESHOLD. _enforce_file_size_limit uses
+    this to progressively lower the bar (4K -> 2K -> 1K) when a file exceeds
+    MAX_FILE_CHARS but no single section is > SECTION_SIZE_THRESHOLD.
+    """
     import re
 
     MAX_TOTAL_FILES = 200
     if _file_counter is None:
         _file_counter = [0]
+    if threshold is None:
+        threshold = SECTION_SIZE_THRESHOLD
     if _file_counter[0] >= MAX_TOTAL_FILES or not filepath.exists():
         return []
 
@@ -198,7 +205,7 @@ def _auto_split_oversized_sections(filepath: Path, depth: int = 0, _file_counter
         if "-> [详见" in body:
             continue
 
-        if len(body) > SECTION_SIZE_THRESHOLD:
+        if len(body) > threshold:
             safe_title = re.sub(r'[^\w\u4e00-\u9fff]', '_', title).strip('_')
             detail_filename = f"{parent_name}__{safe_title}.md"
             detail_path = out_dir / detail_filename
@@ -227,15 +234,39 @@ def _auto_split_oversized_sections(filepath: Path, depth: int = 0, _file_counter
 
 
 def _enforce_file_size_limit(filepath: Path) -> str:
-    """Universal fallback: force-split any file exceeding MAX_FILE_CHARS."""
+    """Universal fallback: force-split any file exceeding MAX_FILE_CHARS.
+
+    Strategy (two-tier):
+      1. Adaptive semantic split -- call _auto_split_oversized_sections with
+         progressively lower thresholds (4K -> 2K -> 1K). This keeps splits
+         aligned to section headers so every overflow fragment is a complete
+         semantic unit, never a mid-word / mid-character chop.
+      2. Newline-aligned char slice -- only if the file has zero `##` sections
+         (pure blob) so adaptive splits can't bite. Safety net.
+    """
     if not filepath.exists():
         return ""
 
-    content = filepath.read_text(encoding="utf-8")
-    byte_size = len(content.encode("utf-8"))
-    if byte_size <= MAX_FILE_CHARS:
+    def _byte_size() -> int:
+        return len(filepath.read_text(encoding="utf-8").encode("utf-8"))
+
+    if _byte_size() <= MAX_FILE_CHARS:
         return ""
 
+    # -- Tier 1: adaptive semantic split -------------------------
+    split_log = []
+    for threshold in (4_000, 2_000, 1_000):
+        splits = _auto_split_oversized_sections(filepath, threshold=threshold)
+        split_log.extend(splits)
+        if _byte_size() <= MAX_FILE_CHARS:
+            return (
+                f"{filepath.name}: adaptive semantic split (threshold={threshold}) "
+                f"-> {len(split_log)} section(s) moved to details/"
+            )
+
+    # -- Tier 2: last-resort newline-aligned char slice ----------
+    # Reached only if file has no ## sections at all (extremely rare)
+    content = filepath.read_text(encoding="utf-8")
     import datetime
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
     parent_name = filepath.stem
@@ -245,8 +276,15 @@ def _enforce_file_size_limit(filepath: Path) -> str:
     overflow_path = DETAILS_DIR / overflow_name
 
     keep_chars = 2000
-    summary = content[:keep_chars]
-    overflow = content[keep_chars:]
+    # Align cut to nearest newline so we don't chop a UTF-8 character or a
+    # word in half (the 火火兔 bug: `produc` + `t_appearance_extractor`).
+    cut = content.rfind("\n", 0, keep_chars)
+    if cut <= 0:
+        cut = keep_chars
+    else:
+        cut += 1  # include the newline in summary
+    summary = content[:cut]
+    overflow = content[cut:]
 
     overflow_content = (
         f"# Overflow: {filepath.name}\n\n"
@@ -258,7 +296,10 @@ def _enforce_file_size_limit(filepath: Path) -> str:
     pointer = f"\n\n> -> [剩余内容: details/{overflow_name}] ({len(overflow)} chars)\n"
     filepath.write_text(summary + pointer, encoding="utf-8")
 
-    return f"{filepath.name}: overflow split -> details/{overflow_name} ({len(overflow)} chars moved)"
+    return (
+        f"{filepath.name}: no sections to split -- last-resort char slice "
+        f"at newline -> details/{overflow_name} ({len(overflow)} chars moved)"
+    )
 
 
 def _compact_corrections(filepath: Path) -> str:

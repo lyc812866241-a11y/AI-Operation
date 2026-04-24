@@ -194,15 +194,27 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
         # -- Orphan Reference Check (use cached sp_text, no re-read) --
         if sp_full:
             import re as _re
+            # Longer extensions MUST come before their shorter prefixes so
+            # regex alternation doesn't match .js inside state.json. The
+            # (?!\w) tail enforces a word boundary so .js won't swallow the
+            # `j` of .json even if ordering is wrong.
             referenced_paths = _re.findall(
-                r'[`|]?\s*([\w./\-]+\.(?:py|ts|js|go|rs|sh|yml|yaml|json|md))\s*[`|]?',
+                r'([\w./\-]+\.(?:json|yaml|py|ts|js|go|rs|sh|yml|md))(?!\w)',
                 sp_full
             )
             orphans = []
+            # Scan under project_map/ too -- overflow / detail files live
+            # at .ai-operation/docs/project_map/details/*.md and are referenced
+            # as `details/foo.md` from the parent file.
+            pm_root = Path(".ai-operation/docs/project_map")
             for ref_path in set(referenced_paths):
                 if ref_path.startswith("http") or ref_path.startswith("#"):
                     continue
-                if not Path(ref_path).exists() and not Path(".ai-operation", ref_path).exists():
+                if (
+                    not Path(ref_path).exists()
+                    and not Path(".ai-operation", ref_path).exists()
+                    and not (pm_root / ref_path).exists()
+                ):
                     orphans.append(ref_path)
 
             if orphans:
