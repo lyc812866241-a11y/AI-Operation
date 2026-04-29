@@ -1274,6 +1274,126 @@ class TestRestoreLastTool(unittest.TestCase, TestSetup):
         self.assertIn("No snapshot", result)
 
 
+class TestSessionActivitySummary(unittest.TestCase, TestSetup):
+    """Fix: save Phase 1 surfaces audit.log EXECUTED entries as Session Activity."""
+
+    def setUp(self):
+        self.create_temp_project()
+        pm = Path(".ai-operation/docs/project_map")
+        (pm / "corrections.md").write_text(
+            "# Corrections\n_none_\nSESSION_KEY: testkey\n", encoding="utf-8"
+        )
+        Path(".ai-operation/.session_confirmed").write_text("0", encoding="utf-8")
+
+        self.mcp = MagicMock()
+        self.tools = {}
+
+        def capture_tool():
+            def decorator(fn):
+                self.tools[fn.__name__] = fn
+                return fn
+            return decorator
+
+        self.mcp.tool = capture_tool
+        from tools.architect import register_architect_tools
+        register_architect_tools(self.mcp)
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def _write_audit_log(self, entries):
+        """Write audit log entries with timestamps after session_confirmed mtime."""
+        import json as _json
+        import time
+        # Anchor session_confirmed to year 2000 so any sane 2026-dated test
+        # entries are after it (avoids wall-clock flakiness).
+        sf = Path(".ai-operation/.session_confirmed")
+        old_ts = time.mktime((2000, 1, 1, 0, 0, 0, 0, 0, 0))
+        os.utime(sf, (old_ts, old_ts))
+
+        audit_path = Path(".ai-operation/audit.log")
+        lines = [_json.dumps(e) for e in entries]
+        audit_path.write_text("\n".join(lines), encoding="utf-8")
+
+    def _phase1_args(self):
+        return dict(
+            projectbrief_update="NO_CHANGE_BECAUSE: test",
+            systemPatterns_update="NO_CHANGE_BECAUSE: test",
+            techContext_update="NO_CHANGE_BECAUSE: test",
+            conventions_update="NO_CHANGE_BECAUSE: test",
+            activeContext_update=(
+                "Current focus: testing the new feedback loop in "
+                "tests/test_architect_tools.py. Just completed: "
+                ".ai-operation/mcp_server/tools/save.py Phase 1 now collects "
+                "EXECUTED entries from a log file and surfaces them. "
+                "Next step: verify all paths display correctly."
+            ),
+            progress_update=(
+                "DONE .ai-operation/mcp_server/tools/save.py: added "
+                "log scan + report section + Q11 question.\n"
+                "DONE tests/test_architect_tools.py: added new tests "
+                "covering the three coverage scenarios for this feature.\n"
+            ),
+            lessons_learned="NONE",
+        )
+
+    def test_executed_entries_summarized(self):
+        """5 EXECUTED entries -> tool counts and deduped file list in report."""
+        # Provide inventory_update so the Write entry doesn't trigger
+        # the ingest_propagation BYPASSABLE rule.
+        self._write_audit_log([
+            {"ts": "2026-04-29 16:00:00", "tool": "Edit", "status": "EXECUTED", "details": "src/a.py"},
+            {"ts": "2026-04-29 16:01:00", "tool": "Edit", "status": "EXECUTED", "details": "src/b.py"},
+            {"ts": "2026-04-29 16:02:00", "tool": "Bash", "status": "EXECUTED", "details": "git add src/a.py"},
+            {"ts": "2026-04-29 16:03:00", "tool": "Write", "status": "EXECUTED", "details": "src/c.py"},
+            {"ts": "2026-04-29 16:04:00", "tool": "Edit", "status": "EXECUTED", "details": "src/a.py"},
+        ])
+        args = self._phase1_args()
+        args["inventory_update"] = (
+            "- [skill] src/c.py: new test fixture file added this session\n"
+            "- [module] src/a.py: edited\n- [module] src/b.py: edited\n"
+        )
+        result = self.tools["aio__force_architect_save"](**args)
+        self.assertIn("PENDING_REVIEW", result)
+        self.assertIn("Session Activity", result)
+        self.assertIn("Edit:3", result)
+        self.assertIn("Write:1", result)
+        self.assertIn("Bash:1", result)
+        self.assertIn("src/a.py", result)
+        self.assertIn("src/b.py", result)
+        self.assertIn("src/c.py", result)
+        # Cleanup
+        self.tools["aio__force_architect_save_cancel"]()
+
+    def test_no_audit_log_no_section(self):
+        """If audit.log doesn't exist, no Session Activity section + no error."""
+        # Ensure no audit log
+        ap = Path(".ai-operation/audit.log")
+        if ap.exists():
+            ap.unlink()
+        result = self.tools["aio__force_architect_save"](**self._phase1_args())
+        self.assertIn("PENDING_REVIEW", result)
+        self.assertNotIn("Session Activity", result)
+        self.tools["aio__force_architect_save_cancel"]()
+
+    def test_audit_question_lists_files(self):
+        """Audit Q11 must mention audit.log and at least one touched file."""
+        # Use Edit (not Write) to avoid triggering ingest_propagation rule
+        self._write_audit_log([
+            {"ts": "2026-04-29 16:00:00", "tool": "Edit", "status": "EXECUTED", "details": "src/foo.py"},
+            {"ts": "2026-04-29 16:01:00", "tool": "Edit", "status": "EXECUTED", "details": "src/bar.py"},
+        ])
+        result = self.tools["aio__force_architect_save"](**self._phase1_args())
+        self.assertIn("PENDING_REVIEW", result)
+        # Q11 phrasing checks
+        self.assertIn("audit.log shows", result)
+        self.assertTrue(
+            "src/foo.py" in result or "src/bar.py" in result,
+            "Q11 must list at least one of the touched files"
+        )
+        self.tools["aio__force_architect_save_cancel"]()
+
+
 class TestEnforceFileSizeLimit(unittest.TestCase, TestSetup):
     """Fix: _enforce_file_size_limit should do adaptive semantic splits first,
     and only fall back to newline-aligned char slice for section-less blobs."""

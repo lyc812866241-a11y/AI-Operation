@@ -222,17 +222,21 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             return "REJECTED: activeContext_update cannot be NO_CHANGE. You must always update the current focus."
         if "NO_CHANGE" in progress_update.strip().upper() and "BECAUSE" not in progress_update.upper():
             return "REJECTED: progress_update cannot be NO_CHANGE. You must always record what was done this session."
-        # -- Auto-reflection: scan audit.log for session violations --
+        # -- Auto-reflection: scan audit.log for session violations + activity --
         # If AI was rejected/blocked/bypassed this session, it cannot claim "NONE" learned.
+        # Activity (EXECUTED entries) feeds back into Phase 1 report so AI's
+        # activeContext/progress can be grounded in observed events, not memory.
         session_violations = []
+        session_activity = {"tool_counts": {}, "files_touched": [], "total_ops": 0}
         audit_path = Path(".ai-operation/audit.log")
+        session_flag_path = Path(".ai-operation/.session_confirmed")
         if audit_path.exists():
             import json as _json
+            import re as _re_act
+            import datetime as _dt_act
             try:
                 log_lines = audit_path.read_text(encoding="utf-8").strip().split("\n")
-                # Read session_confirmed timestamp to filter current session only
-                session_flag = Path(".ai-operation/.session_confirmed")
-                # Scan last 100 lines (current session is recent)
+                # Existing violation scan (unchanged): last 100 lines
                 for line in log_lines[-100:]:
                     try:
                         entry = _json.loads(line)
@@ -245,6 +249,66 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                             session_violations.append(f"{tool}: {status} -- {details}")
                     except _json.JSONDecodeError:
                         continue
+
+                # Activity scan: filter by session_confirmed mtime if available,
+                # else fallback to last 100 lines.
+                if session_flag_path.exists():
+                    session_start = session_flag_path.stat().st_mtime
+                    activity_lines = []
+                    for line in log_lines:
+                        try:
+                            entry = _json.loads(line)
+                        except _json.JSONDecodeError:
+                            continue
+                        ts_str = entry.get("ts", "")
+                        try:
+                            ts = _dt_act.datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S").timestamp()
+                        except ValueError:
+                            continue
+                        if ts >= session_start:
+                            activity_lines.append(entry)
+                else:
+                    activity_lines = []
+                    for line in log_lines[-100:]:
+                        try:
+                            activity_lines.append(_json.loads(line))
+                        except _json.JSONDecodeError:
+                            continue
+
+                files_seen = set()
+                files_ordered = []
+                MAX_FILES = 20
+                for entry in activity_lines:
+                    if entry.get("status") != "EXECUTED":
+                        continue
+                    tool = entry.get("tool", "")
+                    if tool not in ("Edit", "Write", "Bash", "NotebookEdit"):
+                        continue
+                    session_activity["tool_counts"][tool] = (
+                        session_activity["tool_counts"].get(tool, 0) + 1
+                    )
+                    session_activity["total_ops"] += 1
+                    details = entry.get("details", "")
+                    if tool in ("Edit", "Write", "NotebookEdit"):
+                        # details is the file path directly
+                        p = details.strip().strip("'\"")
+                        candidates = [p] if p and len(p) > 2 else []
+                    else:
+                        # Bash: extract path-like tokens from command
+                        candidates = _re_act.findall(
+                            r'[\w./\\:-]+\.\w{1,5}', details[:300]
+                        )
+                    for p in candidates:
+                        p = p.strip("'\"")
+                        if not p or p in files_seen or len(p) < 3:
+                            continue
+                        files_seen.add(p)
+                        files_ordered.append(p)
+                        if len(files_ordered) >= MAX_FILES:
+                            break
+                    if len(files_ordered) >= MAX_FILES:
+                        break
+                session_activity["files_touched"] = files_ordered
             except Exception:
                 pass  # audit reading is best-effort
 
@@ -533,6 +597,25 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
 
         # Build the review report
         report = ["PENDING_REVIEW: Save prepared but NOT yet written.\n"]
+
+        # Session Activity (auto-captured from audit.log) -- precedes diff
+        # so AI sees observed events before reviewing what it claims to save.
+        if session_activity["total_ops"] > 0:
+            report.append("## Session Activity (auto-captured from audit.log)\n")
+            counts_str = ", ".join(
+                f"{t}:{c}" for t, c in sorted(session_activity["tool_counts"].items())
+            )
+            report.append(
+                f"  Tool ops: {counts_str} (total {session_activity['total_ops']})"
+            )
+            if session_activity["files_touched"]:
+                report.append(
+                    f"  Files touched ({len(session_activity['files_touched'])}):"
+                )
+                for f in session_activity["files_touched"]:
+                    report.append(f"    - {f}")
+            report.append("")
+
         report.append("## Diff Preview\n")
         report.extend(diff_preview)
 
@@ -658,6 +741,18 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                 f"[!] git diff shows {len(project_changes)} changed project files "
                 f"({', '.join(project_changes[:5])}) but NONE are mentioned in your "
                 f"activeContext. Are you saving a complete picture of what happened?"
+            )
+
+        # Q11: Session activity coverage (audit.log -> activeContext sanity check)
+        if session_activity["files_touched"]:
+            files_shown = session_activity["files_touched"][:10]
+            extra = len(session_activity["files_touched"]) - len(files_shown)
+            files_str = ", ".join(files_shown) + (f" (+{extra} more)" if extra > 0 else "")
+            audit_questions.append(
+                f"[!] audit.log shows the following files were touched this session: "
+                f"{files_str}. "
+                f"Does your activeContext_update mention all of them? Files you touched "
+                f"but did not document will be invisible to the next AI."
             )
 
         for i, q in enumerate(audit_questions, 1):
