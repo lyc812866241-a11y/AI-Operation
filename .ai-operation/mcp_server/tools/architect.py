@@ -18,6 +18,7 @@ This file is the thin entry point. Tool implementations are split across:
   - cleanup.py: aio__force_garbage_collection
   - audit.py: aio__audit_project_map
   - scan.py: aio__scan_codebase
+  - design.py: aio__force_project_design_draft, aio__force_project_design_confirm
 """
 
 from mcp.server.fastmcp import FastMCP
@@ -32,6 +33,7 @@ from .skillify import register_skillify_tools
 from .bypass import register_bypass_tools
 from .audit import register_audit_tools
 from .scan import register_scan_tools
+from .design import register_design_tools
 
 
 def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
@@ -59,3 +61,4 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
     register_bypass_tools(mcp, _audit, _loop_guard)
     register_audit_tools(mcp, _audit, _loop_guard)
     register_scan_tools(mcp, _audit, _loop_guard)
+    register_design_tools(mcp, _audit, _loop_guard)
