@@ -14,7 +14,8 @@
 | ★ `.ai-operation/docs/project_map/systemPatterns.md` | 项目架构、模块关系 |
 | ★ `.ai-operation/docs/project_map/conventions.md` | 二阶契约（命名/API/风格/架构约定）|
 | ★ `.ai-operation/docs/project_map/corrections.md` | 一阶经验（具体踩坑教训，按键加载）|
-| `.ai-operation/docs/project_map/projectbrief.md` | 核心愿景 |
+| ★ `.ai-operation/docs/conception/design.md` | 项目设计稿（IO 合约 + 功能树）— 立项产出，编码合约。不存在则跳过 |
+| `.ai-operation/docs/project_map/projectbrief.md` | 核心愿景（含 design.md 指针）|
 | `.ai-operation/docs/project_map/techContext.md` | 技术栈、已知坑点 |
 | `.ai-operation/docs/project_map/progress.md` | 进度、里程碑 |
 | `.ai-operation/docs/project_map/inventory.md` | 资产清单 |
@@ -24,7 +25,8 @@
 | 要找什么 | 去哪里 |
 |---|---|
 | 填写规范 | `.ai-operation/docs/template_reference.md` |
-| 初始化协议 | `.ai-operation/skills/project-bootstrap/SKILL.md` |
+| 立项协议（项目从无到有） | `.ai-operation/skills/project-design/SKILL.md` |
+| 初始化协议（接管已有代码） | `.ai-operation/skills/project-bootstrap/SKILL.md` |
 | 调试协议 | `.ai-operation/skills/systematic-debugging/SKILL.md` |
 | TDD 协议 | `.ai-operation/skills/test-driven-development/SKILL.md` |
 | 架构扫描协议 | `.ai-operation/skills/omm-scan/SKILL.md` |
@@ -40,6 +42,7 @@
 |---|---|
 | [读档] | `aio__force_architect_read` |
 | [存档] | `aio__force_architect_save` → `_confirm` |
+| [立项] / [开题] / [design] | `.ai-operation/skills/project-design/SKILL.md` → `aio__force_project_design_draft` → `_confirm` |
 | [初始化项目] | `.ai-operation/skills/project-bootstrap/SKILL.md` |
 | [架构扫描] | `.ai-operation/skills/omm-scan/SKILL.md` |
 | [整理] | `.ai-operation/skills/consolidate/SKILL.md` |
