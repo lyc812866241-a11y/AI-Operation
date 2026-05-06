@@ -17,7 +17,6 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
         systemPatterns_content: str,
         techContext_content: str,
         activeContext_focus: str,
-        progress_initial: str,
         user_confirmed: bool,
     ) -> str:
         """
@@ -31,8 +30,7 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
           Reads the existing template, finds [待填写...] placeholders, and replaces
           them with AI-generated content. Template structure (headers, fill instructions,
           examples) is PRESERVED. Unfilled sections keep their [待填写] placeholder.
-        - For the 2 dynamic files (activeContext, progress):
-          Generated fresh each time (they are session-specific).
+        - For activeContext.md (dynamic): generated fresh (session-specific).
 
         Use "SKIP" for any static file to leave it entirely untouched.
         This enables incremental initialization for large projects.
@@ -45,11 +43,11 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
                 Use "SKIP" to leave a section unfilled or for the entire param.
             techContext_content: Same format for techContext.md.
             activeContext_focus: Current focus statement for activeContext.md.
-            progress_initial: Initial milestone entry for progress.md.
             user_confirmed: MUST be True.
 
         议题 #009 重组:conventions 删除,并入 corrections(scope=单项目)。
         议题 #010 重组:projectbrief 删除,vision/negative_scope 由 design.md §1/§2 接管(单一来源)。
+        议题 #011 重组:progress 删除,历史归 git log;前瞻 todo 归下一 taskSpec。
         项目契约在后续 [存档] 中通过 corrections_update §1 段填入。
         wisdom.md(跨项目通用智慧)由人主动编辑,不通过 bootstrap 写入。
 
@@ -72,7 +70,6 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
             "systemPatterns_content": systemPatterns_content,
             "techContext_content": techContext_content,
             "activeContext_focus": activeContext_focus,
-            "progress_initial": progress_initial,
         }
         for field_name, content in gate2_fields.items():
             if "[TODO]" in content:
@@ -200,21 +197,7 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
         else:
             merge_report.append("  activeContext.md: SKIPPED")
 
-        if progress_initial.strip().upper() != "SKIP":
-            progress_path = PROJECT_MAP_DIR / "progress.md"
-            progress_path.write_text(
-                f"# 进度与里程碑 (Progress)\n\n"
-                f"> 由 project-bootstrap 技能初始化于 {timestamp}\n\n"
-                f"## 已完成里程碑\n\n"
-                f"- [{timestamp}] 项目接管完成，project_map 初始化\n\n"
-                f"## 当前待办\n\n{progress_initial.strip()}\n\n"
-                f"## 已知风险\n\n- 无",
-                encoding="utf-8"
-            )
-            written_files.append("progress.md")
-            merge_report.append("  progress.md: GENERATED")
-        else:
-            merge_report.append("  progress.md: SKIPPED")
+        # 议题 #011: progress.md 生成已删除。历史归 git log;前瞻 todo 归下一 taskSpec。
 
         if not written_files:
             return "WARNING: All files were SKIPPED. No changes made."

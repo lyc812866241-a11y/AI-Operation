@@ -18,7 +18,7 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
 
         This tool MUST be called when the user issues the [读档] command.
         Returns structured context report with smart budget management:
-        - Dynamic files (activeContext, progress): always read in full (most important)
+        - Dynamic files (activeContext): always read in full (most important)
         - Static files (systemPatterns, techContext): full if budget allows,
           otherwise TOC-only (section titles) with "use aio__detail_read for full content"
         - Inventory: included if budget remains
@@ -41,9 +41,10 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
 
         # Priority order: dynamic files first (most important for continuity)
         # 议题 #009: conventions 已删除并入 corrections;wisdom 在框架级单独加载
+        # 议题 #010: projectbrief 已删除,vision 在 design.md
+        # 议题 #011: progress 已删除,历史归 git log
         priority_order = [
             ("activeContext", "activeContext.md", True),    # always full
-            ("progress", "progress.md", True),              # always full
             ("corrections", "corrections.md", True),        # always full -- 项目级一阶(§1/§2/§3)
             ("systemPatterns", "systemPatterns.md", False),  # TOC if tight
             ("techContext", "techContext.md", False),        # TOC if tight

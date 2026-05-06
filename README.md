@@ -128,7 +128,6 @@ AI reads these at session start to restore full project context:
 | File | Content | Type |
 |---|---|---|
 | `activeContext.md` | Current focus + what just happened + next step | Dynamic |
-| `progress.md` | Completed tasks with files touched | Dynamic |
 | `corrections.md` | Experience index (keys only) | Dynamic |
 | `conventions.md` | Naming, API, code style contracts | Static |
 | `systemPatterns.md` | Architecture, modules, data flow | Static |

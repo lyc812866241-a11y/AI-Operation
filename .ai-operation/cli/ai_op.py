@@ -40,10 +40,10 @@ PROJECT_MAP_DIR = PROJECT_ROOT / ".ai-operation" / "docs" / "project_map"
 
 REQUIRED_FILES = {
     # 议题 #010: projectbrief 已删除,vision 在 design.md
+    # 议题 #011: progress 已删除,历史归 git log
     "systemPatterns": "systemPatterns.md",
     "techContext": "techContext.md",
     "activeContext": "activeContext.md",
-    "progress": "progress.md",
 }
 
 

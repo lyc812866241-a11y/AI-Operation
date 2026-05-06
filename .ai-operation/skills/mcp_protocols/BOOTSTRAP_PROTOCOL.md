@@ -93,7 +93,6 @@ Merge report:
   systemPatterns.md: MERGED (3 filled, 2 kept as template)
   techContext.md: MERGED (2 filled, 2 kept as template)
   activeContext.md: GENERATED
-  progress.md: GENERATED
 
 Remaining [待填写] placeholders: 5
 Re-run [初始化项目] to fill remaining sections.

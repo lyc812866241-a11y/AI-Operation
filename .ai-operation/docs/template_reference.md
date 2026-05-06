@@ -213,7 +213,7 @@ AI **必须优先复用** ✅ 模块,不重复造轮子。
 
 | ❌ 不该写 | 正确归宿 |
 |---|---|
-| 历史日志、里程碑 | `progress.md` |
+| 历史日志、里程碑 | git log / git tags(议题 #011: progress.md 已删除) |
 | 详细推理过程 | 对话 / skill log |
 | 已沉淀到 corrections §1 / design / wisdom 的内容 | 那些文件 |
 | 代码片段 | `file:line` 引用即可 |
@@ -257,18 +257,17 @@ AI **必须优先复用** ✅ 模块,不重复造轮子。
    - 只在文件不存在或无任何 `##` section 时允许
    - 已有 section 结构的文件传纯文本 → **REJECTED**（上面规则 2 的保护）
 
-### 动态文件（按写入模式分两类）
+### 动态文件（议题 #011 后只剩 activeContext 一种类型）
 
-⚠️ **历史 bug 修正**：早期版本统一规定为 APPEND,这对 activeContext 是错的——会让快照文件膨胀,违反"2 分钟恢复"目标(议题 #002 The Engine)。
+⚠️ **历史背景**：早期版本统一规定为 APPEND,这对 activeContext 是错的——会让快照文件膨胀,违反"2 分钟恢复"目标(议题 #002 The Engine)。
 
 - **快照型 → OVERWRITE**：`activeContext`
   - 只保留**当前**状态,不累积历史
   - ≤ 80 行硬上限
   - 由 `skills/state-checkpoint/` 维护
+  - 议题 #009 修正:从 APPEND 改为 OVERWRITE
 
-- **日志型 → APPEND**：`progress`
-  - 累积里程碑/进度,历史保留
-  - 追加到末尾
+> 议题 #011: 原"日志型 progress" 已删除。历史归 git log,前瞻 todo 归下一 taskSpec,session_compaction feature 一并删除(走 [整理] / consolidate skill)。
 
 ### inventory 清单
 

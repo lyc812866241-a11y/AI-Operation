@@ -28,10 +28,10 @@ PROJECT_MAP_DIR = PROJECT_ROOT / ".ai-operation" / "docs" / "project_map"
 
 REQUIRED_FILES = [
     # 议题 #010: projectbrief 已删除,vision 在 design.md(在 conception/ 不在 project_map/)
+    # 议题 #011: progress 已删除,历史归 git log
     ("systemPatterns", "systemPatterns.md", "Architecture", "#8b5cf6"),
     ("techContext", "techContext.md", "Tech Stack", "#06b6d4"),
     ("activeContext", "activeContext.md", "Active Context", "#f59e0b"),
-    ("progress", "progress.md", "Progress", "#10b981"),
     ("corrections", "corrections.md", "Corrections", "#ef4444"),
 ]
 
@@ -110,12 +110,13 @@ def md_to_html(md_text):
 
 def get_stats():
     """Calculate project statistics."""
-    progress = read_file(PROJECT_MAP_DIR / "progress.md")
+    # 议题 #011: progress 已删除。todo_count/done_count 改从当前 taskSpec 读取(粗略估计)
     active = read_file(PROJECT_MAP_DIR / "activeContext.md")
     corrections = read_file(PROJECT_MAP_DIR / "corrections.md")
+    taskspec = read_file(PROJECT_MAP_DIR.parent / "taskSpec.md")
 
-    todo_count = progress.count("- [ ]")
-    done_count = progress.count("- [x]")
+    todo_count = taskspec.count("- [ ]")
+    done_count = taskspec.count("- [x]")
     correction_count = corrections.count("DATE:")
     # 议题 #010: 用 systemPatterns 替代 projectbrief 判断"已初始化"
     is_initialized = "[待填写]" not in read_file(PROJECT_MAP_DIR / "systemPatterns.md") and \

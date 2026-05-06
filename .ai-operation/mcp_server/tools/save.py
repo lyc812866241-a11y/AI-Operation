@@ -138,11 +138,9 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         systemPatterns_update: str,
         techContext_update: str,
         activeContext_update: str,
-        progress_update: str,
         lessons_learned: str,
         inventory_update: str = "",
         corrections_update: str = "",
-        session_compaction: str = "",
     ) -> str:
         """
         [CRITICAL ENFORCEMENT TOOL] Execute the Level 4 Architect Save Protocol.
@@ -185,9 +183,10 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         MINIMUM DETAIL REQUIREMENTS (MCP tool will REJECT if too vague):
         - activeContext_update must mention specific FILE PATHS that were changed
         - activeContext_update must be at least 200 chars
-        - progress_update must list each completed task with the FILE it touched
-        - progress_update must be at least 150 chars
         - For static files with actual content (not NO_CHANGE_BECAUSE): must be at least 100 chars
+
+        议题 #011: progress.md 已删除,session_compaction feature 也一并删除。
+        历史归 git log / git tags;前瞻 todo 归下一个 taskSpec;阻塞归 activeContext §4。
 
         EXAMPLE of GOOD activeContext_update (this level of detail is the MINIMUM):
           "当前焦点：Node 4B 公式模式生图方案优化
@@ -205,7 +204,6 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             systemPatterns_update: Section updates OR "NO_CHANGE_BECAUSE: [reason]"
             techContext_update: Section updates OR "NO_CHANGE_BECAUSE: [reason]"
             activeContext_update: REQUIRED. See detail requirements above. Min 200 chars.
-            progress_update: REQUIRED. Each task with file path. Min 150 chars.
             lessons_learned: REQUIRED. Lessons from this session. "NONE" only if truly nothing learned.
             inventory_update: **FULL OVERWRITE MODE** -- whatever you pass replaces the entire
                 inventory.md body. For INCREMENTAL additions (single new skill, module, API) use
@@ -218,7 +216,6 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                 §3 习惯指令(append, AI 操作约束)。**末尾 SESSION_KEY 不可被覆盖**。
                 跨项目通用智慧 → 不进这里,人主动编辑 .ai-operation/wisdom.md。
                 Section-aware merge. Use ===SECTION=== delimiters. "NO_CHANGE_BECAUSE: [reason]" to skip.
-            session_compaction: Optional. Compressed summary of conversation for context overflow recovery.
 
         Returns:
             Execution report with files updated and git commit status.
@@ -227,7 +224,6 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             "systemPatterns.md": systemPatterns_update,
             "techContext.md": techContext_update,
             "activeContext.md": activeContext_update,
-            "progress.md": progress_update,
         }
 
         # Add corrections if provided (optional field -- default to NO_CHANGE)
@@ -329,12 +325,10 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                     f"  NO_CHANGE_BECAUSE: No new dependencies or tech constraints discovered"
                 )
 
-        # Validate: activeContext and progress must never be NO_CHANGE at all
+        # Validate: activeContext must never be NO_CHANGE at all
         if "NO_CHANGE" in activeContext_update.strip().upper() and "BECAUSE" not in activeContext_update.upper():
             _audit("aio__force_architect_save", "REJECTED", "activeContext was NO_CHANGE")
             return "REJECTED: activeContext_update cannot be NO_CHANGE. You must always update the current focus."
-        if "NO_CHANGE" in progress_update.strip().upper() and "BECAUSE" not in progress_update.upper():
-            return "REJECTED: progress_update cannot be NO_CHANGE. You must always record what was done this session."
         # -- Auto-reflection: scan audit.log for session violations + activity --
         # If AI was rejected/blocked/bypassed this session, it cannot claim "NONE" learned.
         # Activity (EXECUTED entries) feeds back into Phase 1 report so AI's
@@ -472,16 +466,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                 f"If not, add more detail."
             )
 
-        pg = progress_update.strip()
-        if len(pg) < MIN_PROGRESS_CHARS:
-            _audit("aio__force_architect_save", "REJECTED", f"progress too short ({len(pg)} chars)")
-            return (
-                f"REJECTED: progress_update is only {len(pg)} chars (minimum {MIN_PROGRESS_CHARS}).\n\n"
-                f"Each completed task must include the FILE it touched.\n"
-                f"Bad:  '[OK] 完成了编导功能'\n"
-                f"Good: '[OK] 新建 skills/director/formula_director.py (~300行): "
-                f"round_1_analyze + round_2_adapt + round_3a/3b 并发画面设计'"
-            )
+        # 议题 #011: progress_update 已删除,不再校验
 
         # Check static file updates for minimum substance
         static_content_checks = [
@@ -692,8 +677,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         # Stage lessons
         staged_lessons = lessons_learned.strip()
 
-        # Stage compaction
-        staged_compaction = session_compaction.strip() if session_compaction else ""
+        # 议题 #011: session_compaction 已删除
 
         # Write staging file
         staging_data = {
@@ -701,7 +685,6 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             "updates": staged_updates,
             "skipped": skipped_files,
             "lessons": staged_lessons,
-            "compaction": staged_compaction,
         }
         SAVE_STAGING_FILE.parent.mkdir(parents=True, exist_ok=True)
         SAVE_STAGING_FILE.write_text(json.dumps(staging_data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -799,12 +782,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             "did in this conversation."
         )
 
-        # Q5: Progress accuracy
-        audit_questions.append(
-            "Does your progress_update list ALL tasks completed this session? "
-            "Check: did you create files, modify functions, add dependencies, "
-            "or make decisions that aren't reflected?"
-        )
+        # 议题 #011: Q5 progress accuracy 已删除(progress.md 不再存在)
 
         # Q6: Knowledge hierarchy check (议题 #009 scope-based)
         audit_questions.append(
@@ -842,7 +820,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                     f"[!] Active taskSpec found. Review your approved plan:\n"
                     f"{taskspec_content[:500]}{'...' if len(taskspec_content) > 500 else ''}\n\n"
                     f"Check: which items are done? Which are not? "
-                    f"Does your progress_update accurately reflect this?"
+                    f"Does your activeContext_update accurately reflect this?"
                 )
 
         # Q10: Git diff cross-validation
@@ -919,7 +897,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         timestamp = staging_data["timestamp"]
         staged_updates = staging_data["updates"]
         staged_lessons = staging_data["lessons"]
-        staged_compaction = staging_data.get("compaction", "")
+        # 议题 #011: staged_compaction 已删除
 
         DYNAMIC_FILE_MAX_BYTES = 8_000  # Compact dynamic files when exceeding 8KB
         # 议题 #009: corrections.md 是新的"半静态"文件(§1 用 section-merge,§2/§3 用 append)
@@ -1091,9 +1069,9 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                         merge_report.append(f"  {filename}: CREATED")
 
                 else:
-                    # Dynamic files (activeContext, progress): append only
+                    # Dynamic files (activeContext only after 议题 #011): append only
                     # No auto-compact -- cleanup is handled by [整理] skill (human-in-the-loop)
-                    if filename in ("activeContext.md", "progress.md") and filepath.exists():
+                    if filename == "activeContext.md" and filepath.exists():
                         existing = filepath.read_text(encoding="utf-8")
                         file_bytes = len(existing.encode("utf-8"))
                         if file_bytes > DYNAMIC_FILE_MAX_BYTES:
@@ -1213,15 +1191,8 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                 f"  Lessons: {len(lessons_lines)} entries -> corrections/{', '.join(updated_keys)}"
             )
 
-        # Write compaction summary
-        # 议题 #009 修正: 不再 append 到 activeContext(违反 OVERWRITE 快照语义)
-        # 改 append 到 progress.md(它是日志型,APPEND 模式天然适合)
-        if staged_compaction:
-            compaction_path = PROJECT_MAP_DIR / "progress.md"
-            with open(compaction_path, "a", encoding="utf-8") as f:
-                f.write(f"\n\n---\n### [Session Compaction -- {timestamp}]\n{staged_compaction}\n")
-            if "progress.md" not in changed_files:
-                changed_files.append("progress.md")
+        # 议题 #011: session_compaction feature 已删除(连同 progress.md)
+        # context overflow 时走 [整理] / consolidate skill,不再走 session_compaction
 
         # -- Regenerate SESSION_KEY for next session ------------
         # Forces next session's AI to re-read corrections.md to get the new key

@@ -45,8 +45,7 @@ class TestSetup:
         Path(".ai-operation/.mcp_commit_flag").parent.mkdir(parents=True, exist_ok=True)
 
         # Write template files
-        for filename in ["systemPatterns.md", "techContext.md",
-                         "activeContext.md", "progress.md"]:
+        for filename in ["systemPatterns.md", "techContext.md", "activeContext.md"]:
             (project_map / filename).write_text(f"# {filename}\n[待填写]\n", encoding="utf-8")
 
         # Write corrections.md
@@ -91,7 +90,6 @@ class TestSaveValidation(unittest.TestCase, TestSetup):
             systemPatterns_update="NO_CHANGE",
             techContext_update="NO_CHANGE_BECAUSE: no tech change",
             activeContext_update="Working on tests",
-            progress_update="✅ Added tests",
             lessons_learned="NONE",
         )
         self.assertIn("REJECTED", result)
@@ -110,11 +108,6 @@ class TestSaveValidation(unittest.TestCase, TestSetup):
                     "added NO_CHANGE_BECAUSE enforcement that rejects bare NO_CHANGE without justification reason\n"
                     "Next step: run full pytest suite to confirm all 21 tests pass across the test matrix"
                 ),
-                progress_update=(
-                    "DONE architect.py: added NO_CHANGE_BECAUSE validation, bare NO_CHANGE now REJECTED\n"
-                    "DONE tests/test_architect_tools.py: added 2 new tests covering NO_CHANGE_BECAUSE scenarios\n"
-                    "TODO run full CI matrix to confirm cross-platform compatibility"
-                ),
                 lessons_learned="NONE",
             )
         self.assertTrue(result.startswith("PENDING_REVIEW"), f"Expected PENDING_REVIEW, got: {result[:80]}")
@@ -124,29 +117,17 @@ class TestSaveValidation(unittest.TestCase, TestSetup):
             systemPatterns_update="NO_CHANGE_BECAUSE: no change",
             techContext_update="NO_CHANGE_BECAUSE: no change",
             activeContext_update="NO_CHANGE",
-            progress_update="did stuff",
             lessons_learned="NONE",
         )
         self.assertIn("REJECTED", result)
         self.assertIn("activeContext", result)
 
-    def test_rejects_no_change_progress(self):
-        result = self.tools["aio__force_architect_save"](
-            systemPatterns_update="NO_CHANGE_BECAUSE: no change",
-            techContext_update="NO_CHANGE_BECAUSE: no change",
-            activeContext_update="Working on tests",
-            progress_update="NO_CHANGE",
-            lessons_learned="NONE",
-        )
-        self.assertIn("REJECTED", result)
-        self.assertIn("progress", result)
 
     def test_rejects_empty_lessons_learned(self):
         result = self.tools["aio__force_architect_save"](
             systemPatterns_update="NO_CHANGE_BECAUSE: no change",
             techContext_update="NO_CHANGE_BECAUSE: no change",
             activeContext_update="Working on tests",
-            progress_update="✅ Added tests",
             lessons_learned="",
         )
         self.assertIn("REJECTED", result)
@@ -163,10 +144,6 @@ class TestSaveValidation(unittest.TestCase, TestSetup):
                     "Just completed: modified tests/test_architect_tools.py to add NONE lessons test case, "
                     "ensuring the tool does not reject valid NONE input when no lessons were learned\n"
                     "Next step: confirm corrections.md has no new entries written when NONE is provided"
-                ),
-                progress_update=(
-                    "DONE tests/test_architect_tools.py: verified NONE lessons scenario is not REJECTED by tool\n"
-                    "TODO check corrections.md was not written to when lessons_learned is NONE"
                 ),
                 lessons_learned="NONE",
             )
@@ -372,7 +349,6 @@ class TestBootstrapMerge(unittest.TestCase, TestSetup):
                 systemPatterns_content="SKIP",
                 techContext_content="SKIP",
                 activeContext_focus="Testing",
-                progress_initial="- [ ] Tests",
                 user_confirmed=True,
             )
         after = Path(".ai-operation/docs/project_map/systemPatterns.md").read_text(encoding="utf-8")
@@ -384,7 +360,6 @@ class TestBootstrapMerge(unittest.TestCase, TestSetup):
                 systemPatterns_content="纯流水线型 — 测试用 — v1===SECTION===测试模块清单",
                 techContext_content="SKIP",
                 activeContext_focus="Testing merge",
-                progress_initial="- [ ] Verify merge",
                 user_confirmed=True,
             )
         content = Path(".ai-operation/docs/project_map/systemPatterns.md").read_text(encoding="utf-8")
@@ -398,7 +373,6 @@ class TestBootstrapMerge(unittest.TestCase, TestSetup):
             systemPatterns_content="content",
             techContext_content="content",
             activeContext_focus="focus",
-            progress_initial="tasks",
             user_confirmed=False,
         )
         self.assertIn("REJECTED", result)
@@ -409,7 +383,6 @@ class TestBootstrapMerge(unittest.TestCase, TestSetup):
             systemPatterns_content="Has [TODO] placeholder",
             techContext_content="content",
             activeContext_focus="focus",
-            progress_initial="tasks",
             user_confirmed=True,
         )
         self.assertIn("REJECTED", result)
@@ -441,7 +414,7 @@ class TestAuditLog(unittest.TestCase, TestSetup):
             "ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "tool": "aio__force_architect_save",
             "status": "SUCCESS",
-            "details": "files=activeContext.md,progress.md",
+            "details": "files=activeContext.md",
         }
         logger.info(json.dumps(entry, ensure_ascii=False))
         handler.flush()
@@ -860,14 +833,6 @@ class TestSavePhase2Guards(unittest.TestCase, TestSetup):
                 "zero-match refuse and no-delimiter refuse guards. "
                 "Next step: run pytest to verify all guard paths behave correctly."
             ),
-            progress_update=(
-                "DONE .ai-operation/mcp_server/tools/save.py: added Phase 2 defensive guards "
-                "(zero-match refuse, no-delimiter refuse, FULL_OVERWRITE_CONFIRMED escape, "
-                "snapshot+restore on exception)\n"
-                "DONE tests/test_architect_tools.py: added 7 new guard tests covering every path\n"
-                "DONE .ai-operation/mcp_server/tools/constants.py: snapshot helpers + GC helper\n"
-                "TODO: run full pytest suite; then git commit + push"
-            ),
             lessons_learned="NONE",
         )
         args.update(overrides)
@@ -1071,12 +1036,6 @@ class TestInventoryWipeGuard(unittest.TestCase, TestSetup):
                 "branch -- raises _SaveAbort when new_count < 50% of old_count "
                 "without FULL_OVERWRITE_CONFIRMED prefix. Next step: run pytest."
             ),
-            progress_update=(
-                "DONE .ai-operation/mcp_server/tools/save.py: "
-                "inventory wipe guard -- raises _SaveAbort when new < 50% old "
-                "without FULL_OVERWRITE_CONFIRMED prefix.\n"
-                "DONE tests/test_architect_tools.py: added inventory guard tests.\n"
-            ),
             lessons_learned="NONE",
         )
         args.update(overrides)
@@ -1159,11 +1118,6 @@ class TestSaveCancelTool(unittest.TestCase, TestSetup):
                 "Completed: save_cancel tool added to save.py; "
                 "uses clear_save_pending + SAVE_STAGING_FILE.unlink. "
                 "Next step: verify cancel unblocks re-submit."
-            ),
-            progress_update=(
-                "DONE .ai-operation/mcp_server/tools/save.py: "
-                "aio__force_architect_save_cancel tool added.\n"
-                "DONE tests/test_architect_tools.py: cancel tool tests added.\n"
             ),
             lessons_learned="NONE",
         )
@@ -1313,12 +1267,6 @@ class TestSessionActivitySummary(unittest.TestCase, TestSetup):
                 ".ai-operation/mcp_server/tools/save.py Phase 1 now collects "
                 "EXECUTED entries from a log file and surfaces them. "
                 "Next step: verify all paths display correctly."
-            ),
-            progress_update=(
-                "DONE .ai-operation/mcp_server/tools/save.py: added "
-                "log scan + report section + Q11 question.\n"
-                "DONE tests/test_architect_tools.py: added new tests "
-                "covering the three coverage scenarios for this feature.\n"
             ),
             lessons_learned="NONE",
         )
@@ -1544,11 +1492,6 @@ class TestSaveOverflowWarning(unittest.TestCase, TestSetup):
                 "detection in .ai-operation/mcp_server/tools/save.py Phase 1 "
                 "diff preview. Next step: verify warning surfaces correctly."
             ),
-            progress_update=(
-                "DONE .ai-operation/mcp_server/tools/save.py: "
-                "added overflow-pointer detection in Phase 1 warnings block.\n"
-                "DONE tests/test_architect_tools.py: added overflow warning test.\n"
-            ),
             lessons_learned="NONE",
         )
         self.assertIn("PENDING_REVIEW", p1)
@@ -1659,12 +1602,6 @@ class TestSaveClosesTaskSpec(unittest.TestCase, TestSetup):
                 "_extract_taskspec_files and _git_dirty_files to "
                 ".ai-operation/mcp_server/tools/constants.py; wired them into "
                 "save.py Phase 2 git block. Next step: verify behavior."
-            ),
-            progress_update=(
-                "DONE .ai-operation/mcp_server/tools/constants.py: added "
-                "_extract_taskspec_files + _git_dirty_files helpers.\n"
-                "DONE .ai-operation/mcp_server/tools/save.py: include dirty "
-                "taskSpec code files in Phase 2 commit.\n"
             ),
             lessons_learned="NONE",
         )
