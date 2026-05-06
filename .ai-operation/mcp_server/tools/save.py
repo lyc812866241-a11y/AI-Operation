@@ -135,7 +135,6 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
 
     @mcp.tool()
     def aio__force_architect_save(
-        projectbrief_update: str,
         systemPatterns_update: str,
         techContext_update: str,
         activeContext_update: str,
@@ -160,7 +159,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
 
         Simply writing "NO_CHANGE" is REJECTED. You must justify why each file doesn't need updating.
 
-        SECTION-AWARE MERGE (for static files: projectbrief, systemPatterns, techContext, corrections):
+        SECTION-AWARE MERGE (for static files: systemPatterns, techContext, corrections):
         Instead of dumping all content as one blob, use ===SECTION=== delimiters to target
         specific sections. The tool will update ONLY those sections, leaving others untouched.
 
@@ -203,7 +202,6 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
           "完成了三阶编导，继续优化生图"  <- too vague, no file paths, no details
 
         Args:
-            projectbrief_update: Section updates OR "NO_CHANGE_BECAUSE: [reason]"
             systemPatterns_update: Section updates OR "NO_CHANGE_BECAUSE: [reason]"
             techContext_update: Section updates OR "NO_CHANGE_BECAUSE: [reason]"
             activeContext_update: REQUIRED. See detail requirements above. Min 200 chars.
@@ -226,7 +224,6 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             Execution report with files updated and git commit status.
         """
         updates = {
-            "projectbrief.md": projectbrief_update,
             "systemPatterns.md": systemPatterns_update,
             "techContext.md": techContext_update,
             "activeContext.md": activeContext_update,
@@ -311,7 +308,6 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         # Validate: NO bare "NO_CHANGE" allowed -- must provide reason
         # Build static file validation list (corrections is optional, only validate if provided)
         static_validations = {
-            "projectbrief_update": projectbrief_update,
             "systemPatterns_update": systemPatterns_update,
             "techContext_update": techContext_update,
         }
@@ -489,7 +485,6 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
 
         # Check static file updates for minimum substance
         static_content_checks = [
-            ("projectbrief_update", projectbrief_update),
             ("systemPatterns_update", systemPatterns_update),
             ("techContext_update", techContext_update),
         ]
@@ -929,7 +924,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         DYNAMIC_FILE_MAX_BYTES = 8_000  # Compact dynamic files when exceeding 8KB
         # 议题 #009: corrections.md 是新的"半静态"文件(§1 用 section-merge,§2/§3 用 append)
         # 这里把它加入 STATIC_FILES,因为 §1 项目契约段需要 section-merge 处理
-        STATIC_FILES = {"projectbrief.md", "systemPatterns.md", "techContext.md", "corrections.md"}
+        STATIC_FILES = {"systemPatterns.md", "techContext.md", "corrections.md"}
         changed_files = []
         merge_report = []
 
@@ -1139,7 +1134,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         # Auto-split oversized sections to detail subfiles
         # 议题 #009: corrections 替代 conventions
         split_report = []
-        for fn in ["projectbrief.md", "systemPatterns.md", "techContext.md", "corrections.md"]:
+        for fn in ["systemPatterns.md", "techContext.md", "corrections.md"]:
             fp = PROJECT_MAP_DIR / fn
             splits = _auto_split_oversized_sections(fp)
             if splits:

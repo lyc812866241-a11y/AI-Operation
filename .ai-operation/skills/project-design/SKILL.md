@@ -8,7 +8,7 @@ tools: ["Read", "Write"]
 
 # 项目立意规范 (Project Design)
 
-> **触发条件**：用户说"我想做个 XX 但说不清"、"开始一个新项目"、"立项"、"设计稿"，或 [`.ai-operation/docs/conception/design.md`](../../docs/conception/design.md) 不存在且 [project_map](../../docs/project_map/) 里 `projectbrief.md` 仍含大量 `[待填写]`。
+> **触发条件**：用户说"我想做个 XX 但说不清"、"开始一个新项目"、"立项"、"设计稿"，或 [`.ai-operation/docs/conception/design.md`](../../docs/conception/design.md) 不存在。
 >
 > **本规范解决的问题**：脑子里有个想做的东西，但写不出"它具体是什么"。框架原本只能接管已有代码（[project-bootstrap](../project-bootstrap/SKILL.md)），无法处理"想法→设计"这一段。本协议把想法压成**功能树 + 每节点 IO 合约**，作为后续编码的硬合约。
 >
@@ -241,7 +241,7 @@ P7b: aio__force_project_design_confirm(user_confirmed=True)
    ├── 读 staging
    ├── 24h 新鲜度检查(过期则拒,清理 staging,要求重新 draft)
    ├── 防御性重校验(staging 万一被手动改过)
-   ├── 写 design.md + 覆盖 projectbrief.md
+   ├── 写 design.md(议题 #010: projectbrief 已删除)
    ├── git commit (非阻塞)
    └── 清理 staging → SUCCESS
 ```
@@ -318,7 +318,7 @@ P7b: aio__force_project_design_confirm(user_confirmed=True)
   user_confirmed = True   ← 仅在用户看完 7a 的预览并明确同意后置 True
 ```
 
-**Phase 7b 完成判据**：工具返回 `SUCCESS`,design.md + projectbrief.md 已写入,staging 已清理,git commit 已创建。
+**Phase 7b 完成判据**：工具返回 `SUCCESS`,design.md 已写入,staging 已清理,git commit 已创建。
 
 ---
 

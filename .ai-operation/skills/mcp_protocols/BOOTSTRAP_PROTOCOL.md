@@ -15,7 +15,7 @@
 
 **重要变更**：此工具采用**模板合并**策略，而非全覆写。
 
-对于 3 个静态文件（projectbrief、systemPatterns、techContext）：
+对于 2 个静态文件（systemPatterns、techContext）（议题 #010：projectbrief 已删除,vision 在 design.md）：
 1. 读取现有模板文件（包含填写规范、示例、`[待填写]` 占位符）
 2. 找到所有 `[待填写...]` 占位符
 3. 用 AI 生成的内容**逐一替换**占位符
@@ -33,8 +33,7 @@
 
 | 参数 | 类型 | 说明 |
 | :--- | :--- | :--- |
-| `projectbrief_content` | string | 按 `===SECTION===` 分隔的各 section 填充内容。每段内容对应一个 `[待填写]` 占位符，按顺序替换。使用 `SKIP` 跳过某个 section 或整个文件。 |
-| `systemPatterns_content` | string | 同上格式 |
+| `systemPatterns_content` | string | 按 `===SECTION===` 分隔的各 section 填充内容。每段内容对应一个 `[待填写]` 占位符，按顺序替换。使用 `SKIP` 跳过某个 section 或整个文件。 |
 | `techContext_content` | string | 同上格式 |
 | `activeContext_focus` | string | 当前最紧迫任务（一句话）。使用 `SKIP` 跳过。 |
 | `progress_initial` | string | 当前待办事项列表。使用 `SKIP` 跳过。 |
@@ -43,23 +42,17 @@
 ### 参数格式示例
 
 ```
-# 填写 projectbrief.md 的 4 个 section：
-projectbrief_content = """
-全自动短视频生产系统，让一个人能以团队的效率完成全流程
+# 填写 systemPatterns.md 的多个 section：
+systemPatterns_content = """
+混合型(状态机驱动) — 视频生成流水线 — v1
 ===SECTION===
-| 指标名称 | 目标值 | 当前值 | 备注 |
+| 模块 | 路径 | 职责 | 状态 |
 |---|---|---|---|
-| 单条视频耗时 | < 20分钟 | ~4小时 | 含全流程 |
-===SECTION===
-- **用户群体**：独立创作者
-- **核心场景**：提供素材，系统自动剪辑
-===SECTION===
-- 不做内容创意生成
-- 不做多平台分发
+| ingest | src/ingest.py | 素材接入 | ✅ |
 """
 
 # 跳过整个文件：
-systemPatterns_content = "SKIP"
+techContext_content = "SKIP"
 
 # 跳过某些 section（第 2 个不填）：
 techContext_content = """
@@ -75,6 +68,8 @@ SKIP
 - FFmpeg 6.x
 """
 ```
+
+> 议题 #010 提示：vision 不通过 bootstrap 写入,由 project-design skill 在立项阶段写到 design.md。
 
 ---
 
@@ -95,8 +90,7 @@ SKIP
 SUCCESS: Project bootstrap merge complete.
 
 Merge report:
-  projectbrief.md: MERGED (4 filled, 0 kept as template)
-  systemPatterns.md: SKIPPED
+  systemPatterns.md: MERGED (3 filled, 2 kept as template)
   techContext.md: MERGED (2 filled, 2 kept as template)
   activeContext.md: GENERATED
   progress.md: GENERATED

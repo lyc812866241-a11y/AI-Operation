@@ -55,11 +55,11 @@ SECTION_SIZE_THRESHOLD = 8_000  # 8KB -- split section to subfile
 CORRECTIONS_MAX_BYTES = 10_000  # 10KB -- archive old lessons
 MAX_TOOL_RESULT_BYTES = 200_000  # 200KB -- no practical truncation (Claude handles large returns)
 
-# Required project_map files (议题 #009 重组后:conventions 已删除并入 corrections)
-# corrections.md 内部分 §1 项目契约 / §2 具体踩坑 / §3 习惯指令(scope = 单项目)
+# Required project_map files
+# 议题 #009 重组:conventions 删除,并入 corrections(scope=单项目)
+# 议题 #010 重组:projectbrief 删除,vision/negative_scope 由 design.md 接管(单一来源)
 # 跨项目智慧 → wisdom.md(框架级,见 WISDOM_FILE)
 REQUIRED_FILES = {
-    "projectbrief": "projectbrief.md",
     "systemPatterns": "systemPatterns.md",
     "techContext": "techContext.md",
     "activeContext": "activeContext.md",

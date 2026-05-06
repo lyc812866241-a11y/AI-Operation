@@ -108,7 +108,7 @@ ls -la .ai-operation/docs/project_map/details/ 2>/dev/null
 
 用户确认后 → **overwrite**。
 
-#### 2.8 projectbrief.md（静态文件）
+#### 2.8 design.md（议题 #010 替代 projectbrief — vision 现在在这里）
 
 向用户展示，提问：
 - "核心愿景有变化吗？"

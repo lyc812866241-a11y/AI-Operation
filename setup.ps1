@@ -129,7 +129,7 @@ print(f'OK:{n}')
     $pmDir = ".ai-operation\docs\project_map"
     if (Test-Path $pmDir) { Check-Pass "project_map\ exists" } else { Check-Fail "project_map\ missing" }
     $pmFiles = 0; $pmFilled = 0
-    foreach ($f in @("projectbrief","systemPatterns","techContext","activeContext","progress","corrections","inventory")) {
+    foreach ($f in @("systemPatterns","techContext","activeContext","progress","corrections","inventory")) {
         $pf = Join-Path $pmDir "$f.md"
         if (Test-Path $pf) {
             $pmFiles++
@@ -138,10 +138,10 @@ print(f'OK:{n}')
             if ($placeholders -lt 3) { $pmFilled++ }
         }
     }
-    if ($pmFiles -eq 7) { Check-Pass "All 7 project_map files present" }
-    else { Check-Fail "Only $pmFiles/7 project_map files found" }
-    if ($pmFilled -ge 4) { Check-Pass "$pmFilled/7 files have content" }
-    else { Check-Warn "Only $pmFilled/7 files filled - run [初始化项目]" }
+    if ($pmFiles -eq 6) { Check-Pass "All 6 project_map files present" }
+    else { Check-Fail "Only $pmFiles/6 project_map files found" }
+    if ($pmFilled -ge 4) { Check-Pass "$pmFilled/6 files have content" }
+    else { Check-Warn "Only $pmFilled/6 files filled - run [初始化项目]" }
 
     # 7. Git integration -- auto-fix .gitignore blocking project_map
     Write-Step "7. Git integration"

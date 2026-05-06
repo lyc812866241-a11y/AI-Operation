@@ -541,35 +541,8 @@ def _render_design_md(anchor, neg, tree, data_dict, timestamp, status) -> str:
     return "\n".join(parts)
 
 
-def _render_brief_md(anchor, neg, tree, data_dict, timestamp) -> str:
-    """projectbrief.md: root anchor + negative scope + top-level summary + pointer."""
-    top_lines = []
-    for n in tree:
-        badge = _priority_badge(n)
-        top_lines.append(f"- {badge} **{n['name'].strip()}** — {n['purpose'].strip()}")
-
-    counts = {p: 0 for p in VALID_PRIORITIES}
-    for n in tree:
-        p_raw = n.get("priority", "")
-        p = p_raw.strip() if isinstance(p_raw, str) else ""
-        if p in counts:
-            counts[p] += 1
-
-    return (
-        f"# 项目愿景 (Project Brief)\n\n"
-        f"> 由 project-design 写入于 {timestamp}。详细设计见 "
-        f"`.ai-operation/docs/conception/design.md`。\n\n"
-        f"## 1. 核心愿景 (Vision)\n\n{anchor}\n\n"
-        f"## 2. 反向边界 (Not For)\n\n{neg}\n\n"
-        f"## 3. 一级功能概览\n\n"
-        + "\n".join(top_lines) + "\n\n"
-        f"## 4. 优先级与状态\n\n"
-        f"- 阶段：DESIGN (设计稿，未实现)\n"
-        f"- 一级 must-have / nice-to-have / out-of-scope: "
-        f"{counts['must-have']} / {counts['nice-to-have']} / {counts['out-of-scope']}\n"
-        f"- 数据字典类型数：{len(data_dict)}\n"
-        f"- 详细 IO 合约：见 `conception/design.md`\n"
-    )
+# 议题 #010: _render_brief_md 已删除。projectbrief.md 不再独立存在,
+# vision (root_anchor) + negative_scope 由 design.md 的 §1/§2 接管,单一来源。
 
 
 # ---------------------------------------------------------------------------
@@ -696,8 +669,8 @@ def register_design_tools(mcp: FastMCP, _audit, _loop_guard):
         [PHASE 2: COMMIT] Apply the staged design to canonical files.
 
         Reads the staging file, runs defense-in-depth re-validation, writes
-        design.md + projectbrief.md, and creates a git commit. Cleans up
-        staging on success.
+        design.md, and creates a git commit. Cleans up staging on success.
+        (议题 #010: projectbrief.md 已删除,vision/negative_scope 在 design.md §1/§2)
 
         Args:
             user_confirmed: MUST be True. Set only after explicit user approval
@@ -792,13 +765,9 @@ def register_design_tools(mcp: FastMCP, _audit, _loop_guard):
             _render_design_md(anchor, neg, tree, data_dict, timestamp, status="COMMITTED (design v1)"),
             encoding="utf-8",
         )
-        brief_path = PROJECT_MAP_DIR / "projectbrief.md"
-        brief_path.write_text(
-            _render_brief_md(anchor, neg, tree, data_dict, timestamp),
-            encoding="utf-8",
-        )
+        # 议题 #010: 不再写 projectbrief.md。vision + negative_scope 已在 design.md §1/§2
 
-        files_to_commit = [str(DESIGN_FILE), str(brief_path)]
+        files_to_commit = [str(DESIGN_FILE)]
         flat, _adj = _flatten_tree(tree)
         commit_msg = (
             f"chore: project-design commit [{timestamp}] "
@@ -824,8 +793,7 @@ def register_design_tools(mcp: FastMCP, _audit, _loop_guard):
         return (
             f"SUCCESS: Project design committed.\n\n"
             f"Files written:\n"
-            f"  - {DESIGN_FILE}\n"
-            f"  - {brief_path}\n\n"
+            f"  - {DESIGN_FILE}\n\n"
             f"Staging cleaned up: {DESIGN_STAGING_FILE} deleted.\n\n"
             f"Summary:\n"
             f"  - Root anchor sentences: {staging_payload.get('sentence_count', '?')}\n"

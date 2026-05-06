@@ -13,8 +13,7 @@
 | ★ `.ai-operation/docs/project_map/activeContext.md` | 当前焦点、下一步 |
 | ★ `.ai-operation/docs/project_map/systemPatterns.md` | 项目架构、模块关系 |
 | ★ `.ai-operation/docs/project_map/corrections.md` | **一阶 项目级一切**（§1 项目契约 / §2 具体踩坑 / §3 习惯指令）|
-| ★ `.ai-operation/docs/conception/design.md` | 项目设计稿（IO 合约 + 功能树）— 立项产出，编码合约。不存在则跳过 |
-| `.ai-operation/docs/project_map/projectbrief.md` | 核心愿景（含 design.md 指针）|
+| ★ `.ai-operation/docs/conception/design.md` | 项目设计稿（IO 合约 + 功能树 + 愿景 + 反向边界）— 立项产出，编码合约。不存在则跳过 |
 | `.ai-operation/docs/project_map/techContext.md` | 技术栈、已知坑点 |
 | `.ai-operation/docs/project_map/progress.md` | 进度、里程碑 |
 | `.ai-operation/docs/project_map/inventory.md` | 资产清单 |

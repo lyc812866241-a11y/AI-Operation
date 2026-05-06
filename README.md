@@ -133,7 +133,6 @@ AI reads these at session start to restore full project context:
 | `conventions.md` | Naming, API, code style contracts | Static |
 | `systemPatterns.md` | Architecture, modules, data flow | Static |
 | `techContext.md` | Tech stack, known pitfalls | Static |
-| `projectbrief.md` | Core vision, business objectives | Static |
 | `inventory.md` | Asset registry (modules, APIs, skills) | Static |
 
 **Key-value experience system**: `corrections.md` stores only category keys (e.g., `fileops`, `git`, `save`). Actual lessons live in `corrections/fileops.md`. AI calls `aio__load_experience("fileops")` on demand — minimizing context consumption.

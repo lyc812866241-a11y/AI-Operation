@@ -150,7 +150,7 @@ print(f'OK:{n}')
     [ -d "$PM_DIR" ] && check_pass "project_map/ exists" || check_fail "project_map/ missing"
     PM_FILES=0
     PM_FILLED=0
-    for f in projectbrief systemPatterns techContext activeContext progress corrections inventory; do
+    for f in systemPatterns techContext activeContext progress corrections inventory; do
         pf="$PM_DIR/${f}.md"
         if [ -f "$pf" ]; then
             PM_FILES=$((PM_FILES + 1))
@@ -159,13 +159,13 @@ print(f'OK:{n}')
             fi
         fi
     done
-    if [ "$PM_FILES" -eq 7 ]; then
-        check_pass "All 7 project_map files present"
+    if [ "$PM_FILES" -eq 6 ]; then
+        check_pass "All 6 project_map files present"
     else
-        check_fail "Only $PM_FILES/7 project_map files found"
+        check_fail "Only $PM_FILES/6 project_map files found"
     fi
     if [ "$PM_FILLED" -ge 4 ]; then
-        check_pass "$PM_FILLED/7 files have content (not template)"
+        check_pass "$PM_FILLED/6 files have content (not template)"
     else
         check_warn "Only $PM_FILLED/8 files filled — run [初始化项目] to populate"
     fi

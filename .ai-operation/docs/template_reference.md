@@ -6,24 +6,32 @@
 
 ---
 
-## projectbrief.md 填写规范
+## design.md 填写规范（议题 #010 后接管 vision/scope 角色）
 
-### 1. 核心愿景
-一两句话，描述"这个项目做成了，世界有什么不同"。不要写技术实现，写业务结果。
-示例：`全自动短视频生产系统，让一个人能以团队的效率完成从素材到成片的全流程，单条视频生产时间从 4 小时压缩到 20 分钟。`
+> **物质职责**：项目愿景 + 反向边界 + IO 合约 + 功能树 + 优先级 — 单一来源。
+> **由谁写**：由 `skills/project-design/` 立项时通过 `aio__force_project_design_*` 工具写入。
+> **物理位置**：`.ai-operation/docs/conception/design.md`（不在 project_map/ 内）。
+>
+> 议题 #010：projectbrief.md 已删除。原本属于它的"愿景 + 反向边界"由 design.md §1 (根锚) + §2 (反向边界) 承担;业务指标 + 目标用户不在 project_map 范围内（属于 product spec / 商业文档）。
 
-### 2. 核心业务指标
-必须可量化，必须有目标值。不能写"提升效率"，要写"从 X 降低到 Y"。
+### 1. 根锚 (Root Anchor)
+1-3 句话写清"这个项目是什么类型的产品 + 解决什么需求"。不写技术实现,只写业务/价值。
+示例：`全自动短视频生产系统,让一人以团队效率完成素材到成片全流程,单条视频生产从 4 小时压缩到 20 分钟。`
 
-| 指标名称 | 目标值 | 当前值 | 备注 |
-|---|---|---|---|
-| 示例：单条视频生产耗时 | < 20 分钟 | ~4 小时 | 含素材处理到导出 |
+### 2. 反向边界 (Negative Scope)
+1 句话写清"这个项目不为谁/不做什么",防止 AI 自作主张扩展 scope。
+示例：`不为高端定制广告服务（每条都需要导演级人工把控的不在范围内）;不做实时直播流处理。`
 
-### 3. 目标用户与使用场景
-描述"谁在什么情况下用这个系统，输入是什么，输出是什么"。
+### 3. 数据字典 (Data Dictionary)
+跨节点传递的核心数据结构,JSON 类型定义。
 
-### 4. 明确不做的事
-明确写出"这个项目不负责什么"，防止 AI 自作主张扩展范围。
+### 4. 功能树 (Functional Tree)
+每个节点必填:name / purpose / input / processing / output。
+顶层节点必须有 priority(must-have / nice-to-have / out-of-scope)。
+最大深度 4 层。可选 `consumes`(声明依赖)。
+
+### 5. 优先级与统计 / 元信息
+project-design 工具自动渲染。
 
 ---
 
@@ -217,7 +225,7 @@ AI **必须优先复用** ✅ 模块,不重复造轮子。
 
 不同参数走不同写入策略，**搞混会直接丢数据**。
 
-### 静态文件（projectbrief / systemPatterns / techContext）
+### 静态文件（systemPatterns / techContext）
 
 > ⚠️ **注意**:`corrections.md` 在重构后**不再是纯静态**——它有三段内部结构,§1 用 section-merge,§2/§3 用 append。详见 corrections 填写规范段。
 > `conventions.md` **已删除**(并入 corrections §1)。

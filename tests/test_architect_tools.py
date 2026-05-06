@@ -45,7 +45,7 @@ class TestSetup:
         Path(".ai-operation/.mcp_commit_flag").parent.mkdir(parents=True, exist_ok=True)
 
         # Write template files
-        for filename in ["projectbrief.md", "systemPatterns.md", "techContext.md",
+        for filename in ["systemPatterns.md", "techContext.md",
                          "activeContext.md", "progress.md"]:
             (project_map / filename).write_text(f"# {filename}\n[待填写]\n", encoding="utf-8")
 
@@ -86,24 +86,22 @@ class TestSaveValidation(unittest.TestCase, TestSetup):
         self.cleanup_temp_project()
 
     def test_rejects_bare_no_change_on_static_files(self):
-        """Bare NO_CHANGE without reason is rejected for all 3 static files."""
+        """Bare NO_CHANGE without reason is rejected for static files."""
         result = self.tools["aio__force_architect_save"](
-            projectbrief_update="NO_CHANGE",
-            systemPatterns_update="NO_CHANGE_BECAUSE: no arch change",
+            systemPatterns_update="NO_CHANGE",
             techContext_update="NO_CHANGE_BECAUSE: no tech change",
             activeContext_update="Working on tests",
             progress_update="✅ Added tests",
             lessons_learned="NONE",
         )
         self.assertIn("REJECTED", result)
-        self.assertIn("projectbrief_update", result)
+        self.assertIn("systemPatterns_update", result)
         self.assertIn("NO_CHANGE_BECAUSE", result)
 
     def test_accepts_no_change_because_with_reason(self):
         """NO_CHANGE_BECAUSE: with a reason is accepted."""
         with patch("subprocess.run"):
             result = self.tools["aio__force_architect_save"](
-                projectbrief_update="NO_CHANGE_BECAUSE: only fixed a typo, no vision change",
                 systemPatterns_update="NO_CHANGE_BECAUSE: no new modules",
                 techContext_update="NO_CHANGE_BECAUSE: no new dependencies",
                 activeContext_update=(
@@ -123,7 +121,6 @@ class TestSaveValidation(unittest.TestCase, TestSetup):
 
     def test_rejects_no_change_active_context(self):
         result = self.tools["aio__force_architect_save"](
-            projectbrief_update="NO_CHANGE_BECAUSE: no change",
             systemPatterns_update="NO_CHANGE_BECAUSE: no change",
             techContext_update="NO_CHANGE_BECAUSE: no change",
             activeContext_update="NO_CHANGE",
@@ -135,7 +132,6 @@ class TestSaveValidation(unittest.TestCase, TestSetup):
 
     def test_rejects_no_change_progress(self):
         result = self.tools["aio__force_architect_save"](
-            projectbrief_update="NO_CHANGE_BECAUSE: no change",
             systemPatterns_update="NO_CHANGE_BECAUSE: no change",
             techContext_update="NO_CHANGE_BECAUSE: no change",
             activeContext_update="Working on tests",
@@ -147,7 +143,6 @@ class TestSaveValidation(unittest.TestCase, TestSetup):
 
     def test_rejects_empty_lessons_learned(self):
         result = self.tools["aio__force_architect_save"](
-            projectbrief_update="NO_CHANGE_BECAUSE: no change",
             systemPatterns_update="NO_CHANGE_BECAUSE: no change",
             techContext_update="NO_CHANGE_BECAUSE: no change",
             activeContext_update="Working on tests",
@@ -161,7 +156,6 @@ class TestSaveValidation(unittest.TestCase, TestSetup):
         """NONE is valid for lessons_learned when nothing was learned."""
         with patch("subprocess.run"):
             result = self.tools["aio__force_architect_save"](
-                projectbrief_update="NO_CHANGE_BECAUSE: no change",
                 systemPatterns_update="NO_CHANGE_BECAUSE: no change",
                 techContext_update="NO_CHANGE_BECAUSE: no change",
                 activeContext_update=(
@@ -360,50 +354,47 @@ class TestBootstrapMerge(unittest.TestCase, TestSetup):
         from tools.architect import register_architect_tools
         register_architect_tools(mcp)
 
-        # Write a template with placeholders
+        # Write a template with placeholders (议题 #010: projectbrief 删除后,用 systemPatterns 测试)
         template = (
-            "# Project Brief\n\n"
-            "## 1. Vision\n[待填写：vision]\n\n"
-            "## 2. KPIs\n[待填写：kpis]\n"
+            "# System Patterns\n\n"
+            "## 1. 系统定性\n[待填写：定性]\n\n"
+            "## 2. 核心模块\n[待填写：模块]\n"
         )
-        Path(".ai-operation/docs/project_map/projectbrief.md").write_text(template, encoding="utf-8")
+        Path(".ai-operation/docs/project_map/systemPatterns.md").write_text(template, encoding="utf-8")
 
     def tearDown(self):
         self.cleanup_temp_project()
 
     def test_skip_leaves_file_untouched(self):
-        original = Path(".ai-operation/docs/project_map/projectbrief.md").read_text()
+        original = Path(".ai-operation/docs/project_map/systemPatterns.md").read_text(encoding="utf-8")
         with patch("subprocess.run"):
             self.tools["aio__force_project_bootstrap_write"](
-                projectbrief_content="SKIP",
                 systemPatterns_content="SKIP",
                 techContext_content="SKIP",
                 activeContext_focus="Testing",
                 progress_initial="- [ ] Tests",
                 user_confirmed=True,
             )
-        after = Path(".ai-operation/docs/project_map/projectbrief.md").read_text()
+        after = Path(".ai-operation/docs/project_map/systemPatterns.md").read_text(encoding="utf-8")
         self.assertEqual(original, after)
 
     def test_merge_replaces_placeholders(self):
         with patch("subprocess.run"):
             self.tools["aio__force_project_bootstrap_write"](
-                projectbrief_content="Our big vision===SECTION===Revenue targets",
-                systemPatterns_content="SKIP",
+                systemPatterns_content="纯流水线型 — 测试用 — v1===SECTION===测试模块清单",
                 techContext_content="SKIP",
                 activeContext_focus="Testing merge",
                 progress_initial="- [ ] Verify merge",
                 user_confirmed=True,
             )
-        content = Path(".ai-operation/docs/project_map/projectbrief.md").read_text()
-        self.assertIn("Our big vision", content)
-        self.assertIn("Revenue targets", content)
-        self.assertIn("## 1. Vision", content)  # Template structure preserved
-        self.assertNotIn("[待填写：vision]", content)
+        content = Path(".ai-operation/docs/project_map/systemPatterns.md").read_text(encoding="utf-8")
+        self.assertIn("纯流水线型", content)
+        self.assertIn("测试模块清单", content)
+        self.assertIn("## 1. 系统定性", content)  # Template structure preserved
+        self.assertNotIn("[待填写：定性]", content)
 
     def test_rejects_without_user_confirmed(self):
         result = self.tools["aio__force_project_bootstrap_write"](
-            projectbrief_content="content",
             systemPatterns_content="content",
             techContext_content="content",
             activeContext_focus="focus",
@@ -415,8 +406,7 @@ class TestBootstrapMerge(unittest.TestCase, TestSetup):
 
     def test_rejects_todo_placeholders(self):
         result = self.tools["aio__force_project_bootstrap_write"](
-            projectbrief_content="Has [TODO] placeholder",
-            systemPatterns_content="content",
+            systemPatterns_content="Has [TODO] placeholder",
             techContext_content="content",
             activeContext_focus="focus",
             progress_initial="tasks",
@@ -861,7 +851,6 @@ class TestSavePhase2Guards(unittest.TestCase, TestSetup):
 
     def _valid_phase1_args(self, **overrides):
         args = dict(
-            projectbrief_update="NO_CHANGE_BECAUSE: not relevant for this test",
             systemPatterns_update="NO_CHANGE_BECAUSE: not relevant for this test",
             techContext_update="NO_CHANGE_BECAUSE: not relevant for this test",
             corrections_update="NO_CHANGE_BECAUSE: not relevant for this test",
@@ -1071,7 +1060,6 @@ class TestInventoryWipeGuard(unittest.TestCase, TestSetup):
 
     def _valid_phase1_args(self, **overrides):
         args = dict(
-            projectbrief_update="NO_CHANGE_BECAUSE: test",
             systemPatterns_update="NO_CHANGE_BECAUSE: test",
             techContext_update="NO_CHANGE_BECAUSE: test",
             corrections_update="NO_CHANGE_BECAUSE: test",
@@ -1163,7 +1151,6 @@ class TestSaveCancelTool(unittest.TestCase, TestSetup):
 
     def _phase1_args(self):
         return dict(
-            projectbrief_update="NO_CHANGE_BECAUSE: test",
             systemPatterns_update="NO_CHANGE_BECAUSE: test",
             techContext_update="NO_CHANGE_BECAUSE: test",
             corrections_update="NO_CHANGE_BECAUSE: test",
@@ -1317,7 +1304,6 @@ class TestSessionActivitySummary(unittest.TestCase, TestSetup):
 
     def _phase1_args(self):
         return dict(
-            projectbrief_update="NO_CHANGE_BECAUSE: test",
             systemPatterns_update="NO_CHANGE_BECAUSE: test",
             techContext_update="NO_CHANGE_BECAUSE: test",
             corrections_update="NO_CHANGE_BECAUSE: test",
@@ -1544,7 +1530,6 @@ class TestSaveOverflowWarning(unittest.TestCase, TestSetup):
 
     def test_phase1_warns_about_stale_overflow(self):
         p1 = self.tools["aio__force_architect_save"](
-            projectbrief_update="NO_CHANGE_BECAUSE: test",
             systemPatterns_update=(
                 "===SECTION===\n\u7cfb\u7edf\u5b9a\u6027\n"
                 "new content referencing .ai-operation/mcp_server/tools/save.py "
@@ -1665,7 +1650,6 @@ class TestSaveClosesTaskSpec(unittest.TestCase, TestSetup):
 
     def _args(self):
         return dict(
-            projectbrief_update="NO_CHANGE_BECAUSE: test",
             systemPatterns_update="NO_CHANGE_BECAUSE: test",
             techContext_update="NO_CHANGE_BECAUSE: test",
             corrections_update="NO_CHANGE_BECAUSE: test",

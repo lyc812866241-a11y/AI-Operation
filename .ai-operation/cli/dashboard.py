@@ -27,7 +27,7 @@ PROJECT_ROOT = SCRIPT_DIR.parent.parent
 PROJECT_MAP_DIR = PROJECT_ROOT / ".ai-operation" / "docs" / "project_map"
 
 REQUIRED_FILES = [
-    ("projectbrief", "projectbrief.md", "Core Vision", "#3b82f6"),
+    # 议题 #010: projectbrief 已删除,vision 在 design.md(在 conception/ 不在 project_map/)
     ("systemPatterns", "systemPatterns.md", "Architecture", "#8b5cf6"),
     ("techContext", "techContext.md", "Tech Stack", "#06b6d4"),
     ("activeContext", "activeContext.md", "Active Context", "#f59e0b"),
@@ -117,8 +117,9 @@ def get_stats():
     todo_count = progress.count("- [ ]")
     done_count = progress.count("- [x]")
     correction_count = corrections.count("DATE:")
-    is_initialized = "[待填写]" not in read_file(PROJECT_MAP_DIR / "projectbrief.md") and \
-                     "[TODO]" not in read_file(PROJECT_MAP_DIR / "projectbrief.md")
+    # 议题 #010: 用 systemPatterns 替代 projectbrief 判断"已初始化"
+    is_initialized = "[待填写]" not in read_file(PROJECT_MAP_DIR / "systemPatterns.md") and \
+                     "[TODO]" not in read_file(PROJECT_MAP_DIR / "systemPatterns.md")
 
     # IDE status
     ide_status = []

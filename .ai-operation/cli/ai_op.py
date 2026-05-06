@@ -39,7 +39,7 @@ sys.path.insert(0, str(MCP_SERVER_DIR))
 PROJECT_MAP_DIR = PROJECT_ROOT / ".ai-operation" / "docs" / "project_map"
 
 REQUIRED_FILES = {
-    "projectbrief": "projectbrief.md",
+    # 议题 #010: projectbrief 已删除,vision 在 design.md
     "systemPatterns": "systemPatterns.md",
     "techContext": "techContext.md",
     "activeContext": "activeContext.md",

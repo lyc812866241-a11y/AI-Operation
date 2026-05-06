@@ -14,7 +14,6 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
 
     @mcp.tool()
     def aio__force_project_bootstrap_write(
-        projectbrief_content: str,
         systemPatterns_content: str,
         techContext_content: str,
         activeContext_focus: str,
@@ -28,7 +27,7 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
         It CANNOT be called unless user_confirmed=True.
 
         MERGE BEHAVIOR (not overwrite):
-        - For the 3 static files (projectbrief, systemPatterns, techContext):
+        - For the 2 static files (systemPatterns, techContext):
           Reads the existing template, finds [待填写...] placeholders, and replaces
           them with AI-generated content. Template structure (headers, fill instructions,
           examples) is PRESERVED. Unfilled sections keep their [待填写] placeholder.
@@ -41,17 +40,16 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
         Protocol reference: skills/project-bootstrap/SKILL.md (Phase 4)
 
         Args:
-            projectbrief_content: Section fills for projectbrief.md, separated by
+            systemPatterns_content: Section fills for systemPatterns.md, separated by
                 "===SECTION===" delimiter (one fill per [待填写] placeholder, in order).
-                Use "SKIP" to leave a section unfilled. Use "SKIP" for the entire param
-                to skip this file completely.
-            systemPatterns_content: Same format for systemPatterns.md.
+                Use "SKIP" to leave a section unfilled or for the entire param.
             techContext_content: Same format for techContext.md.
             activeContext_focus: Current focus statement for activeContext.md.
             progress_initial: Initial milestone entry for progress.md.
             user_confirmed: MUST be True.
 
-        议题 #009 重组:conventions 已删除并入 corrections。立项时不再单独传项目契约。
+        议题 #009 重组:conventions 删除,并入 corrections(scope=单项目)。
+        议题 #010 重组:projectbrief 删除,vision/negative_scope 由 design.md §1/§2 接管(单一来源)。
         项目契约在后续 [存档] 中通过 corrections_update §1 段填入。
         wisdom.md(跨项目通用智慧)由人主动编辑,不通过 bootstrap 写入。
 
@@ -71,7 +69,6 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
 
         # Gate 2: Reject [TODO] (but allow SKIP and [待确认])
         gate2_fields = {
-            "projectbrief_content": projectbrief_content,
             "systemPatterns_content": systemPatterns_content,
             "techContext_content": techContext_content,
             "activeContext_focus": activeContext_focus,
@@ -152,8 +149,8 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
             return f"MERGED ({filled_count} filled, {skipped_count} kept as template)"
 
         # 议题 #009: conventions 已删除;corrections 由后续 [存档] 填入(立项时只生成空模板)
+        # 议题 #010: projectbrief 已删除;vision 在 design.md §1/§2(由 project-design skill 写入)
         static_files = {
-            "projectbrief.md": projectbrief_content,
             "systemPatterns.md": systemPatterns_content,
             "techContext.md": techContext_content,
         }
@@ -188,8 +185,8 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
                 f"## 2. 当前 taskSpec 内部状态(细粒度时间尺度)\n\n"
                 f"- **子步骤**: 1/N — 立项 + project_map 初始化\n"
                 f"- **打开的关键文件**:\n"
-                f"  - .ai-operation/docs/project_map/projectbrief.md\n"
-                f"  - .ai-operation/docs/project_map/systemPatterns.md\n\n"
+                f"  - .ai-operation/docs/project_map/systemPatterns.md\n"
+                f"  - .ai-operation/docs/project_map/techContext.md\n\n"
                 f"## 3. 本会话已做的关键决策\n\n"
                 f"- 项目接管完成 — 由 project-bootstrap 技能于 {timestamp} 初始化\n\n"
                 f"## 4. 当前卡点\n\n"
@@ -224,7 +221,7 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
 
         # -- Count remaining placeholders ------------------------------
         remaining = 0
-        for filename in ["projectbrief.md", "systemPatterns.md", "techContext.md"]:
+        for filename in ["systemPatterns.md", "techContext.md"]:
             filepath = PROJECT_MAP_DIR / filename
             if filepath.exists():
                 content = filepath.read_text(encoding="utf-8")
