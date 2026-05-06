@@ -20,7 +20,6 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
         activeContext_focus: str,
         progress_initial: str,
         user_confirmed: bool,
-        conventions_content: str = "",
     ) -> str:
         """
         [BOOTSTRAP ENFORCEMENT TOOL] Merge AI-generated content into project_map templates.
@@ -51,10 +50,10 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
             activeContext_focus: Current focus statement for activeContext.md.
             progress_initial: Initial milestone entry for progress.md.
             user_confirmed: MUST be True.
-            conventions_content: Optional. SECOND-ORDER contracts only (naming, API format,
-                UI tokens, code style) -- structural rules that prevent a class of bugs.
-                Specific incident lessons go in corrections/{key}.md, not here.
-                Use "SKIP" to leave empty for now.
+
+        议题 #009 重组:conventions 已删除并入 corrections。立项时不再单独传项目契约。
+        项目契约在后续 [存档] 中通过 corrections_update §1 段填入。
+        wisdom.md(跨项目通用智慧)由人主动编辑,不通过 bootstrap 写入。
 
         Returns:
             Execution report with merge results and git commit status.
@@ -78,8 +77,6 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
             "activeContext_focus": activeContext_focus,
             "progress_initial": progress_initial,
         }
-        if conventions_content and conventions_content.strip():
-            gate2_fields["conventions_content"] = conventions_content
         for field_name, content in gate2_fields.items():
             if "[TODO]" in content:
                 return (
@@ -154,11 +151,11 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
             filepath.write_text(result, encoding="utf-8")
             return f"MERGED ({filled_count} filled, {skipped_count} kept as template)"
 
+        # 议题 #009: conventions 已删除;corrections 由后续 [存档] 填入(立项时只生成空模板)
         static_files = {
             "projectbrief.md": projectbrief_content,
             "systemPatterns.md": systemPatterns_content,
             "techContext.md": techContext_content,
-            "conventions.md": conventions_content if conventions_content and conventions_content.strip() else "SKIP",
         }
 
         written_files = []
@@ -173,21 +170,36 @@ def register_bootstrap_tools(mcp: FastMCP, _audit, _loop_guard):
                 return f"FAILED: Could not process {filename}: {e}"
 
         # -- Generate dynamic files (always fresh) ---------------------
+        # 议题 #009: 新 5 段格式(taskSpec 边界 / 内部状态 / 决策 / 卡点 / 下一动作)
+        # 由 state-checkpoint skill 维护,**OVERWRITE 模式**,≤ 80 行硬上限
         if activeContext_focus.strip().upper() != "SKIP":
             active_path = PROJECT_MAP_DIR / "activeContext.md"
             active_path.write_text(
-                f"# 当前工作焦点 (Active Context)\n\n"
-                f"> 由 project-bootstrap 技能初始化于 {timestamp}\n\n"
-                f"## 1. 当前焦点 (Current Focus)\n\n{activeContext_focus.strip()}\n\n"
-                f"## 2. 正在处理的问题 (Active Issues)\n\n- 无\n\n"
-                f"## 3. 即将执行的下一步 (Immediate Next Steps)\n\n"
-                f"1. 检查所有 [待确认] 标注的字段，逐一确认或修正\n"
-                f"2. 与用户确认第一个 taskSpec.md 的范围\n\n"
-                f"> 上次更新时间：{timestamp}",
+                f"# activeContext\n\n"
+                f"> [DYNAMIC] 议题 #002 The Engine 的物质载体。**OVERWRITE 模式**(快照,非日志)。\n"
+                f"> 由 `skills/state-checkpoint/` 维护,不要手写。**≤ 80 行硬上限**。\n\n"
+                f"**最后更新**: {timestamp}\n"
+                f"**当前 taskSpec**: 立项中(未创建)\n\n"
+                f"---\n\n"
+                f"## 1. taskSpec 边界(粗粒度时间尺度)\n\n"
+                f"- **上一个完成**: 无(项目刚立项)\n"
+                f"- **当前**: 立项验收\n"
+                f"- **下一个(预期)**: 第一个功能开发 taskSpec\n\n"
+                f"## 2. 当前 taskSpec 内部状态(细粒度时间尺度)\n\n"
+                f"- **子步骤**: 1/N — 立项 + project_map 初始化\n"
+                f"- **打开的关键文件**:\n"
+                f"  - .ai-operation/docs/project_map/projectbrief.md\n"
+                f"  - .ai-operation/docs/project_map/systemPatterns.md\n\n"
+                f"## 3. 本会话已做的关键决策\n\n"
+                f"- 项目接管完成 — 由 project-bootstrap 技能于 {timestamp} 初始化\n\n"
+                f"## 4. 当前卡点\n\n"
+                f"- 无\n\n"
+                f"## 5. 下一个具体动作\n\n"
+                f"{activeContext_focus.strip()}\n",
                 encoding="utf-8"
             )
             written_files.append("activeContext.md")
-            merge_report.append("  activeContext.md: GENERATED")
+            merge_report.append("  activeContext.md: GENERATED (5-section format, 议题 #009)")
         else:
             merge_report.append("  activeContext.md: SKIPPED")
 

@@ -62,7 +62,7 @@ def register_cognitive_gate_tools(mcp: FastMCP, _audit, _loop_guard):
     @mcp.tool()
     def aio__confirm_read(session_key: str) -> str:
         """
-        [COGNITIVE GATE] Confirm that you have read corrections.md and conventions.md.
+        [COGNITIVE GATE] Confirm that you have read corrections.md (项目级一阶) and wisdom.md (跨项目二阶).
 
         You MUST call this tool at the start of every session, BEFORE making any
         file changes. Without this, all Edit/Write/Bash tools will be BLOCKED.
@@ -71,6 +71,9 @@ def register_cognitive_gate_tools(mcp: FastMCP, _audit, _loop_guard):
         1. Read .ai-operation/docs/project_map/corrections.md
         2. Find the SESSION_KEY line at the bottom
         3. Pass that value here
+
+        议题 #009 提示:corrections 是项目级(scope=单项目),wisdom 是跨项目级(scope=所有项目)。
+        两者 type 不同,无法互升;wisdom 只能由人主动写入。
 
         This tool also resets the operation counter. After 30 file operations,
         you must re-read corrections.md and call this again.

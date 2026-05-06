@@ -2,18 +2,17 @@
 
 ## 开机自检 + 源文件索引
 
-每次新对话，先读 ★ 标记的文件，然后调 `aio__confirm_read` 传入 corrections.md 末尾的 SESSION_KEY。
-不 confirm 则所有 Edit/Write/Bash 工具将被 Hook 拦截。每 30 次文件操作需重新 confirm。
+每次新对话:先读 ★ 文件,调 `aio__confirm_read` 传 SESSION_KEY(从 corrections.md 末尾获取)。未 confirm 工具会被 hook 拦截。
 
 
 ### 项目记忆（★ 开机必读）
 
 | 文件 | 内容 |
 |---|---|
+| ★ `.ai-operation/wisdom.md` | **二阶 跨项目通用智慧**（求导思维等普适方法论）|
 | ★ `.ai-operation/docs/project_map/activeContext.md` | 当前焦点、下一步 |
 | ★ `.ai-operation/docs/project_map/systemPatterns.md` | 项目架构、模块关系 |
-| ★ `.ai-operation/docs/project_map/conventions.md` | 二阶契约（命名/API/风格/架构约定）|
-| ★ `.ai-operation/docs/project_map/corrections.md` | 一阶经验（具体踩坑教训，按键加载）|
+| ★ `.ai-operation/docs/project_map/corrections.md` | **一阶 项目级一切**（§1 项目契约 / §2 具体踩坑 / §3 习惯指令）|
 | ★ `.ai-operation/docs/conception/design.md` | 项目设计稿（IO 合约 + 功能树）— 立项产出，编码合约。不存在则跳过 |
 | `.ai-operation/docs/project_map/projectbrief.md` | 核心愿景（含 design.md 指针）|
 | `.ai-operation/docs/project_map/techContext.md` | 技术栈、已知坑点 |
@@ -31,10 +30,9 @@
 | TDD 协议 | `.ai-operation/skills/test-driven-development/SKILL.md` |
 | 架构扫描协议 | `.ai-operation/skills/omm-scan/SKILL.md` |
 | 整理协议 | `.ai-operation/skills/consolidate/SKILL.md` |
+| 经验沉淀协议（求导提炼） | `.ai-operation/skills/lesson-distill/SKILL.md` |
+| 状态快照协议（The Engine） | `.ai-operation/skills/state-checkpoint/SKILL.md` |
 | MCP 工具协议 | `.ai-operation/skills/mcp_protocols/` |
-| MCP 工具代码 | `.ai-operation/mcp_server/tools/` |
-| Git Hook | `.ai-operation/hooks/pre-commit` |
-| 审计日志 | `.ai-operation/audit.log` |
 
 ## 指令路由
 
@@ -46,39 +44,6 @@
 | [初始化项目] | `.ai-operation/skills/project-bootstrap/SKILL.md` |
 | [架构扫描] | `.ai-operation/skills/omm-scan/SKILL.md` |
 | [整理] | `.ai-operation/skills/consolidate/SKILL.md` |
+| 学到教训 / 被纠正 / 踩坑 | `.ai-operation/skills/lesson-distill/SKILL.md` |
+| 完成子步骤 / 做出决策 / 发现卡点 | `.ai-operation/skills/state-checkpoint/SKILL.md` |
 | 功能开发 | `aio__force_taskspec_submit` → `_approve` → 执行 → [存档] |
-
-## 经验捕获
-
-当你犯错、被用户纠正、或发现一条值得记住的教训时，**立即按知识分级存到对应文件**，不要等到 [存档] 时才处理。
-存之前查下面的分级表确认存哪里。
-
-## 知识分级（存经验时必读）
-
-存经验/规则前，先判断它是哪一级，存到对应位置：
-
-| 级别 | 存哪里 | 什么内容 | 举例 |
-|---|---|---|---|
-| **二阶契约** | `conventions.md` | 结构性规则——防止一类问题 | 函数命名用 snake_case；API 统一返回 {code, data} |
-| **一阶经验** | `corrections/{key}.md` | 具体踩坑教训——防止同一个坑 | 禁删 API 产出文件；钉钉 userId 必须是数字 |
-| **项目行为规则** | `rules.d/{name}.md` | AI 在本项目的操作约束 | 部署前必须跑回归测试；PR 必须关联 issue |
-| **个人偏好** | IDE 自带 memory | 跨项目的用户习惯 | 不要输出 emoji；回复要简洁 |
-
-**判断口诀**：
-- 这条规则能防止**一类** bug → **conventions**（二阶）
-- 这条规则是**某次**踩坑学到的 → **corrections**（一阶）
-- 搞不清就存 **corrections**，积累 3 次以上再升级到 conventions
-
-## 自定义指南
-
-| 我想… | 去哪改 | 说明 |
-|---|---|---|
-| 加代码契约（命名/API/风格） | `conventions.md` | 二阶：防一类问题 |
-| 记录踩坑经验 | `corrections/{key}.md` | 一阶：防同一个坑 |
-| 加项目操作规则 | `rules.d/{name}.md` | AI 行为约束 |
-| 加新的 `[指令]` | `rules.d/commands.md` | 格式见 `rules.d/README.md` |
-| 改框架行为 | `.clinerules` → `sync-rules.sh` | 改完需同步 |
-| 加自动化 Skill | `skills/{name}/SKILL.md` | 参考已有 frontmatter |
-
-> **不要直接编辑** `CLAUDE.md` / `.cursorrules` / `.windsurfrules` — 它们由 `.clinerules` 自动生成。
-> **rules.d/ 文件会被 [读档] 自动加载**，无需修改任何框架文件。

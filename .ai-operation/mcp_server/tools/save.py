@@ -18,6 +18,118 @@ class _SaveAbort(Exception):
     """
 
 
+def _append_to_section(content: str, section_title: str, new_body: str) -> str:
+    """Append new_body to the body of a `## ` section, inserting before the
+    next `## ` header (or before SESSION_KEY line, or at end).
+
+    议题 #009: corrections.md §2/§3 用此函数实现 append 语义。
+    Section title matching: substring (case-insensitive), strip leading numeric prefix.
+    If section not found, creates a new section before SESSION_KEY (or at end).
+    """
+    import re
+    norm_title = re.sub(r'^\d+\.\s*', '', section_title.strip())
+    lines = content.split("\n")
+
+    section_start = -1
+    section_end = len(lines)
+
+    for i, line in enumerate(lines):
+        if line.startswith("## "):
+            line_title = re.sub(r'^\d+\.\s*', '', line[3:].strip())
+            if (norm_title == line_title or
+                    norm_title in line_title or line_title in norm_title or
+                    norm_title.lower() in line_title.lower() or line_title.lower() in norm_title.lower()):
+                section_start = i
+                for j in range(i + 1, len(lines)):
+                    if lines[j].startswith("## ") or lines[j].startswith("SESSION_KEY:"):
+                        section_end = j
+                        break
+                break
+
+    if section_start < 0:
+        # Section not found -- create new section, insert before SESSION_KEY or at end.
+        for i, line in enumerate(lines):
+            if line.startswith("SESSION_KEY:"):
+                # Skip the "---" separator if present right above
+                insert_at = i
+                if i > 0 and lines[i - 1].strip() == "":
+                    insert_at = i
+                if i > 1 and lines[i - 2].strip() == "---":
+                    insert_at = i - 2
+                new_lines = (
+                    lines[:insert_at]
+                    + [f"## {section_title}", "", new_body, ""]
+                    + lines[insert_at:]
+                )
+                return "\n".join(new_lines)
+        # No SESSION_KEY -- append at end
+        return content.rstrip() + f"\n\n## {section_title}\n\n{new_body}\n"
+
+    # Trim trailing blank lines inside existing section before insertion
+    insert_idx = section_end
+    while insert_idx > section_start + 1 and lines[insert_idx - 1].strip() == "":
+        insert_idx -= 1
+
+    new_lines = lines[:insert_idx] + ["", new_body, ""] + lines[insert_idx:]
+    return "\n".join(new_lines)
+
+
+def _hybrid_corrections_merge(filepath, content: str) -> tuple:
+    """Hybrid merge for corrections.md (议题 #009 三段混合语义).
+
+    §1 项目契约   -> section-merge (replace whole section content)
+    §2 / §3       -> append (insert new body before section's end)
+    Other sections -> default to section-merge (safe fallback)
+
+    Args:
+        filepath: Path to corrections.md
+        content:  AI-supplied update with ===SECTION=== blocks
+
+    Returns:
+        (merged_content, action_summary) — caller writes merged_content to file.
+        action_summary is a list of strings describing what happened per block.
+    """
+    from .constants import _section_merge
+
+    existing = filepath.read_text(encoding="utf-8") if filepath.exists() else ""
+
+    section_replace = {}     # title -> new body  (§1 / unknown)
+    section_append = {}      # title -> append body (§2 / §3)
+    actions = []
+
+    for block in content.split("===SECTION==="):
+        stripped = block.strip()
+        if not stripped:
+            continue
+        parts = stripped.split("\n", 1)
+        if len(parts) < 2:
+            continue
+        title, body = parts[0].strip(), parts[1].strip()
+        if not body or body.upper() == "SKIP":
+            continue
+
+        if "§2" in title or "§3" in title:
+            section_append[title] = body
+        else:
+            # §1 or unknown -> replace mode
+            section_replace[title] = body
+
+    # Phase 1: replace mode (re-uses existing _section_merge logic)
+    if section_replace:
+        result, replaced = _section_merge(existing, section_replace)
+        if replaced:
+            actions.append(f"§1/replace: {len(replaced)} section(s) merged")
+    else:
+        result = existing
+
+    # Phase 2: append mode for §2/§3
+    for title, body in section_append.items():
+        result = _append_to_section(result, title, body)
+        actions.append(f"§2/§3 append: {title}")
+
+    return result, actions
+
+
 def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
     """Register save-related tools onto the MCP server instance."""
 
@@ -30,7 +142,7 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         progress_update: str,
         lessons_learned: str,
         inventory_update: str = "",
-        conventions_update: str = "",
+        corrections_update: str = "",
         session_compaction: str = "",
     ) -> str:
         """
@@ -39,13 +151,16 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         This tool MUST be called when the user issues the [存档] command.
         The AI agent MUST NOT manually edit project_map files or run git commands directly.
 
-        CRITICAL: For ALL 6 file parameters (5 core + conventions), you must EITHER:
+        议题 #009 重组(2026-05-06):conventions.md 已删除并入 corrections.md。
+        wisdom.md(跨项目二阶)由人主动编辑,**不通过此工具写入**。
+
+        CRITICAL: For ALL 6 file parameters, you must EITHER:
           - Provide update content (see format below)
           - Write "NO_CHANGE_BECAUSE: [specific reason]" explaining WHY no update is needed
 
         Simply writing "NO_CHANGE" is REJECTED. You must justify why each file doesn't need updating.
 
-        SECTION-AWARE MERGE (for static files: projectbrief, systemPatterns, techContext, conventions):
+        SECTION-AWARE MERGE (for static files: projectbrief, systemPatterns, techContext, corrections):
         Instead of dumping all content as one blob, use ===SECTION=== delimiters to target
         specific sections. The tool will update ONLY those sections, leaving others untouched.
 
@@ -100,9 +215,10 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                 parameter only when you intentionally rebuild the full list from scratch (e.g. after
                 [整理]). If you use it: ALWAYS read inventory.md first, merge by hand, then pass the
                 COMPLETE list here. Passing partial content will erase everything you didn't include.
-            conventions_update: Optional. SECOND-ORDER contracts only (naming, API format, UI tokens,
-                code style) -- structural rules that prevent a CLASS of bugs. Do NOT put specific
-                incident lessons here (those go in corrections/{key}.md as first-order experience).
+            corrections_update: Optional. PROJECT-LEVEL一阶 only (议题 #009)。
+                内部分三段:§1 项目契约(防一类问题, section-merge);§2 具体踩坑(append, 一行索引);
+                §3 习惯指令(append, AI 操作约束)。**末尾 SESSION_KEY 不可被覆盖**。
+                跨项目通用智慧 → 不进这里,人主动编辑 .ai-operation/wisdom.md。
                 Section-aware merge. Use ===SECTION=== delimiters. "NO_CHANGE_BECAUSE: [reason]" to skip.
             session_compaction: Optional. Compressed summary of conversation for context overflow recovery.
 
@@ -117,11 +233,12 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             "progress.md": progress_update,
         }
 
-        # Add conventions if provided (optional field -- default to NO_CHANGE)
-        if conventions_update and conventions_update.strip():
-            updates["conventions.md"] = conventions_update
+        # Add corrections if provided (optional field -- default to NO_CHANGE)
+        # 议题 #009: corrections 是项目级一阶,内部分 §1/§2/§3
+        if corrections_update and corrections_update.strip():
+            updates["corrections.md"] = corrections_update
         else:
-            updates["conventions.md"] = "NO_CHANGE_BECAUSE: No convention changes this session"
+            updates["corrections.md"] = "NO_CHANGE_BECAUSE: No project-level lessons this session"
 
         _audit("aio__force_architect_save", "CALLED")
 
@@ -192,14 +309,14 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                        f"{fn} update ({new_size} chars) much smaller than existing ({old_size} chars)")
 
         # Validate: NO bare "NO_CHANGE" allowed -- must provide reason
-        # Build static file validation list (conventions is optional, only validate if provided)
+        # Build static file validation list (corrections is optional, only validate if provided)
         static_validations = {
             "projectbrief_update": projectbrief_update,
             "systemPatterns_update": systemPatterns_update,
             "techContext_update": techContext_update,
         }
-        if conventions_update and conventions_update.strip():
-            static_validations["conventions_update"] = conventions_update
+        if corrections_update and corrections_update.strip():
+            static_validations["corrections_update"] = corrections_update
 
         for filename, content in static_validations.items():
             stripped = content.strip()
@@ -376,8 +493,8 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             ("systemPatterns_update", systemPatterns_update),
             ("techContext_update", techContext_update),
         ]
-        if conventions_update and conventions_update.strip():
-            static_content_checks.append(("conventions_update", conventions_update))
+        if corrections_update and corrections_update.strip():
+            static_content_checks.append(("corrections_update", corrections_update))
         for label, content in static_content_checks:
             stripped = content.strip()
             if stripped.upper().startswith("NO_CHANGE_BECAUSE"):
@@ -694,17 +811,15 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             "or make decisions that aren't reflected?"
         )
 
-        # Q6: Conventions consistency
-        conv_path = PROJECT_MAP_DIR / "conventions.md"
-        if conv_path.exists():
-            audit_questions.append(
-                "Knowledge hierarchy check: Did this session produce new lessons?\n"
-                "  - Structural rules (naming/API/style that prevent a CLASS of bugs) "
-                "-> conventions.md (二阶契约)\n"
-                "  - Specific incident lessons (one-time pitfall) "
-                "-> corrections/{key}.md (一阶经验)\n"
-                "  Do NOT put specific operational lessons in conventions.md."
-            )
+        # Q6: Knowledge hierarchy check (议题 #009 scope-based)
+        audit_questions.append(
+            "Knowledge hierarchy check: Did this session produce new lessons?\n"
+            "  scope-based 分类:\n"
+            "  - 项目内一阶 -> corrections.md (内部 §1 项目契约 / §2 具体踩坑 / §3 习惯指令)\n"
+            "  - 跨项目二阶 -> wisdom.md (人主动编辑,不通过本工具)\n"
+            "  铁律:type 不可跨 scope。corrections × N 次累积 ≠ 升级到 wisdom。\n"
+            "  如果你认为某条洞察普适,在本次返回中**建议用户手动加入 wisdom.md**,不要自己写。"
+        )
 
         # Q7: Completion verification
         if any(kw in ac_lower for kw in completion_keywords):
@@ -812,7 +927,9 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         staged_compaction = staging_data.get("compaction", "")
 
         DYNAMIC_FILE_MAX_BYTES = 8_000  # Compact dynamic files when exceeding 8KB
-        STATIC_FILES = {"projectbrief.md", "systemPatterns.md", "techContext.md", "conventions.md"}
+        # 议题 #009: corrections.md 是新的"半静态"文件(§1 用 section-merge,§2/§3 用 append)
+        # 这里把它加入 STATIC_FILES,因为 §1 项目契约段需要 section-merge 处理
+        STATIC_FILES = {"projectbrief.md", "systemPatterns.md", "techContext.md", "corrections.md"}
         changed_files = []
         merge_report = []
 
@@ -829,6 +946,28 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
         try:
             for filename, content in staged_updates.items():
                 filepath = PROJECT_MAP_DIR / filename
+
+                # 议题 #009: corrections.md 走混合语义
+                # §1 项目契约 -> replace (section-merge)
+                # §2 具体踩坑 / §3 习惯指令 -> append
+                if (filename == "corrections.md"
+                        and "===SECTION===" in content
+                        and filepath.exists()):
+                    stripped = content.lstrip()
+                    if not stripped.upper().startswith("FULL_OVERWRITE_CONFIRMED:") \
+                            and not stripped.upper().startswith("NO_CHANGE"):
+                        try:
+                            merged, actions = _hybrid_corrections_merge(filepath, content)
+                            filepath.write_text(merged, encoding="utf-8")
+                            merge_report.append(
+                                f"  {filename}: HYBRID MERGE ({'; '.join(actions) if actions else 'no-op'})"
+                            )
+                            changed_files.append(filename)
+                            continue  # skip the standard dispatch below
+                        except Exception as exc:
+                            # Fall back to standard dispatch on hybrid failure
+                            _audit("aio__force_architect_save_confirm", "WARNING",
+                                   f"hybrid corrections merge failed: {str(exc)[:200]} -- falling back to section-merge")
 
                 if filename == "inventory.md":
                     # Inventory: full overwrite, but guard against accidental wipe.
@@ -998,8 +1137,9 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             )
 
         # Auto-split oversized sections to detail subfiles
+        # 议题 #009: corrections 替代 conventions
         split_report = []
-        for fn in ["projectbrief.md", "systemPatterns.md", "techContext.md", "conventions.md"]:
+        for fn in ["projectbrief.md", "systemPatterns.md", "techContext.md", "corrections.md"]:
             fp = PROJECT_MAP_DIR / fn
             splits = _auto_split_oversized_sections(fp)
             if splits:
@@ -1079,12 +1219,14 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
             )
 
         # Write compaction summary
+        # 议题 #009 修正: 不再 append 到 activeContext(违反 OVERWRITE 快照语义)
+        # 改 append 到 progress.md(它是日志型,APPEND 模式天然适合)
         if staged_compaction:
-            compaction_path = PROJECT_MAP_DIR / "activeContext.md"
+            compaction_path = PROJECT_MAP_DIR / "progress.md"
             with open(compaction_path, "a", encoding="utf-8") as f:
                 f.write(f"\n\n---\n### [Session Compaction -- {timestamp}]\n{staged_compaction}\n")
-            if "activeContext.md" not in changed_files:
-                changed_files.append("activeContext.md")
+            if "progress.md" not in changed_files:
+                changed_files.append("progress.md")
 
         # -- Regenerate SESSION_KEY for next session ------------
         # Forces next session's AI to re-read corrections.md to get the new key

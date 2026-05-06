@@ -40,10 +40,11 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
         budget_tight = total_size > MAX_TOTAL_CHARS
 
         # Priority order: dynamic files first (most important for continuity)
+        # 议题 #009: conventions 已删除并入 corrections;wisdom 在框架级单独加载
         priority_order = [
             ("activeContext", "activeContext.md", True),    # always full
             ("progress", "progress.md", True),              # always full
-            ("conventions", "conventions.md", True),        # always full -- 二阶 contracts (naming/API/style)
+            ("corrections", "corrections.md", True),        # always full -- 项目级一阶(§1/§2/§3)
             ("projectbrief", "projectbrief.md", False),     # TOC if tight
             ("systemPatterns", "systemPatterns.md", False),  # TOC if tight
             ("techContext", "techContext.md", False),        # TOC if tight
@@ -77,6 +78,22 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
                 toc = _generate_toc(content, filename)
                 total_chars += len(toc)
                 report.append(toc)
+
+        # -- Load wisdom.md (跨项目二阶, 框架级位置, 议题 #009) ---------
+        # wisdom.md 不在 project_map 内,但每次必读
+        if WISDOM_FILE.exists():
+            report.append(f"\n## [wisdom] {WISDOM_FILE.name} (跨项目通用智慧)")
+            wisdom_content = WISDOM_FILE.read_text(encoding="utf-8")
+            if len(wisdom_content) > MAX_FILE_CHARS:
+                wisdom_content = wisdom_content[:MAX_FILE_CHARS] + "\n\n[truncated -- 16KB per-file limit]"
+            if total_chars + len(wisdom_content) > MAX_TOTAL_CHARS:
+                remaining = MAX_TOTAL_CHARS - total_chars
+                if remaining > 500:
+                    wisdom_content = wisdom_content[:remaining] + "\n\n[truncated -- budget reached]"
+                else:
+                    wisdom_content = _generate_toc(wisdom_content, WISDOM_FILE.name)
+            total_chars += len(wisdom_content)
+            report.append(wisdom_content)
 
         # Also check details/ directory
         if DETAILS_DIR.exists():
@@ -140,12 +157,17 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
                 if old_term in sp_text and new_term in tc_text:
                     quality_warnings.append(f"[!] STALE: {msg}")
 
-        # Check 3: conventions.md missing or all placeholders
-        conv_text = _file_cache.get("conventions.md", "")
-        if not conv_text:
-            quality_warnings.append("[i] conventions.md missing. Create during next [save].")
-        elif conv_text.count("[待填写") >= 3:
-            quality_warnings.append("[!] conventions.md has 3+ unfilled sections.")
+        # Check 3: wisdom.md presence (跨项目二阶, 议题 #009)
+        wisdom_text = ""
+        if WISDOM_FILE.exists():
+            try:
+                wisdom_text = WISDOM_FILE.read_text(encoding="utf-8")
+            except Exception:
+                wisdom_text = ""
+        if not wisdom_text:
+            quality_warnings.append("[i] wisdom.md missing. Create at framework level (.ai-operation/wisdom.md) with at least 求导思维 as seed.")
+        elif wisdom_text.count("[待填写") >= 2:
+            quality_warnings.append("[!] wisdom.md has 2+ unfilled sections.")
 
         # Check 4: systemPatterns missing file tree (no scan_codebase output)
         sp_full = _file_cache.get("systemPatterns.md", "")
@@ -154,14 +176,15 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
                 "[!] systemPatterns has no file tree. Run aio__scan_codebase to add one."
             )
 
-        # Check 5: conventions.md may contain first-order lessons
-        if conv_text:
-            first_order_signals = ["禁止", "不能", "不要", "必须先", "之前出过", "踩过坑"]
-            signal_count = sum(1 for s in first_order_signals if s in conv_text)
+        # Check 5: wisdom.md may contain project-specific signals (议题 #009 反模式)
+        # wisdom 是跨项目级,出现"项目"/"我们的"/具体项目名等词 = type 错配
+        if wisdom_text:
+            project_specific_signals = ["这个项目", "本项目", "我们的", "踩过坑", "之前出过"]
+            signal_count = sum(1 for s in project_specific_signals if s in wisdom_text)
             if signal_count >= 2:
                 quality_warnings.append(
-                    "[!] conventions.md may have first-order lessons (禁止/不能/踩过坑). "
-                    "Move to corrections/{key}.md."
+                    "[!] wisdom.md may contain project-specific content (这个项目/本项目/踩过坑). "
+                    "wisdom 必须 scope=所有项目;项目特定经验应移到 corrections.md。"
                 )
 
         if quality_warnings:

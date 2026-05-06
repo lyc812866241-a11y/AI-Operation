@@ -10,7 +10,32 @@ tools: ["Bash", "Read", "Grep", "Write"]
 
 ## Purpose
 
-Analyze the codebase and generate `.omm/` architecture documentation using **perspective-driven recursive analysis**.
+Analyze the codebase and generate **two outputs** (方向 D, 单 skill 维护两份产物):
+
+1. **`.omm/`** — perspective-driven recursive architecture documentation (mermaid diagrams + 7 fields per element). Human-readable visualization.
+2. **`.ai-operation/docs/project_map/systemPatterns.md`** — lightweight 5-section text summary distilled from `.omm/`. AI-loadable architecture index (≤ 50 行).
+
+Single skill maintains both → 永不漂移。
+
+## Modes (这个 skill 是 Layer 2 全量模式)
+
+架构更新策略分三层(详见 `template_reference.md` 的 systemPatterns 更新策略段):
+
+| Layer | 谁触发 | 跑什么 |
+|---|---|---|
+| **Layer 1 增量** | 半自动(在 [存档] 流程里) | 用户/Claude 在 [存档] 时手改 systemPatterns 受影响段,**不跑本 skill** |
+| **Layer 2 全量(本 skill)** | 手动 `[架构扫描]` / 周期建议 | 全量重扫 + 重建 `.omm/` + 重写 `systemPatterns.md` |
+| **Layer 3 漂移兜底** | `aio__audit_project_map` 自动 | 检测到漂移时建议跑 Layer 2 |
+
+**何时调用本 skill**:
+- 每 5-10 个 taskSpec 完成后(反漂移仪式)
+- 大重构后(模块拆分/合并/换技术栈)
+- audit 报告漂移
+- 用户主动跑 `[架构扫描]`
+
+---
+
+## Recursive Analysis Concepts
 
 - A **perspective** is a top-level element — a distinct way to look at the architecture.
 - Each element in a diagram gets analyzed recursively. If it has internal structure, it becomes a **child element** (subdirectory with its own diagram). If not, it stays a leaf.
@@ -151,9 +176,27 @@ overall-architecture (perspective)
     → TerminalDock.tsx, DockManager → leaf
 ```
 
-## Step 4: Summarize
+## Step 4: Distill `systemPatterns.md` Summary (方向 D 关键步)
 
-Report what was created/updated and suggest `omm view` to view.
+After all `.omm/` perspectives are generated, **also write `systemPatterns.md`** as the lightweight text index for AI loading. Single source of truth (`.omm/`), two derived outputs.
+
+Read from `.omm/` what you just generated, then compile a **5-section summary**:
+
+1. **§ 1 系统定性** — From `.omm/overall-architecture/description`, extract system type + core purpose + version. Format: `[类型] — [用途] — vX`.
+2. **§ 2 核心模块清单** — From top-level perspective elements, list as table: `模块 | 路径 | 一句话职责 | 状态(✅/🚧/❌)`.
+3. **§ 3 数据结构字典** — From data structures detected during scan (search `interface`/`type`/`class`/`@dataclass`/Pydantic models), list: `结构名 | 定义位置(file:line) | 用途`.
+4. **§ 4 数据流** — From the main data-flow perspective (or `.omm/overall-architecture/diagram`), distill into one-line arrow chain. Example: `HTTP → API handler (src/api.py:42) → Validator → DB writer → Postgres`.
+5. **§ 5 架构约束** — Extract from code: `assert` / `raise NotImplementedError` / `TODO` / `FIXME` lines, each with `file:line` reference.
+
+**Write target**: `.ai-operation/docs/project_map/systemPatterns.md` — full overwrite.
+
+**Format**: strictly follow `.ai-operation/docs/templates/project_map/systemPatterns.md`.
+
+**Hard limit**: ≤ 50 lines. If exceeded, you're including too much detail — push it down to `.omm/` instead.
+
+## Step 5: Summarize
+
+Report what was created/updated (both `.omm/` and `systemPatterns.md`). Suggest `omm view` to view the visual architecture.
 
 ## Diagram Rules
 

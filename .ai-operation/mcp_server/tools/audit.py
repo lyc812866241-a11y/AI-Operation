@@ -8,7 +8,7 @@ Instead of trusting AI to say "现有内容准确", it runs code-level checks:
   1. File existence -- do claimed paths actually exist?
   2. Decorator count -- does the actual count match inventory?
   3. Dependency truth -- are claimed libraries actually imported?
-  4. Naming consistency -- do conventions match real code?
+  4. Naming consistency -- do corrections.md §1 项目契约 rules match real code?
   5. Config parsing -- do .env / docker-compose match techContext?
 """
 
@@ -358,15 +358,33 @@ def _check_dependency_truth(root: Path, files: dict) -> dict:
 
 
 def _check_naming_consistency(root: Path, files: dict) -> dict:
-    """Check 4: Verify naming conventions in conventions.md match actual code."""
-    conv_content = files.get("conventions.md", "")
+    """Check 4: Verify naming conventions in corrections.md §1 项目契约 match actual code.
+
+    议题 #009 重组后:命名契约从 conventions.md 迁移到 corrections.md §1 项目契约段。
+    此 check 现在 audit corrections §1 中提取出的命名规则 vs 实际代码。
+    """
+    conv_content = files.get("corrections.md", "")
 
     if not conv_content or conv_content.count("[待填写") >= 3:
         return {
-            "name": "Check 4: Naming Consistency",
+            "name": "Check 4: Naming Consistency (corrections §1)",
             "status": "SKIP",
-            "detail": "conventions.md not filled yet (3+ [待填写] sections). Skipping."
+            "detail": "corrections.md §1 not filled yet (3+ [待填写] sections). Skipping."
         }
+
+    # 提取 §1 项目契约 段(在 ## §1 和下一个 ## 之间)
+    section1_match = re.search(
+        r'##\s*§1[^\n]*\n(.*?)(?=\n##\s|\Z)',
+        conv_content,
+        re.DOTALL,
+    )
+    if not section1_match:
+        return {
+            "name": "Check 4: Naming Consistency (corrections §1)",
+            "status": "SKIP",
+            "detail": "No §1 项目契约 section found in corrections.md."
+        }
+    conv_content = section1_match.group(1)
 
     # Extract naming rules
     rules = []
@@ -388,9 +406,9 @@ def _check_naming_consistency(root: Path, files: dict) -> dict:
 
     if not rules:
         return {
-            "name": "Check 4: Naming Consistency",
+            "name": "Check 4: Naming Consistency (corrections §1)",
             "status": "SKIP",
-            "detail": "No parseable naming rules found in conventions.md."
+            "detail": "No parseable naming rules found in corrections §1."
         }
 
     # Sample code files
@@ -623,7 +641,7 @@ def register_audit_tools(mcp: FastMCP, _audit, _loop_guard):
         1. File existence -- paths in systemPatterns/inventory -> os.path.exists
         2. Decorator count -- grep @enterprise_tool count vs inventory claim
         3. Dependency truth -- claimed libraries -> grep actual imports
-        4. Naming consistency -- conventions.md rules -> sample-check code
+        4. Naming consistency -- corrections.md §1 项目契约 rules -> sample-check code
         5. Config parsing -- .env / docker-compose vs techContext claims
 
         When to call:
@@ -651,8 +669,9 @@ def register_audit_tools(mcp: FastMCP, _audit, _loop_guard):
             return f"FAILED: No project_map at {pm_dir}. Run [初始化项目] first."
 
         # Read project_map files
+        # 议题 #009: conventions 已并入 corrections,这里 audit corrections §1 命名契约
         pm_files = {}
-        for name in ["systemPatterns.md", "inventory.md", "techContext.md", "conventions.md"]:
+        for name in ["systemPatterns.md", "inventory.md", "techContext.md", "corrections.md"]:
             fp = pm_dir / name
             if fp.exists():
                 try:

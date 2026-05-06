@@ -864,7 +864,7 @@ class TestSavePhase2Guards(unittest.TestCase, TestSetup):
             projectbrief_update="NO_CHANGE_BECAUSE: not relevant for this test",
             systemPatterns_update="NO_CHANGE_BECAUSE: not relevant for this test",
             techContext_update="NO_CHANGE_BECAUSE: not relevant for this test",
-            conventions_update="NO_CHANGE_BECAUSE: not relevant for this test",
+            corrections_update="NO_CHANGE_BECAUSE: not relevant for this test",
             activeContext_update=(
                 "Current focus: testing Phase 2 guards in tests/test_architect_tools.py. "
                 "Just completed: modified .ai-operation/mcp_server/tools/save.py to add "
@@ -1074,7 +1074,7 @@ class TestInventoryWipeGuard(unittest.TestCase, TestSetup):
             projectbrief_update="NO_CHANGE_BECAUSE: test",
             systemPatterns_update="NO_CHANGE_BECAUSE: test",
             techContext_update="NO_CHANGE_BECAUSE: test",
-            conventions_update="NO_CHANGE_BECAUSE: test",
+            corrections_update="NO_CHANGE_BECAUSE: test",
             activeContext_update=(
                 "Current focus: testing inventory wipe guard in "
                 "tests/test_architect_tools.py. "
@@ -1166,7 +1166,7 @@ class TestSaveCancelTool(unittest.TestCase, TestSetup):
             projectbrief_update="NO_CHANGE_BECAUSE: test",
             systemPatterns_update="NO_CHANGE_BECAUSE: test",
             techContext_update="NO_CHANGE_BECAUSE: test",
-            conventions_update="NO_CHANGE_BECAUSE: test",
+            corrections_update="NO_CHANGE_BECAUSE: test",
             activeContext_update=(
                 "Current focus: testing save_cancel in tests/test_architect_tools.py. "
                 "Completed: save_cancel tool added to save.py; "
@@ -1320,7 +1320,7 @@ class TestSessionActivitySummary(unittest.TestCase, TestSetup):
             projectbrief_update="NO_CHANGE_BECAUSE: test",
             systemPatterns_update="NO_CHANGE_BECAUSE: test",
             techContext_update="NO_CHANGE_BECAUSE: test",
-            conventions_update="NO_CHANGE_BECAUSE: test",
+            corrections_update="NO_CHANGE_BECAUSE: test",
             activeContext_update=(
                 "Current focus: testing the new feedback loop in "
                 "tests/test_architect_tools.py. Just completed: "
@@ -1552,7 +1552,7 @@ class TestSaveOverflowWarning(unittest.TestCase, TestSetup):
                 "for Phase 1 validation.\n"
             ),
             techContext_update="NO_CHANGE_BECAUSE: test",
-            conventions_update="NO_CHANGE_BECAUSE: test",
+            corrections_update="NO_CHANGE_BECAUSE: test",
             activeContext_update=(
                 "Current focus: testing overflow warning in "
                 "tests/test_architect_tools.py. Completed: added stale-overflow "
@@ -1668,7 +1668,7 @@ class TestSaveClosesTaskSpec(unittest.TestCase, TestSetup):
             projectbrief_update="NO_CHANGE_BECAUSE: test",
             systemPatterns_update="NO_CHANGE_BECAUSE: test",
             techContext_update="NO_CHANGE_BECAUSE: test",
-            conventions_update="NO_CHANGE_BECAUSE: test",
+            corrections_update="NO_CHANGE_BECAUSE: test",
             activeContext_update=(
                 "Current focus: testing save-closes-taskSpec in "
                 "tests/test_architect_tools.py. Just completed: added "

@@ -7,7 +7,7 @@ from pathlib import Path
 
 __all__ = [
     # Paths
-    "PROJECT_MAP_DIR", "DETAILS_DIR", "MCP_COMMIT_FLAG",
+    "PROJECT_MAP_DIR", "FRAMEWORK_DIR", "WISDOM_FILE", "DETAILS_DIR", "MCP_COMMIT_FLAG",
     "TASKSPEC_DIR", "TASKSPEC_FILE", "TASKSPEC_APPROVED_FLAG",
     "FAST_TRACK_FLAG", "SAVE_STAGING_FILE", "BYPASS_DIR",
     "SAVE_HISTORY_DIR", "SNAPSHOT_RETAIN_COUNT",
@@ -29,9 +29,13 @@ __all__ = [
     "_parse_skill_frontmatter", "_discover_skills",
 ]
 
-# Project map directory - relative to project root
+# Project map directory - relative to project root (项目级 一阶)
 PROJECT_MAP_DIR = Path(".ai-operation/docs/project_map")
 DETAILS_DIR = PROJECT_MAP_DIR / "details"
+
+# Framework directory + cross-project wisdom file (跨项目级 二阶, 议题 #009)
+FRAMEWORK_DIR = Path(".ai-operation")
+WISDOM_FILE = FRAMEWORK_DIR / "wisdom.md"
 
 # Flag files
 MCP_COMMIT_FLAG = Path(".ai-operation/.mcp_commit_flag")
@@ -51,12 +55,13 @@ SECTION_SIZE_THRESHOLD = 8_000  # 8KB -- split section to subfile
 CORRECTIONS_MAX_BYTES = 10_000  # 10KB -- archive old lessons
 MAX_TOOL_RESULT_BYTES = 200_000  # 200KB -- no practical truncation (Claude handles large returns)
 
-# Required project_map files
+# Required project_map files (议题 #009 重组后:conventions 已删除并入 corrections)
+# corrections.md 内部分 §1 项目契约 / §2 具体踩坑 / §3 习惯指令(scope = 单项目)
+# 跨项目智慧 → wisdom.md(框架级,见 WISDOM_FILE)
 REQUIRED_FILES = {
     "projectbrief": "projectbrief.md",
     "systemPatterns": "systemPatterns.md",
     "techContext": "techContext.md",
-    "conventions": "conventions.md",
     "activeContext": "activeContext.md",
     "progress": "progress.md",
     "inventory": "inventory.md",
@@ -325,7 +330,7 @@ def _compact_corrections(filepath: Path) -> str:
             header_parts.append(part)
 
     if len(entry_parts) <= 5:
-        slim_header = "# Bootstrap Corrections Log\n\n> 经验库。COUNT >= 3 自动升级到 conventions.md 成为项目契约。\n"
+        slim_header = "# Bootstrap Corrections Log\n\n> 经验库。议题 #009 重组后:同 scope 内由人主动判断是否提炼;不再有自动升级。\n"
         rebuilt = slim_header + "\n---\n".join(entry_parts)
         filepath.write_text(rebuilt, encoding="utf-8")
         new_size = len(rebuilt.encode("utf-8"))
