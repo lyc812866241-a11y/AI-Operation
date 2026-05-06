@@ -50,13 +50,6 @@ ls -la .ai-operation/docs/project_map/details/ 2>/dev/null
 
 用户确认后 → **overwrite** 为干净版本。
 
-#### 2.2 progress.md（动态文件）
-
-向用户展示，提问：
-- "已完成列表有没有可以归档的旧条目？"
-- "待办列表还准确吗？"
-
-用户确认后 → **overwrite**。已完成的旧条目可以移到 details/ 归档。
 
 #### 2.3 corrections.md（动态文件）
 
@@ -140,7 +133,6 @@ git commit --no-verify -m "chore: [整理] project_map cleanup and consolidation
 ```
 [整理] 完成：
 - activeContext.md: 3826 → 694 字符（清理重复段落）
-- progress.md: 5154 → 1645 字符（归档旧条目）
 - systemPatterns.md: 无变化
 - 2 个段落拆分到 details/
 ```

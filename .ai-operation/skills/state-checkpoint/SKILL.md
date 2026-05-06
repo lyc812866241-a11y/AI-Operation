@@ -34,7 +34,7 @@ tools: ["Read", "Write", "Edit"]
 ## 写入语义
 
 - **OVERWRITE 整个文件**,不 APPEND
-- activeContext 是当前快照,不是历史日志(历史归 `progress.md`)
+- activeContext 是当前快照,不是历史日志(议题 #011: 历史归 git log)
 - **≤ 80 行硬上限**——超过 = 没及时清理过期决策/已解卡点 → 触发审视
 
 ---

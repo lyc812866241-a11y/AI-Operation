@@ -281,7 +281,6 @@ MCP 工具是框架的强制执行层。直接编辑文件意味着 AI 可以在
     systemPatterns_content = [Phase 3.2 用户确认后的完整内容，不含任何 [TODO]]
   techContext_content   = [Phase 3.3 用户确认后的完整内容，不含任何 [TODO]]
   activeContext_focus   = [Phase 3.4 用户回答的当前最紧迫任务]
-  progress_initial      = [当前待办事项列表]
   conventions_content   = [从代码库提取的命名/API/UI/错误处理契约，或 "SKIP" 稍后填写]
   user_confirmed        = True  ← 只有在用户明确表示"可以写入"后才能设为 True
 ```

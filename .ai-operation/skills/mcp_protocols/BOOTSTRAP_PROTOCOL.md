@@ -36,7 +36,6 @@
 | `systemPatterns_content` | string | 按 `===SECTION===` 分隔的各 section 填充内容。每段内容对应一个 `[待填写]` 占位符，按顺序替换。使用 `SKIP` 跳过某个 section 或整个文件。 |
 | `techContext_content` | string | 同上格式 |
 | `activeContext_focus` | string | 当前最紧迫任务（一句话）。使用 `SKIP` 跳过。 |
-| `progress_initial` | string | 当前待办事项列表。使用 `SKIP` 跳过。 |
 | `user_confirmed` | bool | **必须为 `True`** |
 
 ### 参数格式示例

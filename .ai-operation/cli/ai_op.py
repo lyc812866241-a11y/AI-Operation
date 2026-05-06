@@ -92,10 +92,10 @@ def cmd_status():
     else:
         print("  Focus: [NOT INITIALIZED — run [初始化项目]]")
 
-    # Check progress
-    progress = PROJECT_MAP_DIR / "progress.md"
-    if progress.exists():
-        content = progress.read_text(encoding="utf-8")
+    # 议题 #011: progress 已删除,Tasks 改从当前 taskSpec 读取
+    taskspec = PROJECT_MAP_DIR.parent / "taskSpec.md"
+    if taskspec.exists():
+        content = taskspec.read_text(encoding="utf-8")
         todo_count = content.count("- [ ]")
         done_count = content.count("- [x]")
         print(f"  Tasks: {done_count} done, {todo_count} pending")
@@ -123,11 +123,11 @@ def cmd_save():
     print("  " + "─" * 40)
 
     print("\n  For each file, enter your update (or 'NO_CHANGE'):")
-    print("  activeContext and progress are REQUIRED.\n")
+    print("  activeContext is REQUIRED.\n")
 
     updates = {}
     for label, filename in REQUIRED_FILES.items():
-        required = label in ("activeContext", "progress")
+        required = label == "activeContext"
         tag = " [REQUIRED]" if required else " [NO_CHANGE ok]"
         print(f"  {label}{tag}:")
         lines = []
@@ -142,9 +142,6 @@ def cmd_save():
     # Validate
     if updates.get("activeContext.md", "").strip() == "NO_CHANGE":
         print("\n  ERROR: activeContext cannot be NO_CHANGE.")
-        return
-    if updates.get("progress.md", "").strip() == "NO_CHANGE":
-        print("\n  ERROR: progress cannot be NO_CHANGE.")
         return
 
     # Apply updates

@@ -26,14 +26,8 @@
 | 要找什么 | 去哪里 |
 |---|---|
 | 填写规范 | `.ai-operation/docs/template_reference.md` |
-| 立项协议（项目从无到有） | `.ai-operation/skills/project-design/SKILL.md` |
-| 初始化协议（接管已有代码） | `.ai-operation/skills/project-bootstrap/SKILL.md` |
 | 调试协议 | `.ai-operation/skills/systematic-debugging/SKILL.md` |
 | TDD 协议 | `.ai-operation/skills/test-driven-development/SKILL.md` |
-| 架构扫描协议 | `.ai-operation/skills/omm-scan/SKILL.md` |
-| 整理协议 | `.ai-operation/skills/consolidate/SKILL.md` |
-| 经验沉淀协议（求导提炼） | `.ai-operation/skills/lesson-distill/SKILL.md` |
-| 状态快照协议（The Engine） | `.ai-operation/skills/state-checkpoint/SKILL.md` |
 | MCP 工具协议 | `.ai-operation/skills/mcp_protocols/` |
 
 ## 指令路由

@@ -453,7 +453,7 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
                 "git": ["git", "commit", "branch", "merge", "push", "pull",
                         "checkout", "rebase", "stash"],
                 "save": ["save", "存档", "project_map", "activecontext",
-                         "progress", "corrections"],
+                         "corrections"],
                 "analysis": ["analyze", "分析", "scan", "parse", "debug",
                              "investigate", "root cause"],
             }
