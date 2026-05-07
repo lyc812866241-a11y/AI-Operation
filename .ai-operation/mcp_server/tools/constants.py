@@ -7,7 +7,9 @@ from pathlib import Path
 
 __all__ = [
     # Paths
-    "PROJECT_MAP_DIR", "FRAMEWORK_DIR", "WISDOM_FILE", "DETAILS_DIR", "MCP_COMMIT_FLAG",
+    "PROJECT_MAP_DIR", "FRAMEWORK_DIR", "WISDOM_FILE", "WISDOM_SEED_FILE",
+    "USER_FRAMEWORK_DIR", "ensure_user_wisdom",
+    "DETAILS_DIR", "MCP_COMMIT_FLAG",
     "TASKSPEC_DIR", "TASKSPEC_FILE", "TASKSPEC_APPROVED_FLAG",
     "FAST_TRACK_FLAG", "SAVE_STAGING_FILE", "BYPASS_DIR",
     "SAVE_HISTORY_DIR", "SNAPSHOT_RETAIN_COUNT",
@@ -33,9 +35,38 @@ __all__ = [
 PROJECT_MAP_DIR = Path(".ai-operation/docs/project_map")
 DETAILS_DIR = PROJECT_MAP_DIR / "details"
 
-# Framework directory + cross-project wisdom file (跨项目级 二阶, 议题 #009)
+# Framework directory (project-level install)
 FRAMEWORK_DIR = Path(".ai-operation")
-WISDOM_FILE = FRAMEWORK_DIR / "wisdom.md"
+
+# Cross-project wisdom — user-level shared file (议题 #003 跨项目复利层落地)
+# 所有项目读同一份,任何项目里的 wisdom 编辑会被其他项目感知。
+USER_FRAMEWORK_DIR = Path.home() / ".ai-operation"
+WISDOM_FILE = USER_FRAMEWORK_DIR / "wisdom.md"
+
+# 当前 install 自带的 seed wisdom(默认内容,用于首次填充用户级文件)
+WISDOM_SEED_FILE = FRAMEWORK_DIR / "wisdom.md"
+
+
+def ensure_user_wisdom() -> Path:
+    """确保用户级 wisdom.md 存在;如果不存在,从当前 install 的 seed 复制一份。
+    返回用户级 wisdom 路径。
+    """
+    if not WISDOM_FILE.exists():
+        USER_FRAMEWORK_DIR.mkdir(parents=True, exist_ok=True)
+        if WISDOM_SEED_FILE.exists():
+            WISDOM_FILE.write_text(
+                WISDOM_SEED_FILE.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+        else:
+            # 极端情况:连 seed 都没有(可能是 deeply broken install)
+            # 写一个最小骨架
+            WISDOM_FILE.write_text(
+                "# wisdom — 跨项目通用智慧\n\n"
+                "> 二阶 / scope = 所有项目。议题 #009 铁律:只能由人主动写入。\n",
+                encoding="utf-8",
+            )
+    return WISDOM_FILE
 
 # Flag files
 MCP_COMMIT_FLAG = Path(".ai-operation/.mcp_commit_flag")

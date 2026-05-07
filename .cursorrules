@@ -13,7 +13,7 @@
 
 | 文件 | 内容 |
 |---|---|
-| ★ `.ai-operation/wisdom.md` | **二阶 跨项目通用智慧**（求导思维等普适方法论）|
+| ★ `~/.ai-operation/wisdom.md` | **二阶 跨项目通用智慧**（用户级共享, 求导思维等普适方法论）|
 | ★ `.ai-operation/docs/project_map/activeContext.md` | 当前焦点、下一步 |
 | ★ `.ai-operation/docs/project_map/systemPatterns.md` | 项目架构、模块关系 |
 | ★ `.ai-operation/docs/project_map/corrections.md` | **一阶 项目级一切**（§1 项目契约 / §2 具体踩坑 / §3 习惯指令）|
@@ -42,4 +42,5 @@
 | [整理] | `.ai-operation/skills/consolidate/SKILL.md` |
 | 学到教训 / 被纠正 / 踩坑 | `.ai-operation/skills/lesson-distill/SKILL.md` |
 | 完成子步骤 / 做出决策 / 发现卡点 | `.ai-operation/skills/state-checkpoint/SKILL.md` |
+| [提取契约] / 反推契约(接管已有项目) | `.ai-operation/skills/conventions-extract/SKILL.md` |
 | 功能开发 | `aio__force_taskspec_submit` → `_approve` → 执行 → [存档] |

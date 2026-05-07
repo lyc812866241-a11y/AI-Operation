@@ -79,8 +79,11 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
                 total_chars += len(toc)
                 report.append(toc)
 
-        # -- Load wisdom.md (跨项目二阶, 框架级位置, 议题 #009) ---------
-        # wisdom.md 不在 project_map 内,但每次必读
+        # -- Load wisdom.md (跨项目二阶, 用户级位置, 议题 #003 跨项目复利层) -
+        # 议题 #003 落地:wisdom.md 物理位置 = ~/.ai-operation/wisdom.md(用户级)
+        # 所有项目共享同一份,任何项目编辑会被其他项目感知。
+        # 如果用户级文件不存在,从当前 install 的 seed 自动复制。
+        ensure_user_wisdom()
         if WISDOM_FILE.exists():
             report.append(f"\n## [wisdom] {WISDOM_FILE.name} (跨项目通用智慧)")
             wisdom_content = WISDOM_FILE.read_text(encoding="utf-8")
@@ -165,7 +168,7 @@ def register_read_tools(mcp: FastMCP, _audit, _loop_guard):
             except Exception:
                 wisdom_text = ""
         if not wisdom_text:
-            quality_warnings.append("[i] wisdom.md missing. Create at framework level (.ai-operation/wisdom.md) with at least 求导思维 as seed.")
+            quality_warnings.append(f"[i] wisdom.md missing at {WISDOM_FILE}. Auto-creation from seed should have run; check ensure_user_wisdom().")
         elif wisdom_text.count("[待填写") >= 2:
             quality_warnings.append("[!] wisdom.md has 2+ unfilled sections.")
 
