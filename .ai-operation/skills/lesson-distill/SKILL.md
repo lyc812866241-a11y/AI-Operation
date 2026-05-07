@@ -4,7 +4,13 @@ description: 议题 #005 求导思维的物质执行器。把"刚学到的教训
 when: ["犯错", "被纠正", "学到教训", "记录经验", "lesson", "捕获教训", "踩坑"]
 paths: [".ai-operation/docs/project_map/corrections.md", ".ai-operation/docs/project_map/corrections/", ".ai-operation/wisdom.md"]
 tools: ["Read", "Write", "Edit"]
+primary_artifact: .ai-operation/docs/project_map/corrections.md
 ---
+> ⚠️ **议题 #013 物理强制(必读)**:本 skill 修改 corrections.md(项目级一阶经验载体)。议题 #013 强制:必须用 aio__skill_invoke / aio__skill_complete 包裹执行,完成时验证 corrections.md 真的被修改过。
+>
+> 执行流程:`aio__skill_invoke("lesson-distill")` → 走完本 skill 所有步骤 → `aio__skill_complete("lesson-distill")`。
+> 完成时若 primary_artifact 未被修改,锁不释放。
+
 
 # [教训沉淀] — Lesson Distill
 

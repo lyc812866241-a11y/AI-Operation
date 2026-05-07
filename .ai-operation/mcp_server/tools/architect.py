@@ -34,6 +34,7 @@ from .bypass import register_bypass_tools
 from .audit import register_audit_tools
 from .scan import register_scan_tools
 from .design import register_design_tools
+from .skill_lock import register_skill_lock_tools
 
 
 def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
@@ -62,3 +63,4 @@ def register_architect_tools(mcp: FastMCP, audit_fn=None, loop_check_fn=None):
     register_audit_tools(mcp, _audit, _loop_guard)
     register_scan_tools(mcp, _audit, _loop_guard)
     register_design_tools(mcp, _audit, _loop_guard)
+    register_skill_lock_tools(mcp, _audit, _loop_guard)

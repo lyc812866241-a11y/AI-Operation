@@ -30,7 +30,9 @@
         "aio__rule_monitor",
         "aio__extract_skill",
         "aio__scan_codebase",
-        "aio__audit_project_map"
+        "aio__audit_project_map",
+        "aio__skill_invoke",
+        "aio__skill_complete"
       ]
     },
     "markitdown": {
