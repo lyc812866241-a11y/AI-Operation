@@ -11,6 +11,7 @@ __all__ = [
     "USER_FRAMEWORK_DIR", "ensure_user_wisdom",
     "DETAILS_DIR", "MCP_COMMIT_FLAG",
     "TASKSPEC_DIR", "TASKSPEC_FILE", "TASKSPEC_APPROVED_FLAG",
+    "TASKSPEC_PROPOSED_FLAG",
     "FAST_TRACK_FLAG", "SAVE_STAGING_FILE", "BYPASS_DIR",
     "SAVE_HISTORY_DIR", "SNAPSHOT_RETAIN_COUNT",
     # Size limits
@@ -73,6 +74,7 @@ MCP_COMMIT_FLAG = Path(".ai-operation/.mcp_commit_flag")
 TASKSPEC_DIR = Path(".ai-operation/docs")
 TASKSPEC_FILE = TASKSPEC_DIR / "taskSpec.md"
 TASKSPEC_APPROVED_FLAG = Path(".ai-operation/.taskspec_approved")
+TASKSPEC_PROPOSED_FLAG = Path(".ai-operation/.taskspec_proposed")
 FAST_TRACK_FLAG = Path(".ai-operation/.fast_track")
 SAVE_STAGING_FILE = Path(".ai-operation/.save_staging.json")
 BYPASS_DIR = Path(".ai-operation/.bypasses")  # Per-rule bypass flags

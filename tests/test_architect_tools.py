@@ -152,7 +152,7 @@ class TestSaveValidation(unittest.TestCase, TestSetup):
 
 
 class TestTaskSpecWorkflow(unittest.TestCase, TestSetup):
-    """Test the taskSpec submit → approve → flag lifecycle."""
+    """Test the taskSpec propose → submit → approve → flag lifecycle."""
 
     def setUp(self):
         self.create_temp_project()
@@ -172,7 +172,33 @@ class TestTaskSpecWorkflow(unittest.TestCase, TestSetup):
     def tearDown(self):
         self.cleanup_temp_project()
 
+    def _seed_propose(self, ids=("A", "B")):
+        """Helper: write a default propose flag so submit can pass the gate.
+
+        Tests that focus on submit/approve flow use this to bypass the
+        propose-required gate without going through the full propose tool.
+        Tests that focus on the propose gate itself should NOT call this.
+        """
+        from tools.constants import TASKSPEC_PROPOSED_FLAG
+        TASKSPEC_PROPOSED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        proposals = [
+            {"id": pid, "label": f"option {pid}",
+             "approach": f"approach {pid}",
+             "tradeoffs": f"tradeoffs {pid}"}
+            for pid in ids
+        ]
+        TASKSPEC_PROPOSED_FLAG.write_text(
+            json.dumps({
+                "timestamp": "2026-05-09 12:00",
+                "user_intent": "test seed",
+                "proposal_ids": list(ids),
+                "proposals": proposals,
+            }, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
     def test_submit_creates_taskspec_file(self):
+        self._seed_propose()
         result = self.tools["aio__force_taskspec_submit"](
             task_goal="Add user authentication",
             scope_and_impact="src/auth/ module",
@@ -180,14 +206,22 @@ class TestTaskSpecWorkflow(unittest.TestCase, TestSetup):
             technical_constraints="Use bcrypt, no plaintext",
             acceptance_criteria="pytest tests/test_auth.py passes",
             doc_impact="systemPatterns.md needs auth module entry",
+            chosen_proposal_id="A",
         )
         self.assertIn("SUCCESS", result)
         self.assertTrue(Path(".ai-operation/docs/taskSpec.md").exists())
         content = Path(".ai-operation/docs/taskSpec.md").read_text()
         self.assertIn("PENDING APPROVAL", content)
         self.assertIn("Add user authentication", content)
+        # Chosen proposal should be embedded as section 0
+        self.assertIn("Chosen Proposal", content)
+        self.assertIn("[A]", content)
+        # Propose flag must be consumed on successful submit
+        from tools.constants import TASKSPEC_PROPOSED_FLAG
+        self.assertFalse(TASKSPEC_PROPOSED_FLAG.exists())
 
     def test_submit_rejects_empty_fields(self):
+        # Empty-field check fires before propose gate, no seed needed
         result = self.tools["aio__force_taskspec_submit"](
             task_goal="",
             scope_and_impact="something",
@@ -199,14 +233,9 @@ class TestTaskSpecWorkflow(unittest.TestCase, TestSetup):
         self.assertIn("REJECTED", result)
         self.assertIn("task_goal", result)
 
-    def test_approve_requires_taskspec_exists(self):
-        result = self.tools["aio__force_taskspec_approve"](user_said="批准")
-        self.assertIn("REJECTED", result)
-        self.assertIn("No taskSpec found", result)
-
-    def test_approve_validates_approval_signal(self):
-        # First submit
-        self.tools["aio__force_taskspec_submit"](
+    def test_submit_rejects_without_propose_flag(self):
+        """Default flow: submit must follow a prior propose call."""
+        result = self.tools["aio__force_taskspec_submit"](
             task_goal="Test",
             scope_and_impact="Test",
             files_to_modify="test.py",
@@ -214,12 +243,58 @@ class TestTaskSpecWorkflow(unittest.TestCase, TestSetup):
             acceptance_criteria="test",
             doc_impact="NONE",
         )
-        # Try with invalid signal
+        self.assertIn("BYPASSABLE", result)
+        self.assertIn("no_prior_propose", result)
+
+    def test_submit_rejects_invalid_chosen_id(self):
+        self._seed_propose(ids=("A", "B"))
+        result = self.tools["aio__force_taskspec_submit"](
+            task_goal="Test",
+            scope_and_impact="Test",
+            files_to_modify="test.py",
+            technical_constraints="none",
+            acceptance_criteria="test",
+            doc_impact="NONE",
+            chosen_proposal_id="Z",
+        )
+        self.assertIn("REJECTED", result)
+        self.assertIn("'Z' not in proposed list", result)
+
+    def test_submit_rejects_missing_chosen_id_when_proposed(self):
+        self._seed_propose(ids=("A", "B"))
+        result = self.tools["aio__force_taskspec_submit"](
+            task_goal="Test",
+            scope_and_impact="Test",
+            files_to_modify="test.py",
+            technical_constraints="none",
+            acceptance_criteria="test",
+            doc_impact="NONE",
+        )
+        self.assertIn("REJECTED", result)
+        self.assertIn("chosen_proposal_id is required", result)
+
+    def test_approve_requires_taskspec_exists(self):
+        result = self.tools["aio__force_taskspec_approve"](user_said="批准")
+        self.assertIn("REJECTED", result)
+        self.assertIn("No taskSpec found", result)
+
+    def test_approve_validates_approval_signal(self):
+        self._seed_propose()
+        self.tools["aio__force_taskspec_submit"](
+            task_goal="Test",
+            scope_and_impact="Test",
+            files_to_modify="test.py",
+            technical_constraints="none",
+            acceptance_criteria="test",
+            doc_impact="NONE",
+            chosen_proposal_id="A",
+        )
         result = self.tools["aio__force_taskspec_approve"](user_said="我不确定")
         self.assertIn("REJECTED", result)
         self.assertIn("does not look like an approval", result)
 
     def test_approve_creates_flag(self):
+        self._seed_propose()
         self.tools["aio__force_taskspec_submit"](
             task_goal="Test feature",
             scope_and_impact="Test",
@@ -227,22 +302,39 @@ class TestTaskSpecWorkflow(unittest.TestCase, TestSetup):
             technical_constraints="none",
             acceptance_criteria="test passes",
             doc_impact="NONE",
+            chosen_proposal_id="A",
         )
         result = self.tools["aio__force_taskspec_approve"](user_said="批准")
         self.assertIn("SUCCESS", result)
         self.assertTrue(Path(".ai-operation/.taskspec_approved").exists())
 
     def test_full_lifecycle(self):
-        """Submit → approve → verify flag → clear on save simulation."""
-        # Submit
-        self.tools["aio__force_taskspec_submit"](
-            task_goal="Full lifecycle test",
-            scope_and_impact="Tests",
-            files_to_modify="test.py",
-            technical_constraints="none",
-            acceptance_criteria="passes",
-            doc_impact="NONE",
+        """Propose → submit → approve → verify flag → clear on save simulation."""
+        # Propose
+        propose_result = self.tools["aio__force_taskspec_propose"](
+            user_intent="Add a logout endpoint",
+            proposals=json.dumps([
+                {"id": "A", "label": "Stateless JWT revocation",
+                 "approach": "Add a token blacklist with TTL",
+                 "tradeoffs": "需要 redis,但不破坏现有 JWT 流程"},
+                {"id": "B", "label": "Switch to session tokens",
+                 "approach": "Replace JWT with server sessions",
+                 "tradeoffs": "更彻底但要改所有客户端"},
+            ]),
         )
+        self.assertIn("SUCCESS", propose_result)
+        self.assertTrue(Path(".ai-operation/.taskspec_proposed").exists())
+        # Submit with choice
+        submit_result = self.tools["aio__force_taskspec_submit"](
+            task_goal="Add logout endpoint",
+            scope_and_impact="Auth module",
+            files_to_modify="src/auth/logout.py",
+            technical_constraints="redis required",
+            acceptance_criteria="logout invalidates token",
+            doc_impact="NONE",
+            chosen_proposal_id="A",
+        )
+        self.assertIn("SUCCESS", submit_result)
         # Approve
         self.tools["aio__force_taskspec_approve"](user_said="approved")
         self.assertTrue(Path(".ai-operation/.taskspec_approved").exists())
@@ -251,6 +343,116 @@ class TestTaskSpecWorkflow(unittest.TestCase, TestSetup):
         flag = Path(".ai-operation/.taskspec_approved")
         flag.unlink()
         self.assertFalse(flag.exists())
+
+
+class TestTaskSpecPropose(unittest.TestCase, TestSetup):
+    """Test the new aio__force_taskspec_propose tool (议题 #014 v3)."""
+
+    def setUp(self):
+        self.create_temp_project()
+        self.tools = {}
+
+        def capture_tool():
+            def decorator(fn):
+                self.tools[fn.__name__] = fn
+                return fn
+            return decorator
+
+        mcp = MagicMock()
+        mcp.tool = capture_tool
+        from tools.architect import register_architect_tools
+        register_architect_tools(mcp)
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def _two_valid_proposals(self):
+        return json.dumps([
+            {"id": "A", "label": "Approach A", "approach": "Do A",
+             "tradeoffs": "trade A"},
+            {"id": "B", "label": "Approach B", "approach": "Do B",
+             "tradeoffs": "trade B"},
+        ])
+
+    def test_propose_rejects_empty_intent(self):
+        result = self.tools["aio__force_taskspec_propose"](
+            user_intent="",
+            proposals=self._two_valid_proposals(),
+        )
+        self.assertIn("REJECTED", result)
+        self.assertIn("user_intent", result)
+
+    def test_propose_rejects_invalid_json(self):
+        result = self.tools["aio__force_taskspec_propose"](
+            user_intent="add a thing",
+            proposals="not json at all",
+        )
+        self.assertIn("REJECTED", result)
+        self.assertIn("valid JSON", result)
+
+    def test_propose_rejects_non_list_payload(self):
+        result = self.tools["aio__force_taskspec_propose"](
+            user_intent="add a thing",
+            proposals=json.dumps({"id": "A"}),
+        )
+        self.assertIn("REJECTED", result)
+        self.assertIn("must be a JSON list", result)
+
+    def test_propose_rejects_single_proposal(self):
+        result = self.tools["aio__force_taskspec_propose"](
+            user_intent="add a thing",
+            proposals=json.dumps([
+                {"id": "A", "label": "only", "approach": "do",
+                 "tradeoffs": "n/a"},
+            ]),
+        )
+        self.assertIn("REJECTED", result)
+        self.assertIn("at least 2 proposals", result)
+
+    def test_propose_rejects_missing_field(self):
+        result = self.tools["aio__force_taskspec_propose"](
+            user_intent="add a thing",
+            proposals=json.dumps([
+                {"id": "A", "label": "x", "approach": "do A", "tradeoffs": "t"},
+                {"id": "B", "label": "y", "approach": "do B"},  # missing tradeoffs
+            ]),
+        )
+        self.assertIn("REJECTED", result)
+        self.assertIn("tradeoffs", result)
+
+    def test_propose_rejects_duplicate_ids(self):
+        result = self.tools["aio__force_taskspec_propose"](
+            user_intent="add a thing",
+            proposals=json.dumps([
+                {"id": "A", "label": "x", "approach": "a", "tradeoffs": "t"},
+                {"id": "A", "label": "y", "approach": "b", "tradeoffs": "t"},
+            ]),
+        )
+        self.assertIn("REJECTED", result)
+        self.assertIn("duplicate proposal id", result)
+
+    def test_propose_creates_flag_with_payload(self):
+        result = self.tools["aio__force_taskspec_propose"](
+            user_intent="add login",
+            proposals=self._two_valid_proposals(),
+        )
+        self.assertIn("SUCCESS", result)
+        from tools.constants import TASKSPEC_PROPOSED_FLAG
+        self.assertTrue(TASKSPEC_PROPOSED_FLAG.exists())
+        payload = json.loads(TASKSPEC_PROPOSED_FLAG.read_text(encoding="utf-8"))
+        self.assertEqual(payload["proposal_ids"], ["A", "B"])
+        self.assertEqual(payload["user_intent"], "add login")
+
+    def test_propose_invalidates_prior_approval(self):
+        """A new propose cycle clears any stale approve flag from prior task."""
+        from tools.constants import TASKSPEC_APPROVED_FLAG
+        TASKSPEC_APPROVED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        TASKSPEC_APPROVED_FLAG.write_text("stale", encoding="utf-8")
+        self.tools["aio__force_taskspec_propose"](
+            user_intent="new task",
+            proposals=self._two_valid_proposals(),
+        )
+        self.assertFalse(TASKSPEC_APPROVED_FLAG.exists())
 
 
 class TestTrustScore(unittest.TestCase, TestSetup):

@@ -46,4 +46,4 @@
 | 学到教训 / 被纠正 / 踩坑 | `.ai-operation/skills/lesson-distill/SKILL.md` |
 | 完成子步骤 / 做出决策 / 发现卡点 | `.ai-operation/skills/state-checkpoint/SKILL.md` |
 | [提取契约] / 反推契约(接管已有项目) | `.ai-operation/skills/conventions-extract/SKILL.md` |
-| 功能开发 | `aio__force_taskspec_submit` → `_approve` → 执行 → [存档] |
+| [提需] / 功能开发 | `aio__force_taskspec_propose`(列 ≥2 方案带 trade-off)→ 用户选 id → `aio__force_taskspec_submit`(传 chosen_proposal_id)→ `_approve` → 执行 → [存档] |

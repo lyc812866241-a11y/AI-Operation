@@ -164,7 +164,138 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
 
     # ===============================================================
     # TaskSpec Workflow Enforcement (升级第 1 层软约束为硬约束)
+    # 议题 #014 v3:补 propose 阶段(用户审单方案 → 平行候选选择)
     # ===============================================================
+
+    @mcp.tool()
+    def aio__force_taskspec_propose(
+        user_intent: str,
+        proposals: str,
+    ) -> str:
+        """
+        [ENFORCEMENT TOOL] List ≥2 candidate proposals before taskspec_submit.
+
+        This tool MUST be called FIRST when the user issues [提需] or 功能开发.
+        Purpose: protect user's taste judgment by forcing parallel candidates
+        with explicit trade-offs, instead of the AI compressing into a single
+        spec that the user can only accept/reject in series.
+
+        After calling this tool, the AI must wait for the user to choose one
+        proposal, then call aio__force_taskspec_submit with chosen_proposal_id.
+
+        Args:
+            user_intent: The user's original natural-language request.
+            proposals: JSON list of >=2 candidates. Each item must have:
+                {"id": "A"|"B"|..., "label": str, "approach": str, "tradeoffs": str}
+                All four fields non-empty. Example:
+                [
+                  {"id":"A","label":"Email+password","approach":"...","tradeoffs":"..."},
+                  {"id":"B","label":"OAuth only","approach":"...","tradeoffs":"..."}
+                ]
+
+        Returns:
+            Formatted proposal sheet for user to choose from.
+        """
+        import datetime
+        import json
+
+        _audit("aio__force_taskspec_propose", "CALLED", user_intent[:100] if user_intent else "")
+
+        loop_msg = _loop_guard("aio__force_taskspec_propose", user_intent[:100] if user_intent else "")
+        if loop_msg and "BLOCKED" in loop_msg:
+            return loop_msg
+
+        # Validate user_intent
+        if not user_intent or not user_intent.strip():
+            return "REJECTED: user_intent cannot be empty. Pass the user's original request."
+
+        # Parse proposals JSON
+        if not proposals or not proposals.strip():
+            return "REJECTED: proposals cannot be empty. Pass a JSON list of >=2 candidates."
+
+        try:
+            parsed = json.loads(proposals)
+        except json.JSONDecodeError as e:
+            return (
+                f"REJECTED: proposals must be valid JSON. Parse error: {str(e)[:120]}\n\n"
+                f"Expected format:\n"
+                f'  [{{"id":"A","label":"...","approach":"...","tradeoffs":"..."}}, ...]'
+            )
+
+        if not isinstance(parsed, list):
+            return "REJECTED: proposals must be a JSON list (array), got " + type(parsed).__name__
+
+        # Enforce >= 2 candidates (taste needs comparison anchors)
+        if len(parsed) < 2:
+            return (
+                f"REJECTED: must list at least 2 proposals (got {len(parsed)}).\n"
+                f"Single-option tasks should go through aio__force_fast_track instead.\n"
+                f"Taste judgment needs parallel comparison anchors -- one option = no choice."
+            )
+
+        # Validate each proposal has all 4 required fields, non-empty
+        REQUIRED_FIELDS = ("id", "label", "approach", "tradeoffs")
+        seen_ids = set()
+        for i, item in enumerate(parsed):
+            if not isinstance(item, dict):
+                return f"REJECTED: proposals[{i}] must be an object, got {type(item).__name__}"
+            for fld in REQUIRED_FIELDS:
+                v = item.get(fld)
+                if not v or not isinstance(v, str) or not v.strip():
+                    return (
+                        f"REJECTED: proposals[{i}].{fld} missing or empty. "
+                        f"All 4 fields ({', '.join(REQUIRED_FIELDS)}) are mandatory."
+                    )
+            pid = item["id"].strip()
+            if pid in seen_ids:
+                return f"REJECTED: duplicate proposal id '{pid}'. Each proposal needs a unique id."
+            seen_ids.add(pid)
+
+        # Build the proposal sheet for user
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        sheet_parts = [
+            f"# TaskSpec Proposals\n",
+            f"> Generated: {timestamp}\n",
+            f"> Status: **AWAITING USER CHOICE**\n",
+            f"\n## User Intent\n{user_intent.strip()}\n",
+            f"\n## Candidates ({len(parsed)})\n",
+        ]
+        for item in parsed:
+            sheet_parts.append(
+                f"\n### [{item['id'].strip()}] {item['label'].strip()}\n"
+                f"**Approach**: {item['approach'].strip()}\n\n"
+                f"**Trade-offs**: {item['tradeoffs'].strip()}\n"
+            )
+        sheet = "".join(sheet_parts)
+
+        # Persist proposed flag (single-use; consumed on submit success)
+        TASKSPEC_PROPOSED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        flag_payload = {
+            "timestamp": timestamp,
+            "user_intent": user_intent.strip(),
+            "proposal_ids": [item["id"].strip() for item in parsed],
+            "proposals": parsed,
+        }
+        TASKSPEC_PROPOSED_FLAG.write_text(
+            json.dumps(flag_payload, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        # Clear any prior approval flag (new proposal cycle invalidates old approval)
+        if TASKSPEC_APPROVED_FLAG.exists():
+            TASKSPEC_APPROVED_FLAG.unlink()
+
+        _audit("aio__force_taskspec_propose", "SUCCESS",
+               f"intent={user_intent[:50]}, n={len(parsed)}")
+
+        return (
+            f"SUCCESS: {len(parsed)} proposals listed for user choice.\n\n"
+            f"{sheet}\n"
+            f"---\n"
+            f"[PAUSE] Waiting for user to choose one proposal id (e.g. 'A' or 'B').\n"
+            f"After user picks, call aio__force_taskspec_submit with "
+            f"chosen_proposal_id=<picked_id> + the 6 spec sections."
+        )
 
     @mcp.tool()
     def aio__force_taskspec_submit(
@@ -174,6 +305,7 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
         technical_constraints: str,
         acceptance_criteria: str,
         doc_impact: str,
+        chosen_proposal_id: str = "",
         dry_run: str = "",
     ) -> str:
         """
@@ -196,12 +328,17 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
             technical_constraints: Limitations (dependencies, performance, isolation).
             acceptance_criteria: Specific test steps to verify completion.
             doc_impact: Which project_map docs need updating. "NONE" if no impact.
+            chosen_proposal_id: Which proposal id (e.g. "A") the user picked from
+                the prior aio__force_taskspec_propose call. Must match an id in
+                the active proposed flag. BYPASSABLE if no proposal was ever made
+                (e.g. routing through fast_track context).
             dry_run: Set to "true" to validate without writing. Returns all violations at once.
 
         Returns:
             The formatted taskSpec for user review, or dry-run validation report.
         """
         import datetime
+        import json
         import re
 
         is_dry_run = dry_run.strip().lower() == "true" if dry_run else False
@@ -282,6 +419,75 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
             if not value or not value.strip():
                 return f"REJECTED: {name} cannot be empty. All 6 taskSpec sections are mandatory."
 
+        # -- Propose flag gate (议题 #014 v3) --------------------
+        # Default: submit must follow a prior aio__force_taskspec_propose call.
+        # BYPASSABLE rule -- user can authorize bypass for cases where parallel
+        # candidates do not apply (e.g. mechanical fix that escalates beyond
+        # fast_track but truly has only one reasonable path).
+        RULE_NO_PROPOSE = "taskspec.no_prior_propose"
+        RULE_INVALID_PROPOSAL_ID = "taskspec.invalid_proposal_id"
+        chosen_label = ""
+        chosen_approach = ""
+
+        if TASKSPEC_PROPOSED_FLAG.exists():
+            try:
+                payload = json.loads(TASKSPEC_PROPOSED_FLAG.read_text(encoding="utf-8"))
+                proposal_ids = payload.get("proposal_ids", [])
+                proposals_list = payload.get("proposals", [])
+            except (json.JSONDecodeError, OSError):
+                # Corrupt flag -- treat as missing
+                proposal_ids = []
+                proposals_list = []
+
+            cid = (chosen_proposal_id or "").strip()
+            if not cid:
+                return (
+                    f"REJECTED: chosen_proposal_id is required when a propose flag is active.\n"
+                    f"Available ids: {proposal_ids}\n"
+                    f"Pass the id the user picked (e.g. chosen_proposal_id=\"A\")."
+                )
+            if cid not in proposal_ids:
+                if is_monitor_rule(RULE_INVALID_PROPOSAL_ID):
+                    _audit("aio__force_taskspec_submit", "MONITOR",
+                           f"rule={RULE_INVALID_PROPOSAL_ID}, cid={cid}")
+                elif has_bypass(RULE_INVALID_PROPOSAL_ID):
+                    _audit("aio__force_taskspec_submit", "BYPASSED",
+                           f"rule={RULE_INVALID_PROPOSAL_ID}")
+                    clear_bypass(RULE_INVALID_PROPOSAL_ID)
+                else:
+                    return (
+                        f"REJECTED: chosen_proposal_id '{cid}' not in proposed list {proposal_ids}.\n"
+                        f"Either pass a valid id or call aio__force_taskspec_propose again "
+                        f"with the user's actual choice."
+                    )
+            else:
+                # Capture chosen proposal's label + approach for spec header
+                for item in proposals_list:
+                    if isinstance(item, dict) and item.get("id", "").strip() == cid:
+                        chosen_label = (item.get("label") or "").strip()
+                        chosen_approach = (item.get("approach") or "").strip()
+                        break
+        else:
+            # No propose flag -- BYPASSABLE rule
+            if is_monitor_rule(RULE_NO_PROPOSE):
+                _audit("aio__force_taskspec_submit", "MONITOR", f"rule={RULE_NO_PROPOSE}")
+            elif has_bypass(RULE_NO_PROPOSE):
+                _audit("aio__force_taskspec_submit", "BYPASSED", f"rule={RULE_NO_PROPOSE}")
+                clear_bypass(RULE_NO_PROPOSE)
+            else:
+                _audit("aio__force_taskspec_submit", "BYPASSABLE", "no prior propose")
+                return (
+                    f"BYPASSABLE: no prior aio__force_taskspec_propose call detected.\n"
+                    f"Rule: {RULE_NO_PROPOSE}\n\n"
+                    f"Default flow: [提需] -> propose (>=2 candidates) -> user picks "
+                    f"-> submit -> approve.\n\n"
+                    f"Option 1: Call aio__force_taskspec_propose first with >=2 candidates, "
+                    f"wait for user's pick, then resubmit with chosen_proposal_id.\n"
+                    f"Option 2: Use aio__force_fast_track if change is trivial enough.\n"
+                    f"Option 3: Ask user to authorize bypass -> call aio__bypass_violation(\n"
+                    f"  rule_code=\"{RULE_NO_PROPOSE}\", user_said=\"<user's exact words>\")"
+                )
+
         # -- Sub-task self-containment check ----------------------
         # files_to_modify must contain actual file paths, not vague descriptions.
         # This enforces "synthesize, don't delegate" -- every sub-task must be specific.
@@ -340,11 +546,21 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
 
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
+        # Optional chosen-proposal header (议题 #014 v3)
+        chosen_section = ""
+        if chosen_label or chosen_approach:
+            chosen_section = (
+                f"## 0. Chosen Proposal\n"
+                f"**[{(chosen_proposal_id or '').strip()}] {chosen_label}**\n\n"
+                f"{chosen_approach}\n\n"
+            )
+
         # Build the taskSpec document
         spec_content = (
             f"# Task Specification\n\n"
             f"> Generated: {timestamp}\n"
             f"> Status: **PENDING APPROVAL**\n\n"
+            f"{chosen_section}"
             f"## 1. Task Goal\n{task_goal.strip()}\n\n"
             f"## 2. Scope & Impact\n{scope_and_impact.strip()}\n\n"
             f"## 3. Files to Modify\n{files_to_modify.strip()}\n\n"
@@ -360,6 +576,10 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
         # Clear any previous approval flag
         if TASKSPEC_APPROVED_FLAG.exists():
             TASKSPEC_APPROVED_FLAG.unlink()
+
+        # Consume the propose flag (single-use; new propose cycle for next task)
+        if TASKSPEC_PROPOSED_FLAG.exists():
+            TASKSPEC_PROPOSED_FLAG.unlink()
 
         return (
             f"SUCCESS: TaskSpec submitted for approval.\n\n"
