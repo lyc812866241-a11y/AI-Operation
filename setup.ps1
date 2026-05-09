@@ -913,6 +913,29 @@ if (Test-Path $CLAUDE_HOOKS_SRC) {
     Write-Warn "Claude hooks template not found — skipping"
 }
 
+# -- Step 7.5: Activate rule injection pipeline (议题 #014 v3.5) --
+Write-Step "Step 7.5/8: Activating rule injection pipeline (Claude Code adapter)"
+
+$RULE_INJECTION_DIR = Join-Path $INSTALL_DIR ".ai-operation\rule_injection"
+if (Test-Path $RULE_INJECTION_DIR) {
+    $cliScript = Join-Path $RULE_INJECTION_DIR "cli.py"
+    try {
+        & $VENV_PYTHON $cliScript install claude_code | Out-Null
+        $statusOut = & $VENV_PYTHON $cliScript status claude_code 2>&1
+        if ($statusOut -match '"installed":\s*true') {
+            Write-Ok "Rule injection pipeline ACTIVE for Claude Code (~/.claude/settings.json)"
+            Write-Info "  Each user prompt now gets the language-style rule paper auto-injected."
+            Write-Info "  Uninstall:  $VENV_PYTHON $cliScript uninstall claude_code"
+        } else {
+            Write-Warn "Rule injection install reported success but status check failed"
+        }
+    } catch {
+        Write-Warn "Rule injection install failed: $_"
+    }
+} else {
+    Write-Warn "rule_injection directory not found at $RULE_INJECTION_DIR — skipping"
+}
+
 # -- Step 8: Summary --
 Write-Step "Step 8/8: IDE rule files check"
 

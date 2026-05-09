@@ -936,6 +936,29 @@ else
     print_warn "Claude hooks template not found — skipping"
 fi
 
+# ── Step 7.5: Activate rule injection pipeline (议题 #014 v3.5) ──────────────
+print_step "Step 7.5/9: Activating rule injection pipeline (Claude Code adapter)"
+
+RULE_INJECTION_DIR="$SCRIPT_DIR/.ai-operation/rule_injection"
+if [ -d "$RULE_INJECTION_DIR" ]; then
+    if "$VENV_PYTHON" "$RULE_INJECTION_DIR/cli.py" install claude_code 2>/tmp/aio_ri_err; then
+        STATUS_LINE=$(grep -o '"status": "[^"]*"' /tmp/aio_ri_err 2>/dev/null || echo "")
+        # status output goes to stdout from the cli; re-run status for a clean signal
+        if "$VENV_PYTHON" "$RULE_INJECTION_DIR/cli.py" status claude_code | grep -q '"installed": true'; then
+            print_ok "Rule injection pipeline ACTIVE for Claude Code (~/.claude/settings.json)"
+            print_info "  Each user prompt now gets the language-style rule paper auto-injected."
+            print_info "  Uninstall:  $VENV_PYTHON $RULE_INJECTION_DIR/cli.py uninstall claude_code"
+        else
+            print_warn "Rule injection install reported success but status check failed"
+        fi
+    else
+        print_warn "Rule injection install failed (see /tmp/aio_ri_err for details)"
+    fi
+    rm -f /tmp/aio_ri_err
+else
+    print_warn "rule_injection directory not found at $RULE_INJECTION_DIR — skipping"
+fi
+
 # ── Step 8: Install git hooks ────────────────────────────────────────────────
 print_step "Step 8/9: Installing git hooks"
 
