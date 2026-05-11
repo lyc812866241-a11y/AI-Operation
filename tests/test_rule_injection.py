@@ -104,6 +104,100 @@ class TestAdapterContract(unittest.TestCase):
 # Claude Code adapter tests (with mock settings file)
 # ============================================================
 
+class TestNoBomOnWrite(unittest.TestCase):
+    """议题 #021: framework writes must NEVER emit a UTF-8 BOM.
+
+    Why: PowerShell 5.1's default `Set-Content -Encoding UTF8` adds a BOM,
+    which strict JSON parsers in MCP hosts reject; on Chinese paths it
+    also unmasks code-page mangling. Our Python adapters write via
+    pathlib `write_text(..., encoding='utf-8')` which is BOM-free, but
+    test it explicitly so a future regression (e.g. someone passing
+    `encoding='utf-8-sig'`) gets caught immediately.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp(prefix="aio_bom_test_")
+        self.mock_settings = Path(self.tmpdir) / "settings.json"
+        self._old_env = os.environ.get("CLAUDE_CODE_SETTINGS")
+        os.environ["CLAUDE_CODE_SETTINGS"] = str(self.mock_settings)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+        if self._old_env is not None:
+            os.environ["CLAUDE_CODE_SETTINGS"] = self._old_env
+        else:
+            os.environ.pop("CLAUDE_CODE_SETTINGS", None)
+
+    @staticmethod
+    def _has_bom(path):
+        b = Path(path).read_bytes()
+        return len(b) >= 3 and b[0] == 0xEF and b[1] == 0xBB and b[2] == 0xBF
+
+    def test_claude_adapter_install_writes_no_bom(self):
+        from rule_injection.adapters.claude_code import ClaudeCodeAdapter
+        ClaudeCodeAdapter().install()
+        self.assertTrue(self.mock_settings.exists())
+        self.assertFalse(
+            self._has_bom(self.mock_settings),
+            f"settings.json written with BOM -- 议题 #021 regression"
+        )
+
+    def test_claude_adapter_install_chinese_path_writes_no_bom(self):
+        """Same check but with Chinese characters in the parent dir name."""
+        import shutil
+        chinese_dir = Path(self.tmpdir) / "测试目录"
+        chinese_dir.mkdir()
+        chinese_settings = chinese_dir / "settings.json"
+        os.environ["CLAUDE_CODE_SETTINGS"] = str(chinese_settings)
+        try:
+            from rule_injection.adapters.claude_code import ClaudeCodeAdapter
+            ClaudeCodeAdapter().install()
+            self.assertTrue(chinese_settings.exists())
+            self.assertFalse(
+                self._has_bom(chinese_settings),
+                f"settings.json under Chinese path written with BOM -- 议题 #021 regression"
+            )
+            # Verify the JSON is also re-parseable (no encoding mangling)
+            data = json.loads(chinese_settings.read_text(encoding="utf-8"))
+            self.assertIn("hooks", data)
+        finally:
+            os.environ["CLAUDE_CODE_SETTINGS"] = str(self.mock_settings)
+            shutil.rmtree(chinese_dir, ignore_errors=True)
+
+    def test_propose_flag_file_writes_no_bom(self):
+        """taskspec_proposed flag is JSON and gets read by submit gate."""
+        from tools.constants import TASKSPEC_PROPOSED_FLAG
+        # Simulate a propose-flag write (mimicking workflow.py's path).
+        proj = Path(self.tmpdir) / "proj"
+        proj.mkdir()
+        flag_dir = proj / ".ai-operation"
+        flag_dir.mkdir()
+        flag = flag_dir / ".taskspec_proposed"
+        flag.write_text(
+            json.dumps({"x": "测试中文", "proposal_ids": ["A", "B"]}, ensure_ascii=False),
+            encoding="utf-8"
+        )
+        self.assertFalse(
+            self._has_bom(flag),
+            "propose flag emitted with BOM -- 议题 #021 regression"
+        )
+
+    def test_taskspec_md_writes_no_bom(self):
+        """taskSpec.md gets written by submit and consumed by the hook gate."""
+        proj = Path(self.tmpdir) / "proj2"
+        proj.mkdir()
+        spec_dir = proj / ".ai-operation" / "docs"
+        spec_dir.mkdir(parents=True)
+        spec = spec_dir / "taskSpec.md"
+        spec.write_text("# Task Specification\n\n## 1. 目标\n测试中文\n",
+                        encoding="utf-8")
+        self.assertFalse(
+            self._has_bom(spec),
+            "taskSpec.md emitted with BOM -- 议题 #021 regression"
+        )
+
+
 class TestClaudeCodeAdapter(unittest.TestCase):
     """install/uninstall lifecycle against an isolated mock settings.json."""
 

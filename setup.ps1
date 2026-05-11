@@ -31,6 +31,75 @@ if ($Migrate) { $Update = $true }
 
 $ErrorActionPreference = "Stop"
 
+# ── UTF-8 No-BOM File I/O Helpers (议题 #021) ───────────────────────────────
+# PowerShell 5.1 has two quietly destructive defaults that cripple installs
+# under Chinese paths or strict JSON parsers:
+#   1. `Set-Content -Encoding UTF8` writes a BOM (3 bytes EF BB BF prefix).
+#      Strict JSON parsers (some MCP hosts) reject the file outright.
+#   2. `Set-Content` / `Get-Content` without -Encoding use the system code
+#      page (GBK on simplified-Chinese Windows). Round-tripping a UTF-8
+#      file through them mangles any non-ASCII bytes -- including Chinese
+#      project paths, which then break Claude Code's child-process launch.
+#
+# Every config-file write in this script MUST go through these helpers.
+# Force the console output encoding to UTF-8 too, so any text we emit to
+# stdout / stderr lines up with what the editor reads back.
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+
+function Write-Utf8NoBom {
+    param(
+        [Parameter(Mandatory=$true)][string]$Path,
+        [Parameter(Mandatory=$true)][AllowEmptyString()][string]$Content
+    )
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    # Ensure parent dir exists -- WriteAllText does not auto-create it.
+    $parent = Split-Path -Parent $Path
+    if ($parent -and -not (Test-Path -LiteralPath $parent)) {
+        New-Item -ItemType Directory -Path $parent -Force | Out-Null
+    }
+    [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
+}
+
+function Add-Utf8NoBom {
+    # Append text to an existing file, preserving / enforcing UTF-8 no-BOM.
+    param(
+        [Parameter(Mandatory=$true)][string]$Path,
+        [Parameter(Mandatory=$true)][string]$Content
+    )
+    $existing = ""
+    if (Test-Path -LiteralPath $Path) {
+        $existing = [System.IO.File]::ReadAllText($Path, [System.Text.Encoding]::UTF8)
+    }
+    Write-Utf8NoBom -Path $Path -Content ($existing + $Content)
+}
+
+function Read-Utf8 {
+    # Read a file as UTF-8 regardless of system code page or BOM state.
+    # .NET UTF8Encoding auto-strips a leading BOM.
+    param([Parameter(Mandatory=$true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return "" }
+    return [System.IO.File]::ReadAllText($Path, [System.Text.Encoding]::UTF8)
+}
+
+function Test-FileHasBom {
+    # True if the file starts with the UTF-8 BOM bytes (EF BB BF).
+    param([Parameter(Mandatory=$true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $false }
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    return ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+}
+
+function Repair-FileEncoding {
+    # If a file has a BOM, rewrite it without one. Idempotent.
+    # Returns $true if the file was repaired, $false if it was already clean
+    # (or missing).
+    param([Parameter(Mandatory=$true)][string]$Path)
+    if (-not (Test-FileHasBom -Path $Path)) { return $false }
+    $content = Read-Utf8 -Path $Path
+    Write-Utf8NoBom -Path $Path -Content $content
+    return $true
+}
+
 # -- Colors --
 function Write-Step($msg)  { Write-Host "`n>> $msg" -ForegroundColor Blue }
 function Write-Ok($msg)    { Write-Host "  [OK] $msg" -ForegroundColor Green }
@@ -189,7 +258,7 @@ print(f'OK:{n}')
                             }
                             $kept += $l
                         }
-                        ($kept -join "`n") + "`n" | Set-Content ".gitignore" -Encoding UTF8 -NoNewline
+                        Write-Utf8NoBom -Path ".gitignore" -Content (($kept -join "`n") + "`n")
                         Check-Pass "Auto-fixed: removed '$pattern' from .gitignore (was blocking project_map)"
                     } else {
                         # Broad rule - append whitelist
@@ -200,7 +269,7 @@ print(f'OK:{n}')
                         if ($hasWl) {
                             Check-Warn "broad rule '$pattern' blocks project_map but whitelist already present (may need manual review)"
                         } else {
-                            Add-Content ".gitignore" -Value $wl -Encoding UTF8
+                            Add-Utf8NoBom -Path ".gitignore" -Content "`n$wl`n"
                             Check-Pass "Auto-fixed: appended whitelist '$wl' (broad rule '$pattern' preserved)"
                         }
                     }
@@ -403,8 +472,9 @@ if ($Update) {
                 }
                 $pa.alwaysAllow = @($localAllow)
 
-                # Write LOCAL back (not upstream)
-                $localMcp | ConvertTo-Json -Depth 10 | Set-Content $mcpDst -Encoding UTF8 -NoNewline
+                # Write LOCAL back (not upstream). UTF-8 no BOM -- strict JSON
+                # parsers reject BOM-prefixed config (议题 #021).
+                Write-Utf8NoBom -Path $mcpDst -Content ($localMcp | ConvertTo-Json -Depth 10)
                 Write-Ok "Smart-merged .mcp.json (local preserved, alwaysAllow updated)"
             } catch {
                 Copy-Item $mcpSrc $mcpDst -Force
@@ -444,16 +514,16 @@ if ($Update) {
     # Create .session_confirmed so cognitive gate doesn't lock out the user
     $sessionFlag = Join-Path $INSTALL_DIR ".ai-operation\.session_confirmed"
     if (-not (Test-Path $sessionFlag)) {
-        Set-Content $sessionFlag "0" -NoNewline
+        Write-Utf8NoBom -Path $sessionFlag -Content "0"
         Write-Ok "Created session flag (cognitive gate unblocked)"
     }
 
     # Add SESSION_KEY to corrections.md if missing (required by cognitive gate)
     $corrections = Join-Path $INSTALL_DIR ".ai-operation\docs\project_map\corrections.md"
     if (Test-Path $corrections) {
-        $corrContent = Get-Content $corrections -Raw -Encoding UTF8
+        $corrContent = Read-Utf8 -Path $corrections
         if ($corrContent -notmatch "SESSION_KEY:") {
-            Add-Content $corrections "`n`nSESSION_KEY: init000" -Encoding UTF8
+            Add-Utf8NoBom -Path $corrections -Content "`n`nSESSION_KEY: init000`n"
             Write-Ok "Added SESSION_KEY to corrections.md"
         }
     }
@@ -553,7 +623,7 @@ print('OK')
             }
 
             # Leave pointer
-            Set-Content (Join-Path $OLD_PM "README.md") @"
+            Write-Utf8NoBom -Path (Join-Path $OLD_PM "README.md") -Content @"
 # Migrated
 Project map data has been migrated to .ai-operation/docs/project_map/
 This directory can be safely deleted.
@@ -576,7 +646,7 @@ This directory can be safely deleted.
         }
         if ($oldClaudeMd -and ($oldClaudeMd.Split("`n").Count -gt 70)) {
             $oldClaudeBak = Join-Path $BACKUP_DIR "CLAUDE.md.bak"
-            Set-Content $oldClaudeBak $oldClaudeMd -Encoding UTF8
+            Write-Utf8NoBom -Path $oldClaudeBak -Content $oldClaudeMd
             Write-Info "Recovered old CLAUDE.md from git history ($($oldClaudeMd.Split("`n").Count) lines)"
 
             # Extract custom sections using Python
@@ -804,9 +874,12 @@ $mcpConfigs = @(
 foreach ($configRelPath in $mcpConfigs) {
     $configPath = Join-Path $INSTALL_DIR $configRelPath
     if (Test-Path $configPath) {
-        $content = Get-Content $configPath -Raw
+        # 议题 #021: read as UTF-8 (not the system code page that mangles
+        # Chinese paths) and write back without BOM (so strict JSON parsers
+        # in MCP hosts accept it).
+        $content = Read-Utf8 -Path $configPath
         $content = $content.Replace("REPLACE_WITH_YOUR_VENV_PYTHON_PATH", $VENV_PYTHON_JSON)
-        Set-Content $configPath $content -NoNewline
+        Write-Utf8NoBom -Path $configPath -Content $content
         Write-Ok "$configRelPath updated"
     }
 }
@@ -906,7 +979,7 @@ if (Test-Path $CLAUDE_HOOKS_SRC) {
     # Create initial .session_confirmed so AI can run [初始化项目] on first use
     $sessionFlag = Join-Path $INSTALL_DIR ".ai-operation\.session_confirmed"
     if (-not (Test-Path $sessionFlag)) {
-        Set-Content $sessionFlag "0" -NoNewline
+        Write-Utf8NoBom -Path $sessionFlag -Content "0"
         Write-Ok "Initial session confirmed (allows first [初始化项目])"
     }
 } else {
@@ -947,6 +1020,35 @@ foreach ($rf in $ruleFiles) {
     } else {
         Write-Warn "$rf missing"
     }
+}
+
+# -- BOM audit (议题 #021) --
+# Strict JSON parsers in MCP hosts reject BOM-prefixed config files. Any
+# scaffold file that arrived with a leading BOM gets repaired here.
+Write-Step "BOM audit: scanning framework files"
+$bomAuditTargets = @(
+    ".mcp.json",
+    ".roo/mcp.json",
+    ".cursor/mcp.json",
+    ".windsurf/mcp.json",
+    ".clinerules",
+    "CLAUDE.md",
+    ".cursorrules",
+    ".windsurfrules",
+    ".gitignore"
+)
+$bomRepaired = 0
+foreach ($rel in $bomAuditTargets) {
+    $abs = Join-Path $INSTALL_DIR $rel
+    if (Repair-FileEncoding -Path $abs) {
+        $bomRepaired++
+        Write-Ok "Stripped BOM from $rel"
+    }
+}
+if ($bomRepaired -eq 0) {
+    Write-Ok "All framework files are BOM-free"
+} else {
+    Write-Ok "Repaired $bomRepaired file(s) with stray BOM"
 }
 
 # -- Done --

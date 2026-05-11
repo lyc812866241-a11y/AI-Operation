@@ -20,6 +20,37 @@
 
 set -e
 
+# ── Locale guard (议题 #021) ────────────────────────────────────────────────
+# Force a UTF-8 locale so `echo`, `cat`, `sed` and friends don't reinterpret
+# Chinese paths through the system code page. Most modern Linux / macOS
+# shells already default to UTF-8, but containers / CI sandboxes sometimes
+# inherit C / POSIX, which would mangle non-ASCII bytes the same way
+# Windows PowerShell 5.1 does.
+if ! locale charmap 2>/dev/null | grep -qi 'utf-8\|utf8'; then
+    for cand in C.UTF-8 en_US.UTF-8 zh_CN.UTF-8; do
+        if locale -a 2>/dev/null | grep -qi "^${cand}$"; then
+            export LC_ALL="$cand"
+            export LANG="$cand"
+            break
+        fi
+    done
+fi
+
+# ── BOM repair helper (议题 #021) ──────────────────────────────────────────
+# Strips a leading UTF-8 BOM from $1 if present. Idempotent.
+# Echoes "repaired <path>" on action, nothing otherwise.
+_aio_strip_bom() {
+    local f="$1"
+    [ -f "$f" ] || return 0
+    # Read first 3 bytes; BOM = EF BB BF (octal 357 273 277)
+    local head3
+    head3=$(head -c 3 "$f" 2>/dev/null | od -An -tx1 | tr -d ' \n')
+    if [ "$head3" = "efbbbf" ]; then
+        tail -c +4 "$f" > "$f.aio_nobom_tmp" && mv "$f.aio_nobom_tmp" "$f"
+        echo "repaired $f"
+    fi
+}
+
 # ── Parse arguments ─────────────────────────────────────────────────────────
 UPDATE_MODE=false
 MIGRATE_MODE=false
@@ -981,6 +1012,35 @@ for rf in "${RULE_FILES[@]}"; do
         print_warn "$rf missing"
     fi
 done
+
+# ── BOM audit (议题 #021) ───────────────────────────────────────────────────
+# Strict JSON parsers in MCP hosts reject BOM-prefixed config. Any
+# scaffold file that arrived with a leading BOM gets repaired here.
+print_step "BOM audit: scanning framework files"
+BOM_AUDIT_TARGETS=(
+    "$SCRIPT_DIR/.mcp.json"
+    "$SCRIPT_DIR/.roo/mcp.json"
+    "$SCRIPT_DIR/.cursor/mcp.json"
+    "$SCRIPT_DIR/.windsurf/mcp.json"
+    "$SCRIPT_DIR/.clinerules"
+    "$SCRIPT_DIR/CLAUDE.md"
+    "$SCRIPT_DIR/.cursorrules"
+    "$SCRIPT_DIR/.windsurfrules"
+    "$SCRIPT_DIR/.gitignore"
+)
+BOM_REPAIRED=0
+for f in "${BOM_AUDIT_TARGETS[@]}"; do
+    out=$(_aio_strip_bom "$f")
+    if [ -n "$out" ]; then
+        BOM_REPAIRED=$((BOM_REPAIRED + 1))
+        print_ok "$out"
+    fi
+done
+if [ "$BOM_REPAIRED" -eq 0 ]; then
+    print_ok "All framework files are BOM-free"
+else
+    print_ok "Repaired $BOM_REPAIRED file(s) with stray BOM"
+fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
