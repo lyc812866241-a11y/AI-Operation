@@ -12,6 +12,9 @@ __all__ = [
     "DETAILS_DIR", "MCP_COMMIT_FLAG",
     "TASKSPEC_DIR", "TASKSPEC_FILE", "TASKSPEC_APPROVED_FLAG",
     "TASKSPEC_PROPOSED_FLAG",
+    "ACCEPTANCE_PROPOSED_FLAG", "ACCEPTANCE_APPROVED_FLAG",
+    "ACCEPTANCE_VERIFIED_FLAG", "ACCEPTANCE_FIX_COUNTER_FLAG",
+    "ACCEPTANCE_FIX_HISTORY_FLAG", "ACCEPTANCE_MAX_FIX_ROUNDS",
     "FAST_TRACK_FLAG", "SAVE_STAGING_FILE", "BYPASS_DIR",
     "SAVE_HISTORY_DIR", "SNAPSHOT_RETAIN_COUNT",
     # Size limits
@@ -76,6 +79,17 @@ TASKSPEC_FILE = TASKSPEC_DIR / "taskSpec.md"
 TASKSPEC_APPROVED_FLAG = Path(".ai-operation/.taskspec_approved")
 TASKSPEC_PROPOSED_FLAG = Path(".ai-operation/.taskspec_proposed")
 FAST_TRACK_FLAG = Path(".ai-operation/.fast_track")
+
+# 议题 #022: 验收闭环(三层代理 VERIFIER 阶段)
+# 流程: AI 写完代码 -> acceptance_propose(列清单) -> 用户审 ->
+#       acceptance_approve(批准清单) -> acceptance_run(跑测试,失败循环 fix) ->
+#       全过写 VERIFIED_FLAG -> [存档] gate 放行
+ACCEPTANCE_PROPOSED_FLAG = Path(".ai-operation/.acceptance_proposed")
+ACCEPTANCE_APPROVED_FLAG = Path(".ai-operation/.acceptance_approved")
+ACCEPTANCE_VERIFIED_FLAG = Path(".ai-operation/.acceptance_verified")
+ACCEPTANCE_FIX_COUNTER_FLAG = Path(".ai-operation/.acceptance_fix_counter")
+ACCEPTANCE_FIX_HISTORY_FLAG = Path(".ai-operation/.acceptance_fix_history")
+ACCEPTANCE_MAX_FIX_ROUNDS = 3  # 失败循环 fix 上限,超过强制停下问用户
 SAVE_STAGING_FILE = Path(".ai-operation/.save_staging.json")
 BYPASS_DIR = Path(".ai-operation/.bypasses")  # Per-rule bypass flags
 SAVE_HISTORY_DIR = Path(".ai-operation/.save_history")  # Phase 2 snapshots for rollback
@@ -931,5 +945,16 @@ def git_commit_nonblocking(files_to_add: list, commit_msg: str, _audit_fn=None) 
                 TASKSPEC_APPROVED_FLAG.unlink()
             if FAST_TRACK_FLAG.exists():
                 FAST_TRACK_FLAG.unlink()
+            # 议题 #022: consume the whole acceptance closure on successful commit.
+            # The verified flag was the gate; the propose/approved/history flags
+            # are now stale (next taskspec will start a fresh acceptance cycle).
+            for _aflag in (ACCEPTANCE_VERIFIED_FLAG, ACCEPTANCE_APPROVED_FLAG,
+                           ACCEPTANCE_PROPOSED_FLAG, ACCEPTANCE_FIX_COUNTER_FLAG,
+                           ACCEPTANCE_FIX_HISTORY_FLAG):
+                if _aflag.exists():
+                    try:
+                        _aflag.unlink()
+                    except OSError:
+                        pass
 
     return git_status, git_diag

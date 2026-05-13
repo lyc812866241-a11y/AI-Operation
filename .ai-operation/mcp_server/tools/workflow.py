@@ -819,3 +819,417 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
             f"Change: {change_description.strip()[:200]}\n\n"
             f"You may proceed. Remember to run [存档] after completion."
         )
+
+    # ===============================================================
+    # Acceptance Closure (议题 #022 — 三层代理 VERIFIER 阶段)
+    # ===============================================================
+    # Flow:
+    #   acceptance_propose  -> AI lists what to verify (3 categories)
+    #   acceptance_approve  -> user signs off on the list
+    #   acceptance_run      -> AI runs the tests; on failure enters fix loop
+    #                          (counter-tracked, max 3 rounds, then forced stop)
+    #   verified flag       -> [存档] gate checks this; missing => save rejected
+    # Fast-track path is exempt (no taskspec => no acceptance required).
+
+    @mcp.tool()
+    def aio__force_acceptance_propose(
+        unit_tests: str,
+        integration_tests: str,
+        business_flow: str,
+    ) -> str:
+        """
+        [ENFORCEMENT TOOL] Propose an acceptance checklist after WORKER finishes code.
+
+        Must be called BEFORE the user can approve any acceptance, and BEFORE
+        running any verification. Three categories, all required (use "NONE: <reason>"
+        to explicitly skip a category — never an empty string).
+
+        Args:
+            unit_tests: Concrete test commands (one per line, e.g.
+                "python -m pytest tests/test_foo.py -v"). NONE: <reason> to skip.
+            integration_tests: Concrete module-level test commands. NONE: <reason> to skip.
+            business_flow: Natural-language description of the end-to-end user paths
+                to manually walk through (e.g. "1. login with new email
+                2. add item to cart 3. checkout via wechat pay 4. verify order
+                appears in history"). NONE: <reason> to skip.
+
+        Returns:
+            The formatted acceptance checklist for user review, or REJECTED.
+        """
+        import datetime
+        import json
+
+        _audit("aio__force_acceptance_propose", "CALLED")
+
+        loop_msg = _loop_guard("aio__force_acceptance_propose", unit_tests[:80] if unit_tests else "")
+        if loop_msg and "BLOCKED" in loop_msg:
+            return loop_msg
+
+        # Validate: each field must be non-empty (NONE allowed but must be explicit)
+        fields = {
+            "unit_tests": unit_tests,
+            "integration_tests": integration_tests,
+            "business_flow": business_flow,
+        }
+        for name, value in fields.items():
+            if not value or not value.strip():
+                return (
+                    f"REJECTED: {name} cannot be empty. "
+                    f"All 3 categories must be addressed. Use 'NONE: <reason>' "
+                    f"to explicitly skip a category."
+                )
+
+        # Reject "bare NONE" without reason (same pattern as save's NO_CHANGE_BECAUSE)
+        for name, value in fields.items():
+            stripped = value.strip()
+            if stripped.upper() == "NONE":
+                return (
+                    f"REJECTED: {name} is bare 'NONE'. "
+                    f"You must write 'NONE: <reason>' explaining WHY this category is skipped. "
+                    f"e.g. 'NONE: pure docs change, no code to test'"
+                )
+
+        # At least one category must have real content (not all NONE)
+        non_none_count = sum(
+            1 for v in fields.values() if not v.strip().upper().startswith("NONE")
+        )
+        if non_none_count == 0:
+            return (
+                "REJECTED: All 3 categories are skipped as NONE. "
+                "If truly nothing to verify, use aio__force_fast_track instead "
+                "(acceptance is for non-trivial changes)."
+            )
+
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        payload = {
+            "timestamp": timestamp,
+            "unit_tests": unit_tests.strip(),
+            "integration_tests": integration_tests.strip(),
+            "business_flow": business_flow.strip(),
+        }
+
+        # New propose cycle invalidates any prior approve/verified/fix state
+        for flag in (ACCEPTANCE_APPROVED_FLAG, ACCEPTANCE_VERIFIED_FLAG,
+                     ACCEPTANCE_FIX_COUNTER_FLAG, ACCEPTANCE_FIX_HISTORY_FLAG):
+            if flag.exists():
+                flag.unlink()
+
+        ACCEPTANCE_PROPOSED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        ACCEPTANCE_PROPOSED_FLAG.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        _audit("aio__force_acceptance_propose", "SUCCESS",
+               f"non_none={non_none_count}/3")
+
+        sheet = (
+            f"# Acceptance Checklist (议题 #022)\n\n"
+            f"> Generated: {timestamp}\n"
+            f"> Status: **AWAITING USER APPROVAL**\n\n"
+            f"## 1. Unit Tests\n{unit_tests.strip()}\n\n"
+            f"## 2. Integration Tests\n{integration_tests.strip()}\n\n"
+            f"## 3. Business Flow (manual walk-through)\n{business_flow.strip()}\n"
+        )
+
+        return (
+            f"SUCCESS: Acceptance checklist proposed.\n\n"
+            f"{sheet}\n"
+            f"---\n"
+            f"[PAUSE] Waiting for user approval. After user says '批准/ok go',\n"
+            f"call aio__force_acceptance_approve."
+        )
+
+    @mcp.tool()
+    def aio__force_acceptance_approve(user_said: str) -> str:
+        """
+        [ENFORCEMENT TOOL] Record user approval of the proposed acceptance checklist.
+
+        Must follow aio__force_acceptance_propose. Gates the acceptance_run tool.
+
+        Args:
+            user_said: Exact user approval text (e.g. "批准", "ok go", "approved").
+
+        Returns:
+            Approval confirmation or REJECTED.
+        """
+        import datetime
+
+        _audit("aio__force_acceptance_approve", "CALLED", user_said[:50] if user_said else "")
+
+        loop_msg = _loop_guard("aio__force_acceptance_approve", user_said[:50] if user_said else "")
+        if loop_msg and "BLOCKED" in loop_msg:
+            return loop_msg
+
+        if not ACCEPTANCE_PROPOSED_FLAG.exists():
+            return (
+                "REJECTED: No acceptance checklist proposed. "
+                "Call aio__force_acceptance_propose first."
+            )
+
+        approval_signals = ["批准", "approved", "ok go", "执行", "ok", "go",
+                            "yes", "可以", "同意"]
+        if not any(sig in (user_said or "").lower() for sig in approval_signals):
+            return (
+                f"REJECTED: '{user_said}' does not look like approval. "
+                f"Expected one of: {', '.join(approval_signals)}"
+            )
+
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        ACCEPTANCE_APPROVED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        ACCEPTANCE_APPROVED_FLAG.write_text(
+            f"approved|{timestamp}|{(user_said or '').strip()[:50]}",
+            encoding="utf-8",
+        )
+
+        _audit("aio__force_acceptance_approve", "SUCCESS")
+
+        return (
+            f"SUCCESS: Acceptance checklist APPROVED at {timestamp}.\n"
+            f"You may now call aio__force_acceptance_run to execute the verification.\n"
+            f"On failure, the tool will enter a fix loop (max {ACCEPTANCE_MAX_FIX_ROUNDS} rounds)."
+        )
+
+    @mcp.tool()
+    def aio__force_acceptance_run(
+        unit_test_cmd: str,
+        integration_test_cmd: str,
+        business_flow_result: str,
+    ) -> str:
+        """
+        [ENFORCEMENT TOOL] Run the approved acceptance checklist; manage fix loop.
+
+        Behavior:
+          - Requires aio__force_acceptance_approve already called.
+          - Runs unit_test_cmd + integration_test_cmd (NONE: <reason> to skip).
+          - Reads business_flow_result (AI-reported, since business flow can't be
+            auto-run). Must contain only success markers OR explicit failure markers.
+          - All three pass => write VERIFIED_FLAG, clear fix counter, return SUCCESS.
+          - Any failure => increment fix counter, append to history, return
+            FIX_LOOP_REQUIRED with failure details. Max 3 rounds; round 3 returns
+            FIX_LOOP_EXHAUSTED and refuses further attempts until user intervenes.
+
+        Args:
+            unit_test_cmd: Shell command to run unit tests (e.g.
+                "python -m pytest tests/foo -v"). "NONE: <reason>" to skip.
+            integration_test_cmd: Shell command for integration tests.
+                "NONE: <reason>" to skip.
+            business_flow_result: AI-reported result of manually walking the
+                business flow. MUST contain explicit "PASS" or "FAIL" markers
+                per step (e.g. "step 1: login PASS / step 2: checkout FAIL because ...").
+                "NONE: <reason>" to skip.
+
+        Returns:
+            One of: SUCCESS (verified), FIX_LOOP_REQUIRED (try again),
+            FIX_LOOP_EXHAUSTED (stop and ask user), REJECTED (preconditions wrong).
+        """
+        import datetime
+        import json
+
+        _audit("aio__force_acceptance_run", "CALLED")
+
+        loop_msg = _loop_guard("aio__force_acceptance_run", unit_test_cmd[:80] if unit_test_cmd else "")
+        if loop_msg and "BLOCKED" in loop_msg:
+            return loop_msg
+
+        # Gate 1: must have approved checklist
+        if not ACCEPTANCE_APPROVED_FLAG.exists():
+            return (
+                "REJECTED: No approved acceptance checklist. "
+                "Run aio__force_acceptance_propose -> aio__force_acceptance_approve first."
+            )
+
+        # Gate 2: check fix counter — if already exhausted, refuse to re-run
+        current_round = 0
+        if ACCEPTANCE_FIX_COUNTER_FLAG.exists():
+            try:
+                current_round = int(ACCEPTANCE_FIX_COUNTER_FLAG.read_text(encoding="utf-8").strip())
+            except (ValueError, OSError):
+                current_round = 0
+        if current_round >= ACCEPTANCE_MAX_FIX_ROUNDS:
+            history = ""
+            if ACCEPTANCE_FIX_HISTORY_FLAG.exists():
+                history = ACCEPTANCE_FIX_HISTORY_FLAG.read_text(encoding="utf-8")
+            return (
+                f"REJECTED: FIX_LOOP_EXHAUSTED — already used {current_round} fix rounds "
+                f"(max {ACCEPTANCE_MAX_FIX_ROUNDS}).\n\n"
+                f"Stop and ask the user how to proceed. Options:\n"
+                f"  1. User issues new taskspec for a different approach (counter resets)\n"
+                f"  2. User authorizes fast-track override\n"
+                f"  3. User explicitly resets counter (delete .acceptance_fix_counter)\n\n"
+                f"Fix history:\n{history}"
+            )
+
+        # Validate three input fields non-empty
+        fields = {
+            "unit_test_cmd": unit_test_cmd,
+            "integration_test_cmd": integration_test_cmd,
+            "business_flow_result": business_flow_result,
+        }
+        for name, value in fields.items():
+            if not value or not value.strip():
+                return (
+                    f"REJECTED: {name} cannot be empty. "
+                    f"Use 'NONE: <reason>' to skip a category."
+                )
+
+        # Helper: detect explicit "skip" markers without false-matching real commands
+        # that happen to start with the letters NONE (e.g. `nonexistent_xyz`).
+        def _is_skip_marker(s: str) -> bool:
+            u = (s or "").strip().upper()
+            return u == "NONE" or u.startswith("NONE:") or u.startswith("NONE ")
+
+        # Helper: run a shell test command
+        def _run_test(cmd: str) -> tuple:
+            """Returns (status, rc, stdout, stderr) where status in {'pass','fail','skip','env_error'}."""
+            stripped = cmd.strip()
+            if _is_skip_marker(stripped):
+                return ("skip", 0, f"(skipped: {stripped})", "")
+            # Forbid pipeline-wide commands (same gate as test_runner)
+            for kw in ("--all", "full_pipeline", "run_all", "test_everything"):
+                if kw in stripped.lower():
+                    return ("env_error", -1, "",
+                            f"REJECTED: contains '{kw}' (full pipeline forbidden)")
+            try:
+                result = subprocess.run(
+                    stripped.split(),
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                )
+                status = "pass" if result.returncode == 0 else "fail"
+                # Truncate output to keep return manageable
+                out = result.stdout[-2000:] if len(result.stdout) > 2000 else result.stdout
+                err = result.stderr[-1500:] if len(result.stderr) > 1500 else result.stderr
+                return (status, result.returncode, out, err)
+            except subprocess.TimeoutExpired:
+                return ("env_error", -1, "", "TIMEOUT after 300s")
+            except FileNotFoundError:
+                return ("env_error", -1, "", f"command not found: {stripped.split()[0] if stripped.split() else ''}")
+            except Exception as e:
+                return ("env_error", -1, "", f"unexpected: {str(e)[:200]}")
+
+        # Run unit + integration tests
+        unit_status, unit_rc, unit_out, unit_err = _run_test(unit_test_cmd)
+        integ_status, integ_rc, integ_out, integ_err = _run_test(integration_test_cmd)
+
+        # Evaluate business_flow_result (AI-reported)
+        # Pass condition: contains no "FAIL" markers (case insensitive)
+        bf_stripped = business_flow_result.strip()
+        if _is_skip_marker(bf_stripped):
+            bf_status = "skip"
+            bf_summary = bf_stripped
+        elif "FAIL" in bf_stripped.upper():
+            bf_status = "fail"
+            bf_summary = bf_stripped[:1500]
+        else:
+            # Sanity: must contain a positive marker (PASS or ✓ or "成功")
+            positive_markers = ["PASS", "✓", "成功", "通过", "OK"]
+            has_positive = any(m in bf_stripped.upper() if m.isascii() else m in bf_stripped
+                               for m in positive_markers)
+            if not has_positive:
+                bf_status = "fail"
+                bf_summary = (
+                    f"Reported result has no explicit PASS marker. AI must report "
+                    f"per-step PASS or FAIL. Raw report:\n{bf_stripped[:1000]}"
+                )
+            else:
+                bf_status = "pass"
+                bf_summary = bf_stripped[:800]
+
+        # Special handling: env_error in cmds means "can't even run the tests" —
+        # this is NOT a fix loop case (fixing code won't help). Stop and ask user.
+        env_problems = []
+        if unit_status == "env_error":
+            env_problems.append(f"unit_tests env_error: {unit_err}")
+        if integ_status == "env_error":
+            env_problems.append(f"integration_tests env_error: {integ_err}")
+        if env_problems:
+            _audit("aio__force_acceptance_run", "ENV_ERROR", "; ".join(env_problems)[:200])
+            return (
+                f"ENV_ERROR: tests could not be run (not a fix-loop case).\n\n"
+                + "\n".join(env_problems)
+                + "\n\nStop and ask the user — fixing code won't resolve a test "
+                f"environment problem."
+            )
+
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        # Compose status summary
+        statuses = {"unit": unit_status, "integration": integ_status, "business": bf_status}
+        all_pass = all(s in ("pass", "skip") for s in statuses.values())
+
+        if all_pass:
+            # SUCCESS — write verified flag, clear fix state
+            ACCEPTANCE_VERIFIED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+            verified_payload = {
+                "timestamp": timestamp,
+                "unit": statuses["unit"],
+                "integration": statuses["integration"],
+                "business": statuses["business"],
+                "fix_rounds_used": current_round,
+            }
+            ACCEPTANCE_VERIFIED_FLAG.write_text(
+                json.dumps(verified_payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            # Clean fix counter / history
+            for f in (ACCEPTANCE_FIX_COUNTER_FLAG, ACCEPTANCE_FIX_HISTORY_FLAG):
+                if f.exists():
+                    f.unlink()
+
+            _audit("aio__force_acceptance_run", "SUCCESS",
+                   f"rounds_used={current_round}")
+            return (
+                f"SUCCESS: All acceptance categories passed.\n"
+                f"  - Unit: {statuses['unit']}\n"
+                f"  - Integration: {statuses['integration']}\n"
+                f"  - Business flow: {statuses['business']}\n"
+                f"Fix rounds used: {current_round}\n\n"
+                f"VERIFIED flag written. You may now call [存档] / aio__force_architect_save."
+            )
+
+        # FAILURE PATH — enter / continue fix loop
+        new_round = current_round + 1
+        ACCEPTANCE_FIX_COUNTER_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        ACCEPTANCE_FIX_COUNTER_FLAG.write_text(str(new_round), encoding="utf-8")
+
+        # Append to history
+        round_entry = (
+            f"## Round {new_round} @ {timestamp}\n"
+            f"Unit: {statuses['unit']}\n"
+            f"  stdout-tail: {unit_out[-500:] if unit_out else '(empty)'}\n"
+            f"  stderr-tail: {unit_err[-500:] if unit_err else '(empty)'}\n"
+            f"Integration: {statuses['integration']}\n"
+            f"  stdout-tail: {integ_out[-500:] if integ_out else '(empty)'}\n"
+            f"  stderr-tail: {integ_err[-500:] if integ_err else '(empty)'}\n"
+            f"Business flow: {statuses['business']}\n"
+            f"  report-summary: {bf_summary[:400]}\n"
+            f"---\n"
+        )
+        history_existing = ""
+        if ACCEPTANCE_FIX_HISTORY_FLAG.exists():
+            history_existing = ACCEPTANCE_FIX_HISTORY_FLAG.read_text(encoding="utf-8")
+        ACCEPTANCE_FIX_HISTORY_FLAG.write_text(history_existing + round_entry, encoding="utf-8")
+
+        # Decide: continue fix loop or exhausted
+        if new_round >= ACCEPTANCE_MAX_FIX_ROUNDS:
+            _audit("aio__force_acceptance_run", "EXHAUSTED", f"round={new_round}")
+            return (
+                f"FIX_LOOP_EXHAUSTED: round {new_round}/{ACCEPTANCE_MAX_FIX_ROUNDS} failed.\n\n"
+                f"Stop and ask the user how to proceed.\n\n"
+                f"Latest failure summary:\n{round_entry}\n"
+                f"Subsequent acceptance_run calls will be rejected until user intervenes."
+            )
+
+        _audit("aio__force_acceptance_run", "FIX_LOOP_REQUIRED",
+               f"round={new_round}, unit={statuses['unit']}, "
+               f"integ={statuses['integration']}, bf={statuses['business']}")
+        return (
+            f"FIX_LOOP_REQUIRED: round {new_round}/{ACCEPTANCE_MAX_FIX_ROUNDS}.\n\n"
+            f"Status: unit={statuses['unit']}, "
+            f"integration={statuses['integration']}, business={statuses['business']}\n\n"
+            f"You MUST fix the code and re-run acceptance. Do NOT try to bypass "
+            f"by going straight to [存档] — save will be rejected without VERIFIED flag.\n\n"
+            f"This round's failure:\n{round_entry}"
+        )

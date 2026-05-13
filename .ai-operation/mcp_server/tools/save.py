@@ -254,6 +254,35 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                 "Call aio__force_architect_save_confirm to complete the current save first,\n"
                 "or wait for it to finish before starting a new one."
             )
+
+        # -- Acceptance gate (议题 #022): if a taskSpec is being closed,
+        # the acceptance closure must have produced a VERIFIED flag first.
+        # Fast-track path is exempt (no taskSpec => no acceptance needed).
+        # Pure-docs / bootstrap saves with no TASKSPEC_APPROVED_FLAG are also
+        # exempt — there's no code change to verify.
+        if TASKSPEC_APPROVED_FLAG.exists() and not FAST_TRACK_FLAG.exists():
+            if not ACCEPTANCE_VERIFIED_FLAG.exists():
+                _audit("aio__force_architect_save", "REJECTED",
+                       "no acceptance VERIFIED flag")
+                return (
+                    "REJECTED: This save closes an approved taskSpec but no "
+                    "acceptance VERIFIED flag exists.\n\n"
+                    "议题 #022 三层代理纪律: 代码改动必须先通过验收闭环 "
+                    "才能 [存档]。\n\n"
+                    "Run the acceptance flow first:\n"
+                    "  1. aio__force_acceptance_propose(unit_tests, integration_tests, business_flow)\n"
+                    "  2. user reviews & approves the checklist\n"
+                    "  3. aio__force_acceptance_approve(user_said)\n"
+                    "  4. aio__force_acceptance_run(unit_test_cmd, integration_test_cmd, business_flow_result)\n"
+                    "     - on failure: fix code and re-run (max "
+                    f"{ACCEPTANCE_MAX_FIX_ROUNDS} rounds)\n"
+                    "     - on success: VERIFIED flag is written\n"
+                    "Then retry this save.\n\n"
+                    "Bypass paths (use sparingly):\n"
+                    "  - aio__force_fast_track for trivial changes\n"
+                    "  - delete .ai-operation/.taskspec_approved to abandon the taskSpec"
+                )
+
         # -- Cognitive Gate check: must have read corrections before saving --
         # Only enforced when corrections.md has a SESSION_KEY (framework is fully set up)
         session_flag = Path(".ai-operation/.session_confirmed")

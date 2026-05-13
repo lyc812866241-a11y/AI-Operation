@@ -1768,7 +1768,9 @@ class TestSaveClosesTaskSpec(unittest.TestCase, TestSetup):
         Path("src/foo.py").write_text("initial", encoding="utf-8")
 
         # Approved taskSpec that references src/foo.py
-        from tools.constants import TASKSPEC_FILE, TASKSPEC_APPROVED_FLAG
+        from tools.constants import (
+            TASKSPEC_FILE, TASKSPEC_APPROVED_FLAG, ACCEPTANCE_VERIFIED_FLAG,
+        )
         TASKSPEC_FILE.parent.mkdir(parents=True, exist_ok=True)
         TASKSPEC_FILE.write_text(
             "## 1. Task Goal\nEdit foo for testing\n\n"
@@ -1776,6 +1778,13 @@ class TestSaveClosesTaskSpec(unittest.TestCase, TestSetup):
             encoding="utf-8",
         )
         TASKSPEC_APPROVED_FLAG.write_text("approved", encoding="utf-8")
+        # 议题 #022: acceptance gate exists upstream of this suite -- this suite
+        # tests the save-closes-taskSpec mechanics, not the verification flow.
+        # Pre-seed the VERIFIED flag so the gate lets us through.
+        ACCEPTANCE_VERIFIED_FLAG.write_text(
+            '{"timestamp": "2026-05-11 00:00", "fix_rounds_used": 0}',
+            encoding="utf-8",
+        )
 
         self.mcp = MagicMock()
         self.tools = {}
@@ -1951,6 +1960,376 @@ class TestCognitiveGateKeyParsing(unittest.TestCase, TestSetup):
         lines_with_no_file = [l for l in result.split("\n") if "(no file)" in l]
         # Sentence bullets must not generate entries -- so at most 3 (fileops, git, valid_key)
         self.assertLessEqual(len(lines_with_no_file), 3)
+
+
+# ============================================================================
+# 议题 #022 — Acceptance Closure tests (VERIFIER 第三层代理)
+# ============================================================================
+
+class _AcceptanceTestMixin(TestSetup):
+    """Common setup for acceptance closure tests.
+
+    Provides isolated tmp project + registered tools + acceptance flag helpers.
+    """
+
+    def _make_tools(self):
+        self.create_temp_project()
+        self.tools = {}
+
+        def capture_tool():
+            def decorator(fn):
+                self.tools[fn.__name__] = fn
+                return fn
+            return decorator
+
+        mcp = MagicMock()
+        mcp.tool = capture_tool
+        from tools.architect import register_architect_tools
+        register_architect_tools(mcp)
+
+    def _valid_propose(self):
+        return self.tools["aio__force_acceptance_propose"](
+            unit_tests="python -m pytest tests/test_x.py -v",
+            integration_tests="NONE: 当前任务无集成层",
+            business_flow="1. 启动 app PASS\n2. 看到首页 PASS",
+        )
+
+    def _passing_run(self):
+        """Helper that runs acceptance with a trivially-true unit command."""
+        # `python -c "pass"` always exits 0 -- a stand-in for a passing test cmd.
+        return self.tools["aio__force_acceptance_run"](
+            unit_test_cmd=f'{sys.executable} -c pass',
+            integration_test_cmd="NONE: no integration",
+            business_flow_result="step 1: PASS\nstep 2: PASS",
+        )
+
+    def _failing_run(self):
+        """Run acceptance with a non-zero-exit command to force fix loop."""
+        return self.tools["aio__force_acceptance_run"](
+            unit_test_cmd=f'{sys.executable} -c "import sys; sys.exit(1)"',
+            integration_test_cmd="NONE: no integration",
+            business_flow_result="step 1: PASS\nstep 2: PASS",
+        )
+
+
+class TestAcceptancePropose(unittest.TestCase, _AcceptanceTestMixin):
+    """aio__force_acceptance_propose: field validation + flag persistence."""
+
+    def setUp(self):
+        self._make_tools()
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def test_rejects_empty_field(self):
+        result = self.tools["aio__force_acceptance_propose"](
+            unit_tests="", integration_tests="NONE: x", business_flow="NONE: y"
+        )
+        self.assertIn("REJECTED", result)
+        self.assertIn("unit_tests", result)
+
+    def test_rejects_bare_NONE_without_reason(self):
+        result = self.tools["aio__force_acceptance_propose"](
+            unit_tests="NONE", integration_tests="NONE: x", business_flow="step 1 PASS"
+        )
+        self.assertIn("REJECTED", result)
+        self.assertIn("bare 'NONE'", result)
+
+    def test_rejects_all_NONE(self):
+        result = self.tools["aio__force_acceptance_propose"](
+            unit_tests="NONE: x", integration_tests="NONE: y", business_flow="NONE: z"
+        )
+        self.assertIn("REJECTED", result)
+        self.assertIn("All 3 categories are skipped", result)
+
+    def test_creates_proposed_flag(self):
+        result = self._valid_propose()
+        self.assertIn("SUCCESS", result)
+        from tools.constants import ACCEPTANCE_PROPOSED_FLAG
+        self.assertTrue(ACCEPTANCE_PROPOSED_FLAG.exists())
+        payload = json.loads(ACCEPTANCE_PROPOSED_FLAG.read_text(encoding="utf-8"))
+        self.assertIn("unit_tests", payload)
+        self.assertIn("business_flow", payload)
+
+    def test_invalidates_prior_state(self):
+        """A new propose cycle must clear any stale approved/verified/counter flags."""
+        from tools.constants import (
+            ACCEPTANCE_APPROVED_FLAG, ACCEPTANCE_VERIFIED_FLAG,
+            ACCEPTANCE_FIX_COUNTER_FLAG,
+        )
+        # Seed stale flags
+        for f in (ACCEPTANCE_APPROVED_FLAG, ACCEPTANCE_VERIFIED_FLAG, ACCEPTANCE_FIX_COUNTER_FLAG):
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text("stale", encoding="utf-8")
+        self._valid_propose()
+        for f in (ACCEPTANCE_APPROVED_FLAG, ACCEPTANCE_VERIFIED_FLAG, ACCEPTANCE_FIX_COUNTER_FLAG):
+            self.assertFalse(f.exists(),
+                             f"{f.name} should be cleared by new propose cycle")
+
+
+class TestAcceptanceApprove(unittest.TestCase, _AcceptanceTestMixin):
+    """aio__force_acceptance_approve: gate + signal validation."""
+
+    def setUp(self):
+        self._make_tools()
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def test_rejects_when_no_proposed(self):
+        result = self.tools["aio__force_acceptance_approve"](user_said="批准")
+        self.assertIn("REJECTED", result)
+        self.assertIn("No acceptance checklist proposed", result)
+
+    def test_rejects_invalid_signal(self):
+        self._valid_propose()
+        result = self.tools["aio__force_acceptance_approve"](user_said="hmm 看看")
+        self.assertIn("REJECTED", result)
+
+    def test_creates_approved_flag(self):
+        self._valid_propose()
+        result = self.tools["aio__force_acceptance_approve"](user_said="批准")
+        self.assertIn("SUCCESS", result)
+        from tools.constants import ACCEPTANCE_APPROVED_FLAG
+        self.assertTrue(ACCEPTANCE_APPROVED_FLAG.exists())
+
+
+class TestAcceptanceRun(unittest.TestCase, _AcceptanceTestMixin):
+    """aio__force_acceptance_run: state machine + fix loop."""
+
+    def setUp(self):
+        self._make_tools()
+        # Set up propose+approve so run has a clean gate to test against
+        self._valid_propose()
+        self.tools["aio__force_acceptance_approve"](user_said="批准")
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def test_rejects_when_no_approved(self):
+        from tools.constants import ACCEPTANCE_APPROVED_FLAG
+        ACCEPTANCE_APPROVED_FLAG.unlink()
+        result = self.tools["aio__force_acceptance_run"](
+            unit_test_cmd="NONE: x",
+            integration_test_cmd="NONE: y",
+            business_flow_result="PASS",
+        )
+        self.assertIn("REJECTED", result)
+        self.assertIn("No approved acceptance checklist", result)
+
+    def test_success_writes_verified_flag(self):
+        result = self._passing_run()
+        self.assertIn("SUCCESS", result)
+        from tools.constants import ACCEPTANCE_VERIFIED_FLAG
+        self.assertTrue(ACCEPTANCE_VERIFIED_FLAG.exists())
+
+    def test_failure_enters_fix_loop_round_1(self):
+        result = self._failing_run()
+        self.assertIn("FIX_LOOP_REQUIRED", result)
+        self.assertIn("round 1/3", result)
+        from tools.constants import (ACCEPTANCE_FIX_COUNTER_FLAG,
+                                     ACCEPTANCE_VERIFIED_FLAG)
+        self.assertTrue(ACCEPTANCE_FIX_COUNTER_FLAG.exists())
+        self.assertEqual(ACCEPTANCE_FIX_COUNTER_FLAG.read_text(encoding="utf-8").strip(), "1")
+        self.assertFalse(ACCEPTANCE_VERIFIED_FLAG.exists())
+
+    def test_failure_round_3_exhausted(self):
+        """Three failures => EXHAUSTED + subsequent calls refused."""
+        # Three failing rounds
+        r1 = self._failing_run()
+        self.assertIn("FIX_LOOP_REQUIRED", r1)
+        r2 = self._failing_run()
+        self.assertIn("FIX_LOOP_REQUIRED", r2)
+        r3 = self._failing_run()
+        self.assertIn("FIX_LOOP_EXHAUSTED", r3)
+        # Fourth call should be rejected, not enter another round
+        r4 = self._failing_run()
+        self.assertIn("REJECTED", r4)
+        self.assertIn("FIX_LOOP_EXHAUSTED", r4)
+
+    def test_business_flow_no_PASS_marker_treated_as_fail(self):
+        """Reported business flow result without explicit PASS/✓/成功 => fail."""
+        result = self.tools["aio__force_acceptance_run"](
+            unit_test_cmd=f'{sys.executable} -c pass',
+            integration_test_cmd="NONE: x",
+            business_flow_result="some narrative without any marker",
+        )
+        self.assertIn("FIX_LOOP_REQUIRED", result)
+
+    def test_business_flow_FAIL_marker_treated_as_fail(self):
+        result = self.tools["aio__force_acceptance_run"](
+            unit_test_cmd=f'{sys.executable} -c pass',
+            integration_test_cmd="NONE: x",
+            business_flow_result="step 1: PASS\nstep 2: FAIL because login broke",
+        )
+        self.assertIn("FIX_LOOP_REQUIRED", result)
+
+    def test_env_error_does_not_consume_round(self):
+        """Test that can't run at all (env_error) is NOT a fix-loop case."""
+        result = self.tools["aio__force_acceptance_run"](
+            unit_test_cmd="nonexistent_command_xyz_42",
+            integration_test_cmd="NONE: x",
+            business_flow_result="PASS",
+        )
+        self.assertIn("ENV_ERROR", result)
+        # Counter should not have advanced
+        from tools.constants import ACCEPTANCE_FIX_COUNTER_FLAG
+        if ACCEPTANCE_FIX_COUNTER_FLAG.exists():
+            self.assertEqual(
+                ACCEPTANCE_FIX_COUNTER_FLAG.read_text(encoding="utf-8").strip(),
+                "0",
+                "env_error must not consume a fix round"
+            )
+
+
+class TestSaveAcceptanceGate(unittest.TestCase, _AcceptanceTestMixin):
+    """[存档] front-end gate: rejects if taskspec approved but acceptance not verified."""
+
+    def setUp(self):
+        self._make_tools()
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def _save_minimal(self):
+        """Call architect_save with all-NO_CHANGE defaults to isolate the gate."""
+        return self.tools["aio__force_architect_save"](
+            systemPatterns_update="NO_CHANGE_BECAUSE: gate test",
+            techContext_update="NO_CHANGE_BECAUSE: gate test",
+            activeContext_update=(
+                "Current focus: testing 议题 #022 acceptance gate at "
+                ".ai-operation/mcp_server/tools/save.py. "
+                "Just completed: wiring gate into architect_save entry. "
+                "Next step: verify gate behaves correctly across all 4 path combinations."
+            ),
+            lessons_learned="NONE",
+        )
+
+    def test_save_rejected_when_taskspec_approved_no_acceptance(self):
+        from tools.constants import TASKSPEC_APPROVED_FLAG
+        TASKSPEC_APPROVED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        TASKSPEC_APPROVED_FLAG.write_text("approved", encoding="utf-8")
+        result = self._save_minimal()
+        self.assertIn("REJECTED", result)
+        self.assertIn("acceptance VERIFIED flag", result)
+
+    def test_save_allowed_when_taskspec_approved_and_verified(self):
+        from tools.constants import TASKSPEC_APPROVED_FLAG, ACCEPTANCE_VERIFIED_FLAG
+        TASKSPEC_APPROVED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        TASKSPEC_APPROVED_FLAG.write_text("approved", encoding="utf-8")
+        ACCEPTANCE_VERIFIED_FLAG.write_text(
+            json.dumps({"timestamp": "2026-05-11 00:00"}),
+            encoding="utf-8"
+        )
+        with patch("subprocess.run"):
+            result = self._save_minimal()
+        # Should not be rejected by acceptance gate (other gates may still fire)
+        self.assertNotIn("acceptance VERIFIED flag", result)
+
+    def test_save_allowed_when_fast_track(self):
+        from tools.constants import TASKSPEC_APPROVED_FLAG, FAST_TRACK_FLAG
+        TASKSPEC_APPROVED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        TASKSPEC_APPROVED_FLAG.write_text("approved", encoding="utf-8")
+        FAST_TRACK_FLAG.write_text("fast", encoding="utf-8")
+        with patch("subprocess.run"):
+            result = self._save_minimal()
+        self.assertNotIn("acceptance VERIFIED flag", result)
+
+    def test_save_allowed_when_no_taskspec_approved(self):
+        """Pure docs save / bootstrap with no taskspec is exempt from gate."""
+        with patch("subprocess.run"):
+            result = self._save_minimal()
+        self.assertNotIn("acceptance VERIFIED flag", result)
+
+
+class TestAcceptanceEndToEnd(unittest.TestCase, _AcceptanceTestMixin):
+    """议题 #022 self-application: walk the full pipeline once."""
+
+    def setUp(self):
+        self._make_tools()
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def test_full_success_path(self):
+        """propose -> approve -> run(pass) -> verified flag exists -> save allowed."""
+        from tools.constants import (
+            TASKSPEC_APPROVED_FLAG, ACCEPTANCE_VERIFIED_FLAG,
+            ACCEPTANCE_PROPOSED_FLAG, ACCEPTANCE_APPROVED_FLAG,
+        )
+        # Simulate that a taskspec was already approved upstream
+        TASKSPEC_APPROVED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        TASKSPEC_APPROVED_FLAG.write_text("approved", encoding="utf-8")
+
+        # Step 1: propose
+        r1 = self._valid_propose()
+        self.assertIn("SUCCESS", r1)
+        self.assertTrue(ACCEPTANCE_PROPOSED_FLAG.exists())
+
+        # Step 2: approve
+        r2 = self.tools["aio__force_acceptance_approve"](user_said="批准")
+        self.assertIn("SUCCESS", r2)
+        self.assertTrue(ACCEPTANCE_APPROVED_FLAG.exists())
+
+        # Step 3: run (passing)
+        r3 = self._passing_run()
+        self.assertIn("SUCCESS", r3)
+        self.assertTrue(ACCEPTANCE_VERIFIED_FLAG.exists())
+
+        # Step 4: save (the gate must let us through)
+        with patch("subprocess.run"):
+            r4 = self.tools["aio__force_architect_save"](
+                systemPatterns_update="NO_CHANGE_BECAUSE: e2e test",
+                techContext_update="NO_CHANGE_BECAUSE: e2e test",
+                activeContext_update=(
+                    "Current focus: 议题 #022 end-to-end self-test in "
+                    "tests/test_architect_tools.py. "
+                    "Just completed: full pipeline propose->approve->run->verified->save. "
+                    "Next step: confirm fix-loop and fast-track paths also work."
+                ),
+                lessons_learned="NONE",
+            )
+        self.assertNotIn("acceptance VERIFIED flag", r4,
+                         "Save gate should accept VERIFIED flag")
+
+    def test_full_fix_loop_then_success(self):
+        """Failure round 1 -> pass on round 2."""
+        from tools.constants import (
+            ACCEPTANCE_FIX_COUNTER_FLAG, ACCEPTANCE_VERIFIED_FLAG,
+        )
+        self._valid_propose()
+        self.tools["aio__force_acceptance_approve"](user_said="批准")
+        # Round 1 fails
+        r1 = self._failing_run()
+        self.assertIn("FIX_LOOP_REQUIRED", r1)
+        self.assertEqual(ACCEPTANCE_FIX_COUNTER_FLAG.read_text(encoding="utf-8").strip(), "1")
+        # Round 2 passes (counter was at 1, success clears it)
+        r2 = self._passing_run()
+        self.assertIn("SUCCESS", r2)
+        self.assertTrue(ACCEPTANCE_VERIFIED_FLAG.exists())
+        # Counter cleared on success
+        self.assertFalse(ACCEPTANCE_FIX_COUNTER_FLAG.exists())
+
+    def test_full_fast_track_bypass(self):
+        """Fast-track path: no acceptance flow needed, save still allowed."""
+        from tools.constants import TASKSPEC_APPROVED_FLAG, FAST_TRACK_FLAG
+        TASKSPEC_APPROVED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        TASKSPEC_APPROVED_FLAG.write_text("approved", encoding="utf-8")
+        FAST_TRACK_FLAG.write_text("fast", encoding="utf-8")
+        with patch("subprocess.run"):
+            result = self.tools["aio__force_architect_save"](
+                systemPatterns_update="NO_CHANGE_BECAUSE: fast-track e2e",
+                techContext_update="NO_CHANGE_BECAUSE: fast-track e2e",
+                activeContext_update=(
+                    "Current focus: 议题 #022 fast-track bypass verification in "
+                    "tests/test_architect_tools.py. "
+                    "Just completed: confirmed fast-track exempts acceptance gate. "
+                    "Next step: confirm full propose->approve->run path also passes."
+                ),
+                lessons_learned="NONE",
+            )
+        self.assertNotIn("acceptance VERIFIED flag", result,
+                         "Fast-track must exempt save from acceptance gate")
 
 
 if __name__ == "__main__":
