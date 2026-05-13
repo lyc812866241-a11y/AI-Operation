@@ -1233,3 +1233,455 @@ def register_workflow_tools(mcp: FastMCP, _audit, _loop_guard):
             f"by going straight to [存档] — save will be rejected without VERIFIED flag.\n\n"
             f"This round's failure:\n{round_entry}"
         )
+
+    # ===============================================================
+    # Visual Closure (议题 #023 — 前端视觉化闭环)
+    # ===============================================================
+    # Two-stage flow:
+    #   1. designer_translate (上游): user natural language -> designer spec
+    #      - propose: AI writes the translated spec
+    #      - approve: user signs off on the spec
+    #      - downstream WORKER reads designer_spec.md
+    #   2. visual closure (下游): code -> visual verification
+    #      - visual_propose: AI proposes a keypoint checklist
+    #      - visual_approve: user signs off on the checklist
+    #      - visual_verify: AI runs Playwright MCP for screenshots, self-evaluates
+    #        keypoints; fix loop on failure (max 3 rounds, independent counter
+    #        from acceptance fix loop)
+    #
+    # Format policy (议题 #023 用户拍板): designer spec and keypoint checklists
+    # are FREE-FORM TEXT, not fixed-field tables. The AI structures them per
+    # context. Only minimal length / content checks are enforced.
+
+    @mcp.tool()
+    def aio__force_designer_translate_propose(
+        user_intent: str,
+        translated_spec: str,
+    ) -> str:
+        """
+        [ENFORCEMENT TOOL] AI translates user's natural-language visual intent
+        into a designer-language spec (free-form text, not a fixed schema).
+
+        Used at the front of any frontend / visual taskspec. The translated
+        spec lands at .ai-operation/docs/designer_spec.md and feeds downstream
+        WORKER code generation.
+
+        Args:
+            user_intent: The user's original natural-language description
+                (e.g. "我想要一个简洁的、给中年女性看的护肤首页,不要太花哨").
+            translated_spec: AI's structured restatement in designer language.
+                FREE FORM — let the AI choose the structure that fits the
+                context (color palette, tone, layout density, hierarchy,
+                target audience, device, references, anti-patterns, ...).
+                Minimum 150 chars to avoid trivial responses.
+
+        Returns:
+            The proposed spec, awaiting user approval.
+        """
+        import datetime
+
+        _audit("aio__force_designer_translate_propose", "CALLED",
+               user_intent[:100] if user_intent else "")
+
+        loop_msg = _loop_guard("aio__force_designer_translate_propose",
+                               user_intent[:80] if user_intent else "")
+        if loop_msg and "BLOCKED" in loop_msg:
+            return loop_msg
+
+        if not user_intent or not user_intent.strip():
+            return "REJECTED: user_intent cannot be empty."
+        if not translated_spec or not translated_spec.strip():
+            return "REJECTED: translated_spec cannot be empty."
+        if len(translated_spec.strip()) < 150:
+            return (
+                f"REJECTED: translated_spec is too short ({len(translated_spec.strip())} chars). "
+                f"Minimum 150 chars to ensure meaningful translation. "
+                f"A real designer spec covers multiple visual dimensions "
+                f"(tone, palette, hierarchy, audience, device, references)."
+            )
+
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        # Persist the spec to a markdown file (becomes part of project memory)
+        DESIGNER_SPEC_FILE.parent.mkdir(parents=True, exist_ok=True)
+        spec_doc = (
+            f"# Designer Spec (议题 #023)\n\n"
+            f"> Generated: {timestamp}\n"
+            f"> Status: **AWAITING USER APPROVAL**\n\n"
+            f"## Original User Intent\n{user_intent.strip()}\n\n"
+            f"## AI-Translated Designer Language\n{translated_spec.strip()}\n"
+        )
+        DESIGNER_SPEC_FILE.write_text(spec_doc, encoding="utf-8")
+
+        # Clear any prior approval / downstream visual state from a previous cycle
+        for f in (DESIGNER_SPEC_APPROVED_FLAG,
+                  VISUAL_KEYPOINTS_PROPOSED_FLAG, VISUAL_KEYPOINTS_APPROVED_FLAG,
+                  VISUAL_VERIFIED_FLAG, VISUAL_FIX_COUNTER_FLAG,
+                  VISUAL_FIX_HISTORY_FLAG):
+            if f.exists():
+                f.unlink()
+
+        DESIGNER_SPEC_PROPOSED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        DESIGNER_SPEC_PROPOSED_FLAG.write_text(
+            f"proposed|{timestamp}|{len(translated_spec.strip())}chars",
+            encoding="utf-8",
+        )
+
+        _audit("aio__force_designer_translate_propose", "SUCCESS",
+               f"{len(translated_spec.strip())} chars")
+
+        return (
+            f"SUCCESS: Designer spec proposed.\n\n"
+            f"{spec_doc}\n"
+            f"---\n"
+            f"[PAUSE] Waiting for user approval. After user says '批准/ok go',\n"
+            f"call aio__force_designer_translate_approve."
+        )
+
+    @mcp.tool()
+    def aio__force_designer_translate_approve(user_said: str) -> str:
+        """
+        [ENFORCEMENT TOOL] Record user approval of the translated designer spec.
+
+        Args:
+            user_said: User approval text.
+
+        Returns:
+            Approval recorded; spec is now the canonical input for WORKER.
+        """
+        import datetime
+
+        _audit("aio__force_designer_translate_approve", "CALLED",
+               user_said[:50] if user_said else "")
+
+        loop_msg = _loop_guard("aio__force_designer_translate_approve",
+                               user_said[:50] if user_said else "")
+        if loop_msg and "BLOCKED" in loop_msg:
+            return loop_msg
+
+        if not DESIGNER_SPEC_PROPOSED_FLAG.exists():
+            return (
+                "REJECTED: No designer spec proposed. "
+                "Call aio__force_designer_translate_propose first."
+            )
+
+        approval_signals = ["批准", "approved", "ok go", "执行", "ok", "go",
+                            "yes", "可以", "同意"]
+        if not any(sig in (user_said or "").lower() for sig in approval_signals):
+            return (
+                f"REJECTED: '{user_said}' does not look like approval. "
+                f"Expected one of: {', '.join(approval_signals)}"
+            )
+
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        DESIGNER_SPEC_APPROVED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        DESIGNER_SPEC_APPROVED_FLAG.write_text(
+            f"approved|{timestamp}|{(user_said or '').strip()[:50]}",
+            encoding="utf-8",
+        )
+
+        # Update spec doc status header
+        if DESIGNER_SPEC_FILE.exists():
+            try:
+                content = DESIGNER_SPEC_FILE.read_text(encoding="utf-8")
+                updated = content.replace(
+                    "**AWAITING USER APPROVAL**",
+                    f"**APPROVED** ({timestamp})",
+                )
+                DESIGNER_SPEC_FILE.write_text(updated, encoding="utf-8")
+            except OSError:
+                pass
+
+        _audit("aio__force_designer_translate_approve", "SUCCESS")
+
+        return (
+            f"SUCCESS: Designer spec APPROVED at {timestamp}.\n"
+            f"WORKER can now read .ai-operation/docs/designer_spec.md "
+            f"and generate frontend code per the spec.\n"
+            f"After code is written, call aio__force_visual_propose to start "
+            f"the visual verification closure."
+        )
+
+    @mcp.tool()
+    def aio__force_visual_propose(visual_keypoints: str) -> str:
+        """
+        [ENFORCEMENT TOOL] AI proposes a visual-verification checklist after
+        finishing frontend code. Free-form text — the AI structures the
+        keypoints per context.
+
+        Typical keypoints (AI picks what's relevant):
+          - 第一层级元素位置 / 主色对照 / 信息层级强度 / 留白密度 /
+            移动端响应 / 字体一致性 / 视觉对标参考...
+
+        Args:
+            visual_keypoints: AI's proposed checklist. Free form but must
+                cover at least 2 distinct keypoints (heuristic: contains 2+
+                newline-separated bullets or numbered items). Minimum 80 chars.
+
+        Returns:
+            The proposed checklist, awaiting user approval.
+        """
+        import datetime
+        import re
+
+        _audit("aio__force_visual_propose", "CALLED")
+
+        loop_msg = _loop_guard("aio__force_visual_propose",
+                               visual_keypoints[:80] if visual_keypoints else "")
+        if loop_msg and "BLOCKED" in loop_msg:
+            return loop_msg
+
+        if not visual_keypoints or not visual_keypoints.strip():
+            return "REJECTED: visual_keypoints cannot be empty."
+        stripped = visual_keypoints.strip()
+        if len(stripped) < 80:
+            return (
+                f"REJECTED: visual_keypoints too short ({len(stripped)} chars). "
+                f"Minimum 80 chars. A real checklist covers multiple visual aspects."
+            )
+
+        # Heuristic: count "items" — newlines + bullet markers + numbers
+        item_pattern = re.compile(r"^\s*(?:[-*+•]|\d+[.\)、])", re.MULTILINE)
+        item_count = len(item_pattern.findall(stripped))
+        if item_count < 2:
+            return (
+                f"REJECTED: visual_keypoints must contain at least 2 distinct "
+                f"keypoints (bullet-style or numbered). Found {item_count}. "
+                f"Use lines starting with '-', '*', or '1.', '2.' etc."
+            )
+
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        # New propose cycle invalidates downstream state
+        for flag in (VISUAL_KEYPOINTS_APPROVED_FLAG, VISUAL_VERIFIED_FLAG,
+                     VISUAL_FIX_COUNTER_FLAG, VISUAL_FIX_HISTORY_FLAG):
+            if flag.exists():
+                flag.unlink()
+
+        VISUAL_KEYPOINTS_PROPOSED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        VISUAL_KEYPOINTS_PROPOSED_FLAG.write_text(
+            f"---\ntimestamp: {timestamp}\nitems: {item_count}\n---\n{stripped}\n",
+            encoding="utf-8",
+        )
+
+        _audit("aio__force_visual_propose", "SUCCESS", f"items={item_count}")
+
+        return (
+            f"SUCCESS: Visual checklist proposed ({item_count} keypoints).\n\n"
+            f"## Proposed Visual Verification Checklist\n\n"
+            f"{stripped}\n\n"
+            f"---\n"
+            f"[PAUSE] Waiting for user approval. After user says '批准/ok go',\n"
+            f"call aio__force_visual_approve."
+        )
+
+    @mcp.tool()
+    def aio__force_visual_approve(user_said: str) -> str:
+        """
+        [ENFORCEMENT TOOL] Record user approval of the visual keypoint checklist.
+
+        Args:
+            user_said: User approval text.
+
+        Returns:
+            Approval recorded; next step is aio__force_visual_verify.
+        """
+        import datetime
+
+        _audit("aio__force_visual_approve", "CALLED",
+               user_said[:50] if user_said else "")
+
+        loop_msg = _loop_guard("aio__force_visual_approve",
+                               user_said[:50] if user_said else "")
+        if loop_msg and "BLOCKED" in loop_msg:
+            return loop_msg
+
+        if not VISUAL_KEYPOINTS_PROPOSED_FLAG.exists():
+            return (
+                "REJECTED: No visual checklist proposed. "
+                "Call aio__force_visual_propose first."
+            )
+
+        approval_signals = ["批准", "approved", "ok go", "执行", "ok", "go",
+                            "yes", "可以", "同意"]
+        if not any(sig in (user_said or "").lower() for sig in approval_signals):
+            return (
+                f"REJECTED: '{user_said}' does not look like approval. "
+                f"Expected one of: {', '.join(approval_signals)}"
+            )
+
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        VISUAL_KEYPOINTS_APPROVED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        VISUAL_KEYPOINTS_APPROVED_FLAG.write_text(
+            f"approved|{timestamp}|{(user_said or '').strip()[:50]}",
+            encoding="utf-8",
+        )
+
+        _audit("aio__force_visual_approve", "SUCCESS")
+
+        return (
+            f"SUCCESS: Visual checklist APPROVED at {timestamp}.\n"
+            f"You may now call aio__force_visual_verify after running Playwright "
+            f"MCP screenshots and self-evaluating each keypoint.\n"
+            f"On failure, the tool enters a fix loop (max {VISUAL_MAX_FIX_ROUNDS} rounds, "
+            f"independent of the acceptance fix counter)."
+        )
+
+    @mcp.tool()
+    def aio__force_visual_verify(
+        keypoint_results: str,
+        screenshots_meta: str,
+    ) -> str:
+        """
+        [ENFORCEMENT TOOL] Submit the AI-reported visual verification verdict.
+
+        The AI is expected to:
+          1. Call the Playwright MCP server (separate MCP tool, installed by
+             setup.sh/setup.ps1) to launch a headless browser and take
+             screenshots of the rendered frontend.
+          2. Use its own multimodal vision capability to inspect each screenshot
+             against the approved keypoint checklist.
+          3. Submit a per-keypoint verdict to this tool.
+
+        This tool does NOT call Playwright itself — it gates the result the AI
+        reports. 议题 #013 同源精神: 强制路径, 信任内容.
+
+        Args:
+            keypoint_results: AI-reported verdict per keypoint. MUST contain
+                explicit PASS or FAIL markers per keypoint (case-insensitive),
+                e.g. "1. 第一层级按钮位置 PASS (主按钮在视觉中心)
+                      2. 主色对照 FAIL (实际偏冷,spec 要求暖色)".
+                Free form otherwise. Minimum 100 chars.
+            screenshots_meta: Brief description of which screenshots were taken
+                (paths or descriptions; e.g. "homepage 375x812 + 1440x900,
+                checkout-page 375x812"). Minimum 30 chars.
+
+        Returns:
+            SUCCESS (verified), FIX_LOOP_REQUIRED, FIX_LOOP_EXHAUSTED, or REJECTED.
+        """
+        import datetime
+
+        _audit("aio__force_visual_verify", "CALLED")
+
+        loop_msg = _loop_guard("aio__force_visual_verify",
+                               keypoint_results[:80] if keypoint_results else "")
+        if loop_msg and "BLOCKED" in loop_msg:
+            return loop_msg
+
+        # Gate 1: approved checklist must exist
+        if not VISUAL_KEYPOINTS_APPROVED_FLAG.exists():
+            return (
+                "REJECTED: No approved visual checklist. "
+                "Run aio__force_visual_propose -> aio__force_visual_approve first."
+            )
+
+        # Gate 2: check fix counter
+        current_round = 0
+        if VISUAL_FIX_COUNTER_FLAG.exists():
+            try:
+                current_round = int(VISUAL_FIX_COUNTER_FLAG.read_text(encoding="utf-8").strip())
+            except (ValueError, OSError):
+                current_round = 0
+        if current_round >= VISUAL_MAX_FIX_ROUNDS:
+            history = ""
+            if VISUAL_FIX_HISTORY_FLAG.exists():
+                history = VISUAL_FIX_HISTORY_FLAG.read_text(encoding="utf-8")
+            return (
+                f"REJECTED: VISUAL_FIX_LOOP_EXHAUSTED — already used {current_round} fix rounds "
+                f"(max {VISUAL_MAX_FIX_ROUNDS}).\n\n"
+                f"Stop and ask the user how to proceed.\n\n"
+                f"Visual fix history:\n{history}"
+            )
+
+        # Validate input lengths
+        if not keypoint_results or len(keypoint_results.strip()) < 100:
+            return (
+                f"REJECTED: keypoint_results too short "
+                f"({len(keypoint_results.strip()) if keypoint_results else 0} chars). "
+                f"Minimum 100 chars. Report a PASS/FAIL verdict per keypoint with reasoning."
+            )
+        if not screenshots_meta or len(screenshots_meta.strip()) < 30:
+            return (
+                f"REJECTED: screenshots_meta too short. "
+                f"Describe which screenshots were taken (paths / viewport sizes / page names)."
+            )
+
+        # Must contain explicit PASS or FAIL markers
+        kr_upper = keypoint_results.upper()
+        has_pass = "PASS" in kr_upper or "✓" in keypoint_results or "通过" in keypoint_results
+        has_fail = "FAIL" in kr_upper or "✗" in keypoint_results or "不通过" in keypoint_results or "不符" in keypoint_results
+
+        if not has_pass and not has_fail:
+            return (
+                "REJECTED: keypoint_results must contain explicit PASS or FAIL "
+                "markers per keypoint. Use 'PASS' / 'FAIL' / '✓' / '✗' / '通过' / '不通过'. "
+                "Per-keypoint verdict is mandatory."
+            )
+
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        overall_pass = has_pass and not has_fail
+
+        if overall_pass:
+            # SUCCESS — write verified flag, clear fix state
+            VISUAL_VERIFIED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+            import json
+            verified_payload = {
+                "timestamp": timestamp,
+                "fix_rounds_used": current_round,
+                "screenshots_meta": screenshots_meta.strip()[:500],
+                "keypoint_summary": keypoint_results.strip()[:1500],
+            }
+            VISUAL_VERIFIED_FLAG.write_text(
+                json.dumps(verified_payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            for f in (VISUAL_FIX_COUNTER_FLAG, VISUAL_FIX_HISTORY_FLAG):
+                if f.exists():
+                    f.unlink()
+
+            _audit("aio__force_visual_verify", "SUCCESS",
+                   f"rounds_used={current_round}")
+            return (
+                f"SUCCESS: Visual verification PASSED.\n"
+                f"Fix rounds used: {current_round}\n"
+                f"Screenshots: {screenshots_meta.strip()[:200]}\n\n"
+                f"VISUAL_VERIFIED flag written. The visual gate of [存档] is "
+                f"satisfied (still requires acceptance VERIFIED if applicable)."
+            )
+
+        # FAILURE — enter fix loop
+        new_round = current_round + 1
+        VISUAL_FIX_COUNTER_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        VISUAL_FIX_COUNTER_FLAG.write_text(str(new_round), encoding="utf-8")
+
+        round_entry = (
+            f"## Visual Round {new_round} @ {timestamp}\n"
+            f"Screenshots: {screenshots_meta.strip()[:300]}\n"
+            f"Keypoint verdict:\n{keypoint_results.strip()[:2000]}\n"
+            f"---\n"
+        )
+        history_existing = ""
+        if VISUAL_FIX_HISTORY_FLAG.exists():
+            history_existing = VISUAL_FIX_HISTORY_FLAG.read_text(encoding="utf-8")
+        VISUAL_FIX_HISTORY_FLAG.write_text(
+            history_existing + round_entry, encoding="utf-8"
+        )
+
+        if new_round >= VISUAL_MAX_FIX_ROUNDS:
+            _audit("aio__force_visual_verify", "EXHAUSTED", f"round={new_round}")
+            return (
+                f"VISUAL_FIX_LOOP_EXHAUSTED: round {new_round}/{VISUAL_MAX_FIX_ROUNDS} failed.\n\n"
+                f"Stop and ask user.\n\n"
+                f"Latest verdict:\n{round_entry}\n"
+                f"Subsequent visual_verify calls will be rejected until user intervenes."
+            )
+
+        _audit("aio__force_visual_verify", "FIX_LOOP_REQUIRED",
+               f"round={new_round}")
+        return (
+            f"VISUAL_FIX_LOOP_REQUIRED: round {new_round}/{VISUAL_MAX_FIX_ROUNDS}.\n\n"
+            f"Visual verification failed. You MUST fix the frontend code, "
+            f"re-run Playwright screenshots, and re-call this tool.\n"
+            f"Do NOT bypass by going to [存档] — save rejects without VISUAL_VERIFIED.\n\n"
+            f"This round's verdict:\n{round_entry}"
+        )

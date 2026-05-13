@@ -15,6 +15,12 @@ __all__ = [
     "ACCEPTANCE_PROPOSED_FLAG", "ACCEPTANCE_APPROVED_FLAG",
     "ACCEPTANCE_VERIFIED_FLAG", "ACCEPTANCE_FIX_COUNTER_FLAG",
     "ACCEPTANCE_FIX_HISTORY_FLAG", "ACCEPTANCE_MAX_FIX_ROUNDS",
+    # 议题 #023 visual closure
+    "DESIGNER_SPEC_PROPOSED_FLAG", "DESIGNER_SPEC_APPROVED_FLAG",
+    "DESIGNER_SPEC_FILE",
+    "VISUAL_KEYPOINTS_PROPOSED_FLAG", "VISUAL_KEYPOINTS_APPROVED_FLAG",
+    "VISUAL_VERIFIED_FLAG", "VISUAL_FIX_COUNTER_FLAG",
+    "VISUAL_FIX_HISTORY_FLAG", "VISUAL_MAX_FIX_ROUNDS",
     "FAST_TRACK_FLAG", "SAVE_STAGING_FILE", "BYPASS_DIR",
     "SAVE_HISTORY_DIR", "SNAPSHOT_RETAIN_COUNT",
     # Size limits
@@ -90,6 +96,25 @@ ACCEPTANCE_VERIFIED_FLAG = Path(".ai-operation/.acceptance_verified")
 ACCEPTANCE_FIX_COUNTER_FLAG = Path(".ai-operation/.acceptance_fix_counter")
 ACCEPTANCE_FIX_HISTORY_FLAG = Path(".ai-operation/.acceptance_fix_history")
 ACCEPTANCE_MAX_FIX_ROUNDS = 3  # 失败循环 fix 上限,超过强制停下问用户
+
+# 议题 #023: 前端视觉化闭环(同议题 #014 v3 + #022 在视觉维度的同构应用)
+# 流程: designer_translate_propose(AI 把用户语言压成 designer spec)
+#       -> designer_translate_approve(用户审 spec)
+#       -> AI 写代码
+#       -> visual_propose(AI 提议视觉关键点 checklist)
+#       -> visual_approve(用户审)
+#       -> visual_verify(AI 调 Playwright MCP 截图 + 看截图自评对照)
+#       -> 失败循环 fix(独立计数器,不跟 acceptance 共用)
+#       -> 全过 VISUAL_VERIFIED -> [存档] gate 放行
+DESIGNER_SPEC_PROPOSED_FLAG = Path(".ai-operation/.designer_spec_proposed")
+DESIGNER_SPEC_APPROVED_FLAG = Path(".ai-operation/.designer_spec_approved")
+DESIGNER_SPEC_FILE = Path(".ai-operation/docs/designer_spec.md")
+VISUAL_KEYPOINTS_PROPOSED_FLAG = Path(".ai-operation/.visual_keypoints_proposed")
+VISUAL_KEYPOINTS_APPROVED_FLAG = Path(".ai-operation/.visual_keypoints_approved")
+VISUAL_VERIFIED_FLAG = Path(".ai-operation/.visual_verified")
+VISUAL_FIX_COUNTER_FLAG = Path(".ai-operation/.visual_fix_counter")
+VISUAL_FIX_HISTORY_FLAG = Path(".ai-operation/.visual_fix_history")
+VISUAL_MAX_FIX_ROUNDS = 3
 SAVE_STAGING_FILE = Path(".ai-operation/.save_staging.json")
 BYPASS_DIR = Path(".ai-operation/.bypasses")  # Per-rule bypass flags
 SAVE_HISTORY_DIR = Path(".ai-operation/.save_history")  # Phase 2 snapshots for rollback
@@ -954,6 +979,18 @@ def git_commit_nonblocking(files_to_add: list, commit_msg: str, _audit_fn=None) 
                 if _aflag.exists():
                     try:
                         _aflag.unlink()
+                    except OSError:
+                        pass
+            # 议题 #023: same pattern for visual closure (designer spec + visual
+            # verification flags). Next frontend taskspec starts a fresh cycle.
+            for _vflag in (VISUAL_VERIFIED_FLAG, VISUAL_KEYPOINTS_APPROVED_FLAG,
+                           VISUAL_KEYPOINTS_PROPOSED_FLAG,
+                           VISUAL_FIX_COUNTER_FLAG, VISUAL_FIX_HISTORY_FLAG,
+                           DESIGNER_SPEC_APPROVED_FLAG,
+                           DESIGNER_SPEC_PROPOSED_FLAG):
+                if _vflag.exists():
+                    try:
+                        _vflag.unlink()
                     except OSError:
                         pass
 

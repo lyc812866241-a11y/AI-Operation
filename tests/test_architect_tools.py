@@ -2332,5 +2332,416 @@ class TestAcceptanceEndToEnd(unittest.TestCase, _AcceptanceTestMixin):
                          "Fast-track must exempt save from acceptance gate")
 
 
+# ============================================================================
+# 议题 #023 — Visual Closure tests (前端视觉化闭环)
+# ============================================================================
+
+class _VisualTestMixin(TestSetup):
+    """Common setup for 议题 #023 tests."""
+
+    def _make_tools(self):
+        self.create_temp_project()
+        self.tools = {}
+
+        def capture_tool():
+            def decorator(fn):
+                self.tools[fn.__name__] = fn
+                return fn
+            return decorator
+
+        mcp = MagicMock()
+        mcp.tool = capture_tool
+        from tools.architect import register_architect_tools
+        register_architect_tools(mcp)
+
+    def _valid_translate(self):
+        return self.tools["aio__force_designer_translate_propose"](
+            user_intent="我想要简洁的护肤首页,给中年女性看,不要太花哨",
+            translated_spec=(
+                "## 风格基调\n简约商务,带温柔气质\n\n"
+                "## 配色\n主色:温润米色 (#E8DDD0),辅色:深咖 (#5C4438),"
+                "强调色:玫瑰金 (#B98E6C)\n\n"
+                "## 字体\n中文衬线(华文宋体或思源宋体),正文 16px,标题 28px\n\n"
+                "## 布局\n空旷,大留白,信息密度低,视觉中心居中\n\n"
+                "## 信息层级\n首屏一句 slogan + 一个 CTA 按钮(强调色),"
+                "三块护理品类卡片\n\n"
+                "## 目标用户\n35-55 岁女性,使用手机,偏好优雅、信任感、不要儿童化\n\n"
+                "## 反向边界\n不要卡通元素、不要彩色渐变、不要拟物按钮、不要广告气"
+            ),
+        )
+
+    def _valid_visual_propose(self):
+        return self.tools["aio__force_visual_propose"](
+            visual_keypoints=(
+                "1. 第一层级元素位置:首屏 CTA 按钮在视觉中心偏下(不被 fold 遮挡)\n"
+                "2. 主色对照:主色为温润米色,辅色深咖,强调色玫瑰金,无饱和度过高的颜色\n"
+                "3. 信息层级:slogan > CTA > 品类卡片,大小对比明显\n"
+                "4. 留白密度:空旷,大留白\n"
+                "5. 移动端响应:375x812 + 1440x900 都达标"
+            ),
+        )
+
+
+class TestDesignerTranslate(unittest.TestCase, _VisualTestMixin):
+    """designer_translate_propose + _approve."""
+
+    def setUp(self):
+        self._make_tools()
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def test_propose_rejects_empty_intent(self):
+        result = self.tools["aio__force_designer_translate_propose"](
+            user_intent="", translated_spec="a" * 200
+        )
+        self.assertIn("REJECTED", result)
+        self.assertIn("user_intent", result)
+
+    def test_propose_rejects_short_spec(self):
+        result = self.tools["aio__force_designer_translate_propose"](
+            user_intent="want pretty", translated_spec="just blue and white"
+        )
+        self.assertIn("REJECTED", result)
+        self.assertIn("too short", result)
+
+    def test_propose_writes_spec_file_and_flag(self):
+        result = self._valid_translate()
+        self.assertIn("SUCCESS", result)
+        from tools.constants import DESIGNER_SPEC_FILE, DESIGNER_SPEC_PROPOSED_FLAG
+        self.assertTrue(DESIGNER_SPEC_FILE.exists())
+        self.assertTrue(DESIGNER_SPEC_PROPOSED_FLAG.exists())
+        content = DESIGNER_SPEC_FILE.read_text(encoding="utf-8")
+        self.assertIn("Original User Intent", content)
+        self.assertIn("AI-Translated Designer Language", content)
+        self.assertIn("AWAITING USER APPROVAL", content)
+
+    def test_propose_invalidates_downstream_visual_state(self):
+        from tools.constants import (
+            VISUAL_KEYPOINTS_PROPOSED_FLAG, VISUAL_VERIFIED_FLAG,
+            VISUAL_FIX_COUNTER_FLAG,
+        )
+        # Seed stale downstream state
+        for f in (VISUAL_KEYPOINTS_PROPOSED_FLAG, VISUAL_VERIFIED_FLAG, VISUAL_FIX_COUNTER_FLAG):
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text("stale", encoding="utf-8")
+        self._valid_translate()
+        for f in (VISUAL_KEYPOINTS_PROPOSED_FLAG, VISUAL_VERIFIED_FLAG, VISUAL_FIX_COUNTER_FLAG):
+            self.assertFalse(f.exists(),
+                             f"{f.name} should be cleared by new designer translate")
+
+    def test_approve_requires_propose(self):
+        result = self.tools["aio__force_designer_translate_approve"](user_said="批准")
+        self.assertIn("REJECTED", result)
+
+    def test_approve_rejects_invalid_signal(self):
+        self._valid_translate()
+        result = self.tools["aio__force_designer_translate_approve"](user_said="hmm")
+        self.assertIn("REJECTED", result)
+
+    def test_approve_updates_spec_status(self):
+        self._valid_translate()
+        result = self.tools["aio__force_designer_translate_approve"](user_said="批准")
+        self.assertIn("SUCCESS", result)
+        from tools.constants import DESIGNER_SPEC_FILE, DESIGNER_SPEC_APPROVED_FLAG
+        self.assertTrue(DESIGNER_SPEC_APPROVED_FLAG.exists())
+        content = DESIGNER_SPEC_FILE.read_text(encoding="utf-8")
+        self.assertIn("APPROVED", content)
+        self.assertNotIn("AWAITING USER APPROVAL", content)
+
+
+class TestVisualProposeApprove(unittest.TestCase, _VisualTestMixin):
+    """visual_propose + visual_approve."""
+
+    def setUp(self):
+        self._make_tools()
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def test_propose_rejects_empty(self):
+        result = self.tools["aio__force_visual_propose"](visual_keypoints="")
+        self.assertIn("REJECTED", result)
+
+    def test_propose_rejects_short(self):
+        result = self.tools["aio__force_visual_propose"](
+            visual_keypoints="check colors"
+        )
+        self.assertIn("REJECTED", result)
+        self.assertIn("too short", result)
+
+    def test_propose_rejects_single_item(self):
+        # Need > 80 chars but only 1 bullet to hit the item-count check
+        # rather than the length check.
+        long_single_item = (
+            "- 这是唯一的一项验收点,本文本长度故意超过 80 字符以便顺利通过 "
+            "minimum-length 门槛,但全段只有一个 bullet 标记,触发 item-count 拒收逻辑"
+            ",验证 keypoint 计数判断的正确性。"
+        )
+        result = self.tools["aio__force_visual_propose"](
+            visual_keypoints=long_single_item
+        )
+        self.assertIn("REJECTED", result)
+        self.assertIn("at least 2 distinct keypoints", result)
+
+    def test_propose_creates_flag(self):
+        result = self._valid_visual_propose()
+        self.assertIn("SUCCESS", result)
+        from tools.constants import VISUAL_KEYPOINTS_PROPOSED_FLAG
+        self.assertTrue(VISUAL_KEYPOINTS_PROPOSED_FLAG.exists())
+
+    def test_approve_requires_propose(self):
+        result = self.tools["aio__force_visual_approve"](user_said="批准")
+        self.assertIn("REJECTED", result)
+
+    def test_approve_creates_flag(self):
+        self._valid_visual_propose()
+        result = self.tools["aio__force_visual_approve"](user_said="批准")
+        self.assertIn("SUCCESS", result)
+        from tools.constants import VISUAL_KEYPOINTS_APPROVED_FLAG
+        self.assertTrue(VISUAL_KEYPOINTS_APPROVED_FLAG.exists())
+
+
+class TestVisualVerify(unittest.TestCase, _VisualTestMixin):
+    """visual_verify state machine + fix loop."""
+
+    def setUp(self):
+        self._make_tools()
+        self._valid_visual_propose()
+        self.tools["aio__force_visual_approve"](user_said="批准")
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def _passing_verify(self):
+        return self.tools["aio__force_visual_verify"](
+            keypoint_results=(
+                "1. 第一层级元素位置 PASS — CTA 在视觉中心偏下\n"
+                "2. 主色对照 PASS — 主色温润米色匹配 spec\n"
+                "3. 信息层级 PASS — slogan/CTA/卡片对比明显\n"
+                "4. 留白密度 PASS — 空旷大留白\n"
+                "5. 移动端响应 PASS — 两个尺寸都达标"
+            ),
+            screenshots_meta="homepage 375x812 + 1440x900,checkout 375x812",
+        )
+
+    def _failing_verify(self):
+        return self.tools["aio__force_visual_verify"](
+            keypoint_results=(
+                "1. 第一层级元素位置 PASS — CTA 在视觉中心偏下位置合理\n"
+                "2. 主色对照 FAIL — 实际偏冷蓝色调,spec 要求温润米色暖色调\n"
+                "3. 信息层级 PASS — slogan/CTA/卡片对比明显\n"
+                "4. 留白密度 FAIL — 太密集,需要加大模块之间间距"
+            ),
+            screenshots_meta="homepage at 375x812 viewport and 1440x900 desktop viewport",
+        )
+
+    def test_rejects_when_not_approved(self):
+        from tools.constants import VISUAL_KEYPOINTS_APPROVED_FLAG
+        VISUAL_KEYPOINTS_APPROVED_FLAG.unlink()
+        result = self._passing_verify()
+        self.assertIn("REJECTED", result)
+        self.assertIn("No approved visual checklist", result)
+
+    def test_rejects_short_keypoint_results(self):
+        result = self.tools["aio__force_visual_verify"](
+            keypoint_results="all good",
+            screenshots_meta="homepage 375x812 viewport screenshot",
+        )
+        self.assertIn("REJECTED", result)
+        self.assertIn("too short", result)
+
+    def test_rejects_no_PASS_or_FAIL_marker(self):
+        result = self.tools["aio__force_visual_verify"](
+            keypoint_results="general narrative without explicit verdict markers, "
+                            "just describing the page in vague terms without saying yes or no",
+            screenshots_meta="homepage 375x812 viewport screenshot",
+        )
+        self.assertIn("REJECTED", result)
+        self.assertIn("PASS or FAIL", result)
+
+    def test_success_writes_verified_flag(self):
+        result = self._passing_verify()
+        self.assertIn("SUCCESS", result)
+        from tools.constants import VISUAL_VERIFIED_FLAG
+        self.assertTrue(VISUAL_VERIFIED_FLAG.exists())
+
+    def test_failure_enters_fix_loop_round_1(self):
+        result = self._failing_verify()
+        self.assertIn("VISUAL_FIX_LOOP_REQUIRED", result)
+        self.assertIn("round 1/3", result)
+        from tools.constants import VISUAL_FIX_COUNTER_FLAG
+        self.assertEqual(
+            VISUAL_FIX_COUNTER_FLAG.read_text(encoding="utf-8").strip(), "1"
+        )
+
+    def test_three_failures_exhausted(self):
+        r1 = self._failing_verify()
+        self.assertIn("VISUAL_FIX_LOOP_REQUIRED", r1)
+        r2 = self._failing_verify()
+        self.assertIn("VISUAL_FIX_LOOP_REQUIRED", r2)
+        r3 = self._failing_verify()
+        self.assertIn("VISUAL_FIX_LOOP_EXHAUSTED", r3)
+        r4 = self._failing_verify()
+        self.assertIn("REJECTED", r4)
+        self.assertIn("VISUAL_FIX_LOOP_EXHAUSTED", r4)
+
+
+class TestSaveVisualGate(unittest.TestCase, _VisualTestMixin):
+    """[存档] visual gate: triggered when visual_proposed flag exists."""
+
+    def setUp(self):
+        self._make_tools()
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def _save_minimal(self):
+        return self.tools["aio__force_architect_save"](
+            systemPatterns_update="NO_CHANGE_BECAUSE: visual gate test",
+            techContext_update="NO_CHANGE_BECAUSE: visual gate test",
+            activeContext_update=(
+                "Current focus: 议题 #023 visual save gate test in "
+                ".ai-operation/mcp_server/tools/save.py. "
+                "Just completed: added visual gate after acceptance gate. "
+                "Next step: verify all 4 path combinations behave correctly."
+            ),
+            lessons_learned="NONE",
+        )
+
+    def test_save_rejected_when_visual_proposed_no_verified(self):
+        from tools.constants import VISUAL_KEYPOINTS_PROPOSED_FLAG
+        VISUAL_KEYPOINTS_PROPOSED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        VISUAL_KEYPOINTS_PROPOSED_FLAG.write_text("proposed", encoding="utf-8")
+        result = self._save_minimal()
+        self.assertIn("REJECTED", result)
+        self.assertIn("VISUAL_VERIFIED flag", result)
+
+    def test_save_allowed_when_visual_verified(self):
+        from tools.constants import (
+            VISUAL_KEYPOINTS_PROPOSED_FLAG, VISUAL_VERIFIED_FLAG
+        )
+        VISUAL_KEYPOINTS_PROPOSED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        VISUAL_KEYPOINTS_PROPOSED_FLAG.write_text("proposed", encoding="utf-8")
+        VISUAL_VERIFIED_FLAG.write_text(
+            json.dumps({"timestamp": "2026-05-11 00:00"}), encoding="utf-8"
+        )
+        with patch("subprocess.run"):
+            result = self._save_minimal()
+        self.assertNotIn("VISUAL_VERIFIED flag", result)
+
+    def test_save_allowed_when_fast_track_overrides_visual(self):
+        from tools.constants import VISUAL_KEYPOINTS_PROPOSED_FLAG, FAST_TRACK_FLAG
+        VISUAL_KEYPOINTS_PROPOSED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        VISUAL_KEYPOINTS_PROPOSED_FLAG.write_text("proposed", encoding="utf-8")
+        FAST_TRACK_FLAG.write_text("fast", encoding="utf-8")
+        with patch("subprocess.run"):
+            result = self._save_minimal()
+        self.assertNotIn("VISUAL_VERIFIED flag", result)
+
+    def test_save_allowed_when_no_visual_proposed(self):
+        """Non-frontend task: visual_proposed flag never created => gate skipped."""
+        with patch("subprocess.run"):
+            result = self._save_minimal()
+        self.assertNotIn("VISUAL_VERIFIED flag", result)
+
+
+class TestVisualEndToEnd(unittest.TestCase, _VisualTestMixin):
+    """议题 #023 self-application: walk the full visual pipeline once."""
+
+    def setUp(self):
+        self._make_tools()
+
+    def tearDown(self):
+        self.cleanup_temp_project()
+
+    def test_full_success_path(self):
+        """designer_translate -> visual_propose -> visual_approve -> visual_verify -> save."""
+        from tools.constants import (
+            DESIGNER_SPEC_APPROVED_FLAG, VISUAL_KEYPOINTS_APPROVED_FLAG,
+            VISUAL_VERIFIED_FLAG,
+        )
+        # Step 1: designer translate
+        r1 = self._valid_translate()
+        self.assertIn("SUCCESS", r1)
+        r1a = self.tools["aio__force_designer_translate_approve"](user_said="批准")
+        self.assertIn("SUCCESS", r1a)
+        self.assertTrue(DESIGNER_SPEC_APPROVED_FLAG.exists())
+
+        # Step 2: visual propose + approve
+        r2 = self._valid_visual_propose()
+        self.assertIn("SUCCESS", r2)
+        r2a = self.tools["aio__force_visual_approve"](user_said="批准")
+        self.assertIn("SUCCESS", r2a)
+        self.assertTrue(VISUAL_KEYPOINTS_APPROVED_FLAG.exists())
+
+        # Step 3: visual verify (passing)
+        r3 = self.tools["aio__force_visual_verify"](
+            keypoint_results=(
+                "1. 第一层级元素位置 PASS — CTA 在视觉中心偏下位置正确\n"
+                "2. 主色对照 PASS — 温润米色匹配 spec\n"
+                "3. 信息层级 PASS — 层级对比明显\n"
+                "4. 留白密度 PASS — 空旷大留白符合 spec\n"
+                "5. 移动端响应 PASS — 375x812 和 1440x900 都达标"
+            ),
+            screenshots_meta="homepage 375x812 + 1440x900 + checkout 375x812",
+        )
+        self.assertIn("SUCCESS", r3)
+        self.assertTrue(VISUAL_VERIFIED_FLAG.exists())
+
+        # Step 4: save should pass the visual gate
+        with patch("subprocess.run"):
+            r4 = self.tools["aio__force_architect_save"](
+                systemPatterns_update="NO_CHANGE_BECAUSE: e2e visual",
+                techContext_update="NO_CHANGE_BECAUSE: e2e visual",
+                activeContext_update=(
+                    "Current focus: 议题 #023 end-to-end visual self-test in "
+                    "tests/test_architect_tools.py. "
+                    "Just completed: full visual pipeline designer_translate -> "
+                    "visual_propose -> visual_approve -> visual_verify -> save. "
+                    "Next step: confirm fix-loop and fast-track paths also work."
+                ),
+                lessons_learned="NONE",
+            )
+        self.assertNotIn("VISUAL_VERIFIED flag", r4,
+                         "Save should pass visual gate when VERIFIED present")
+
+    def test_full_fix_loop_then_success(self):
+        """Visual round 1 fails -> round 2 passes."""
+        from tools.constants import VISUAL_FIX_COUNTER_FLAG, VISUAL_VERIFIED_FLAG
+
+        self._valid_translate()
+        self.tools["aio__force_designer_translate_approve"](user_said="批准")
+        self._valid_visual_propose()
+        self.tools["aio__force_visual_approve"](user_said="批准")
+
+        # Round 1 fails
+        r1 = self.tools["aio__force_visual_verify"](
+            keypoint_results=(
+                "1. 主色对照 FAIL — 颜色严重偏离 spec,实际呈现冷蓝色调,"
+                "但 spec 明确要求温润米色暖色调\n"
+                "2. 第一层级位置 PASS — CTA 按钮在视觉中心偏下位置合理\n"
+                "3. 留白密度 FAIL — 整体过于紧凑,需要加大模块间距才能达到 spec 要求"
+            ),
+            screenshots_meta="homepage at 375x812 mobile + 1440x900 desktop viewports",
+        )
+        self.assertIn("VISUAL_FIX_LOOP_REQUIRED", r1)
+        self.assertEqual(VISUAL_FIX_COUNTER_FLAG.read_text(encoding="utf-8").strip(), "1")
+
+        # Round 2 passes
+        r2 = self.tools["aio__force_visual_verify"](
+            keypoint_results=(
+                "1. 主色对照 PASS — 调整为温润米色后符合 spec\n"
+                "2. 第一层级位置 PASS — CTA 按钮位置不变,继续 PASS\n"
+                "3. 留白密度 PASS — 加大间距后空旷感达到 spec 要求"
+            ),
+            screenshots_meta="homepage 375x812 + 1440x900 viewports",
+        )
+        self.assertIn("SUCCESS", r2)
+        self.assertTrue(VISUAL_VERIFIED_FLAG.exists())
+        # Counter cleared on success
+        self.assertFalse(VISUAL_FIX_COUNTER_FLAG.exists())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -283,6 +283,35 @@ def register_save_tools(mcp: FastMCP, _audit, _loop_guard):
                     "  - delete .ai-operation/.taskspec_approved to abandon the taskSpec"
                 )
 
+        # -- Visual gate (议题 #023): if the visual closure was entered (any
+        # frontend / UI task that called visual_propose), VISUAL_VERIFIED must
+        # exist before save. Non-frontend tasks never call visual_propose, so
+        # this gate is naturally skipped for them.
+        # Fast-track also exempts.
+        if VISUAL_KEYPOINTS_PROPOSED_FLAG.exists() and not FAST_TRACK_FLAG.exists():
+            if not VISUAL_VERIFIED_FLAG.exists():
+                _audit("aio__force_architect_save", "REJECTED",
+                       "no visual VERIFIED flag")
+                return (
+                    "REJECTED: A visual closure was entered (visual_proposed "
+                    "flag exists) but VISUAL_VERIFIED flag has not been "
+                    "produced yet.\n\n"
+                    "议题 #023 前端视觉化闭环纪律: 前端代码改动必须先通过视觉验收 "
+                    "才能 [存档]。\n\n"
+                    "Run the visual flow:\n"
+                    "  1. aio__force_visual_approve(user_said)  # if not yet approved\n"
+                    "  2. Call Playwright MCP to capture screenshots of the rendered frontend\n"
+                    "  3. Use multimodal vision to inspect each screenshot against the keypoint checklist\n"
+                    "  4. aio__force_visual_verify(keypoint_results, screenshots_meta)\n"
+                    "     - on failure: fix frontend code and re-run (max "
+                    f"{VISUAL_MAX_FIX_ROUNDS} rounds)\n"
+                    "     - on success: VISUAL_VERIFIED flag is written\n"
+                    "Then retry this save.\n\n"
+                    "Bypass paths (use sparingly):\n"
+                    "  - aio__force_fast_track for trivial visual tweaks\n"
+                    "  - delete .ai-operation/.visual_keypoints_proposed to abandon the visual closure"
+                )
+
         # -- Cognitive Gate check: must have read corrections before saving --
         # Only enforced when corrections.md has a SESSION_KEY (framework is fully set up)
         session_flag = Path(".ai-operation/.session_confirmed")

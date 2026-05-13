@@ -925,6 +925,32 @@ if (Get-Command npm -ErrorAction SilentlyContinue) {
     Write-Info "  Install Node.js, then: npm install -g oh-my-mermaid"
 }
 
+# -- Step 5.7: Install Playwright MCP (议题 #023 前端视觉化闭环) --
+Write-Step "Step 5.7/7: Installing Playwright MCP (frontend visual verification)"
+
+if (Get-Command npm -ErrorAction SilentlyContinue) {
+    try {
+        $pwCheck = npm list -g "@playwright/mcp" 2>$null
+        if ($pwCheck -match "@playwright/mcp") {
+            Write-Ok "@playwright/mcp already installed (used by 议题 #023 [视觉验收])"
+        } else {
+            Write-Info "Installing @playwright/mcp globally..."
+            npm install -g "@playwright/mcp" 2>&1 | Out-Null
+            Write-Ok "@playwright/mcp installed (Playwright browser MCP server for visual verification)"
+            Write-Info "  After install, register the server in your IDE's mcp.json:"
+            Write-Info '    "playwright": { "command": "npx", "args": ["@playwright/mcp@latest"] }'
+        }
+    } catch {
+        Write-Warn "@playwright/mcp install failed. Visual verification ([视觉验收]) will not work."
+        Write-Info "  To install manually: npm install -g @playwright/mcp"
+        Write-Info "  Or use npx on-demand: npx @playwright/mcp@latest"
+    }
+} else {
+    Write-Warn "npm not found — skipping Playwright MCP install"
+    Write-Info "  Install Node.js, then: npm install -g @playwright/mcp"
+    Write-Info "  议题 #023 视觉验收闭环依赖 Playwright MCP,没装会失败"
+}
+
 # -- Step 6: Verify MCP server --
 Write-Step "Step 6/7: Verifying MCP server"
 

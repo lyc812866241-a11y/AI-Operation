@@ -911,6 +911,32 @@ else
     print_info "  Install Node.js, then: npm install -g oh-my-mermaid"
 fi
 
+# ── Step 5.7: Install Playwright MCP (议题 #023 前端视觉化闭环) ─────────────
+print_step "Step 5.7/7: Installing Playwright MCP (frontend visual verification)"
+
+if command -v npm &>/dev/null; then
+    # Check via npx whether the package is reachable (avoids global install
+    # cache lookup quirks across npm versions). The package is fairly small.
+    if npm list -g @playwright/mcp &>/dev/null; then
+        print_ok "@playwright/mcp already installed (used by 议题 #023 [视觉验收])"
+    else
+        print_info "Installing @playwright/mcp globally..."
+        if npm install -g @playwright/mcp &>/dev/null; then
+            print_ok "@playwright/mcp installed (Playwright browser MCP server for visual verification)"
+            print_info "  After install, register the server in your IDE's mcp.json:"
+            print_info '    "playwright": { "command": "npx", "args": ["@playwright/mcp@latest"] }'
+        else
+            print_warn "@playwright/mcp install failed. Visual verification ([视觉验收]) will not work."
+            print_info "  To install manually: npm install -g @playwright/mcp"
+            print_info "  Or use npx on-demand: npx @playwright/mcp@latest"
+        fi
+    fi
+else
+    print_warn "npm not found — skipping Playwright MCP install"
+    print_info "  Install Node.js, then: npm install -g @playwright/mcp"
+    print_info "  议题 #023 视觉验收闭环依赖 Playwright MCP,没装会失败"
+fi
+
 # ── Step 6: Verify MCP server ─────────────────────────────────────────────────
 print_step "Step 6/7: Verifying MCP server"
 
