@@ -1,0 +1,7 @@
+{
+  "name": "排版写手 Layout Writer",
+  "id": "aiop-layout-writer",
+  "api": "1.0.0",
+  "main": "code.js",
+  "editorType": ["figma"]
+}

@@ -46,6 +46,8 @@
 | 学到教训 / 被纠正 / 踩坑 | `.ai-operation/skills/lesson-distill/SKILL.md` |
 | 完成子步骤 / 做出决策 / 发现卡点 | `.ai-operation/skills/state-checkpoint/SKILL.md` |
 | [提取契约] / 反推契约(接管已有项目) | `.ai-operation/skills/conventions-extract/SKILL.md` |
+| [前端设计] / 做界面 / 换皮 / 灌坑 / 读 Figma 位置 / Figma 排版 | `.ai-operation/skills/frontend-design/SKILL.md` |
+| 离线解析 .fig / 设计稿装机 / UI 还原 | `.ai-operation/skills/figma-to-flutter/SKILL.md` |
 | [提需] / 功能开发 | `aio__force_taskspec_propose`(列 ≥2 方案带 trade-off)→ 用户选 id → `aio__force_taskspec_submit`(传 chosen_proposal_id)→ `_approve` → 执行 → [验收] → [存档] |
 | [验收] / 跑验收 | `aio__force_acceptance_propose`(单元 / 集成 / 业务流程 3 类清单)→ 用户审 → `aio__force_acceptance_approve` → `aio__force_acceptance_run`(失败自循环 fix,上限 3 轮,超限停下问用户)|
 | [设计翻译] / [视觉立项] | `aio__force_designer_translate_propose`(把用户口语描述压成 designer spec,自由文本)→ 用户审 → `aio__force_designer_translate_approve` → spec 落档至 `.ai-operation/docs/designer_spec.md`,下游 WORKER 据此写前端代码 |
